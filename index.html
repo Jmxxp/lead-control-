@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Controle de Leads | Ótica</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <section id="authScreen" class="auth-screen">
+        <div class="auth-card">
+          <div class="auth-tabs" role="tablist" aria-label="Acesso">
+            <button class="auth-tab is-active" type="button" data-auth-tab="login">Login</button>
+            <button class="auth-tab" type="button" data-auth-tab="signup">Criar admin</button>
+          </div>
+
+          <form id="loginForm" class="auth-form">
+            <label class="field">
+              <span>Nick</span>
+              <input id="loginNick" type="text" placeholder="ex: matriz" required />
+            </label>
+            <label class="field">
+              <span>Senha</span>
+              <div class="password-field">
+                <input id="loginPassword" type="password" placeholder="Sua senha" required />
+                <button class="password-toggle" type="button" data-toggle-password="loginPassword">
+                  Ver
+                </button>
+              </div>
+            </label>
+            <button class="primary-button" type="submit">Entrar</button>
+          </form>
+
+          <form id="signupForm" class="auth-form" hidden>
+            <label class="field">
+              <span>Nome do admin</span>
+              <input id="signupName" type="text" placeholder="Seu nome" required />
+            </label>
+            <label class="field">
+              <span>Nick</span>
+              <input id="signupNick" type="text" placeholder="ex: admin" required />
+            </label>
+            <label class="field">
+              <span>Senha</span>
+              <div class="password-field">
+                <input id="signupPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                <button class="password-toggle" type="button" data-toggle-password="signupPassword">
+                  Ver
+                </button>
+              </div>
+            </label>
+            <button class="primary-button" type="submit">Criar cadastro admin</button>
+          </form>
+
+          <p id="authMessage" class="form-message" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <div id="appView" hidden>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="sessionRole">Ótica</p>
+          <h1>Controle de Leads</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="today-card" aria-label="Resumo do dia">
+            <span id="todayLabel">Hoje</span>
+            <strong id="todayCount">0 leads</strong>
+          </div>
+          <button class="ghost-button" type="button" id="backAdminButton" hidden>
+            Voltar admin
+          </button>
+          <button class="ghost-button" type="button" id="logoutButton">Sair</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="adminView" class="admin-view" hidden>
+          <section class="summary-grid" aria-label="Resumo administrativo">
+            <article class="metric">
+              <span>Lojas</span>
+              <strong id="totalStores">0</strong>
+            </article>
+            <article class="metric">
+              <span>Leads</span>
+              <strong id="adminTotalLeads">0</strong>
+            </article>
+            <article class="metric">
+              <span>Compras</span>
+              <strong id="adminSalesCount">0</strong>
+            </article>
+            <article class="metric">
+              <span>Conversão</span>
+              <strong id="adminConversionRate">0%</strong>
+            </article>
+          </section>
+
+          <section class="admin-workspace">
+            <form id="storeForm" class="form-panel" autocomplete="off">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Admin</p>
+                  <h2>Criar loja</h2>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>Nome da loja</span>
+                <input id="storeName" type="text" placeholder="Loja Centro" required />
+              </label>
+
+              <label class="field">
+                <span>Nick de login</span>
+                <input id="storeNick" type="text" placeholder="ex: loja-centro" required />
+              </label>
+
+              <label class="field">
+                <span>Senha da loja</span>
+                <div class="password-field">
+                  <input id="storePassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                  <button class="password-toggle" type="button" data-toggle-password="storePassword">
+                    Ver
+                  </button>
+                </div>
+              </label>
+
+              <p id="storeMessage" class="form-message" role="status" aria-live="polite"></p>
+              <button class="primary-button" type="submit">Criar login da loja</button>
+            </form>
+
+            <section class="list-panel options-panel" aria-label="Opções padrão">
+              <div class="panel-heading align-start">
+                <div>
+                  <p class="eyebrow">Opções padrão</p>
+                  <h2>Opções das lojas</h2>
+                </div>
+              </div>
+
+              <p class="panel-note">
+                Alterar aqui atualiza as opções de todas as lojas.
+              </p>
+
+              <div id="adminOptionsList" class="options-editor"></div>
+              <p id="adminOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
+            </section>
+
+            <section class="list-panel store-list-panel" aria-label="Lojas cadastradas">
+              <div class="panel-heading align-start">
+                <div>
+                  <p class="eyebrow">Lojas</p>
+                  <h2>Lojas individuais</h2>
+                </div>
+              </div>
+
+              <div id="storeEmptyState" class="empty-state">
+                <strong>Nenhuma loja cadastrada ainda.</strong>
+                <span>Crie a primeira loja para liberar o acesso individual.</span>
+              </div>
+
+              <div id="storeList" class="lead-list"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="storeView" hidden>
+        <section class="summary-grid" aria-label="Resumo dos leads">
+          <article class="metric">
+            <span>Total</span>
+            <strong id="totalLeads">0</strong>
+          </article>
+          <article class="metric">
+            <span>Visitaram</span>
+            <strong id="storeVisits">0</strong>
+          </article>
+          <article class="metric">
+            <span>Compraram</span>
+            <strong id="salesCount">0</strong>
+          </article>
+          <article class="metric">
+            <span>Conversão</span>
+            <strong id="conversionRate">0%</strong>
+          </article>
+        </section>
+
+        <section class="workspace">
+            <form id="leadForm" class="form-panel lead-form" autocomplete="off">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Novo atendimento</p>
+                  <h2 id="formTitle">Cadastrar lead</h2>
+                </div>
+                <div class="heading-actions">
+                  <button class="ghost-button" type="button" id="toggleOptionsEdit">
+                    Editar opções
+                  </button>
+                  <button class="ghost-button" type="button" id="cancelEdit" hidden>
+                    Cancelar edição
+                  </button>
+                  <button class="ghost-button" type="button" id="clearForm">Limpar</button>
+                </div>
+              </div>
+
+              <input type="hidden" id="editingId" />
+
+              <div id="storeOptionsPanel" class="options-panel-inline" hidden>
+                <div id="storeOptionsList" class="options-editor"></div>
+                <p id="storeOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="field-grid lead-entry">
+                <label class="field">
+                  <span>Nome</span>
+                  <input id="name" name="name" type="text" placeholder="Nome do lead" required />
+              </label>
+
+              <label class="field">
+                <span>Telefone</span>
+                <input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  inputmode="tel"
+                  placeholder="(00) 00000-0000"
+                  required
+                />
+              </label>
+            </div>
+
+            <div class="choice-section lead-entry">
+              <div class="section-title">
+                <h3>Canal</h3>
+                <span>Onde começou</span>
+              </div>
+              <div class="choice-grid compact" data-choice-group="channel"></div>
+            </div>
+
+            <div class="choice-section lead-entry">
+              <div class="section-title">
+                <h3>Campanha</h3>
+                <span>Origem do anúncio</span>
+              </div>
+              <div class="choice-grid compact" data-choice-group="campaign"></div>
+            </div>
+
+            <div class="choice-section lead-entry">
+              <div class="section-title">
+                <h3>Início da conversa</h3>
+                <span>Motivo principal</span>
+              </div>
+              <div class="choice-grid" data-choice-group="conversationStart"></div>
+            </div>
+
+            <div class="choice-section lead-entry">
+              <div class="section-title">
+                <h3>Conclusão</h3>
+                <span>Status da conversa</span>
+              </div>
+              <div class="choice-grid compact" data-choice-group="conclusion"></div>
+            </div>
+
+            <div class="double-choice lead-entry">
+              <div class="choice-section">
+                <div class="section-title">
+                  <h3>Visitou a loja?</h3>
+                </div>
+                <div class="choice-grid two" data-choice-group="visited"></div>
+              </div>
+
+              <div class="choice-section">
+                <div class="section-title">
+                  <h3>Comprou?</h3>
+                  <span>Opcional</span>
+                </div>
+                <div class="choice-grid two" data-choice-group="bought"></div>
+              </div>
+            </div>
+
+            <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
+
+            <button class="primary-button lead-entry" type="submit" id="submitButton">Salvar lead</button>
+          </form>
+
+          <section class="list-panel" aria-label="Leads cadastrados">
+            <div class="panel-heading align-start">
+              <div>
+                <p class="eyebrow">Acompanhamento</p>
+                <h2>Leads cadastrados</h2>
+              </div>
+            </div>
+
+            <div class="filter-toolbar">
+              <label class="field search-field">
+                <span>Buscar</span>
+                <input id="search" type="search" placeholder="Lead, nome, número ou telefone" />
+              </label>
+
+              <button class="secondary-button filter-toggle" type="button" id="toggleFilters" aria-label="Filtros">
+                Filtro
+              </button>
+            </div>
+
+            <div class="filters" id="filtersPanel" hidden>
+              <label class="field">
+                <span>Canal</span>
+                <select id="channelFilter">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Campanha</span>
+                <select id="campaignFilter">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Início</span>
+                <select id="conversationStartFilter">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Conclusão</span>
+                <select id="conclusionFilter">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Visitou</span>
+                <select id="visitedFilter">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Comprou</span>
+                <select id="boughtFilter">
+                  <option value="">Todos</option>
+                  <option value="sem-resposta">Sem resposta</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Data inicial</span>
+                <input id="startDateFilter" type="date" />
+              </label>
+
+              <label class="field">
+                <span>Data final</span>
+                <input id="endDateFilter" type="date" />
+              </label>
+
+              <button class="ghost-button filter-button" type="button" id="clearFilters">
+                Limpar
+              </button>
+            </div>
+
+            <div id="emptyState" class="empty-state">
+              <strong>Nenhum lead cadastrado ainda.</strong>
+              <span>Preencha o formulário ao lado para começar o controle.</span>
+            </div>
+
+            <div id="leadList" class="lead-list"></div>
+          </section>
+        </section>
+        </section>
+      </main>
+      </div>
+    </div>
+  </body>
+</html>
