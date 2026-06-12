@@ -1,9 +1,3 @@
-const SUPABASE_URL = "https://nuuebvpsfcgsgkefecab.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51dWVidnBzZmNnc2drZWZlY2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTQ5ODMsImV4cCI6MjA5Njc3MDk4M30.6PxIIOP2oQvlbUP87ab79VsXj5e4NCNhjUgnECIN5pA";
-
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const labels = {
   channel: "Canal",
   campaign: "Campanha",
@@ -14,115 +8,112 @@ const labels = {
 };
 
 const optionGroups = Object.keys(labels);
-const nativeYesNoOptions = ["Sim", "Não"];
 const fixedOptionGroups = new Set(["visited", "bought"]);
-let options = createEmptyOptions();
+const nativeYesNoOptions = ["Sim", "Não"];
+const defaultOptions = {
+  channel: ["WhatsApp", "Instagram", "Facebook", "Ligação"],
+  campaign: ["Orgânico", "Anúncio", "Indicação"],
+  conversationStart: ["Preço", "Consulta", "Armação", "Lente"],
+  conclusion: ["Aguardando", "Retornar", "Finalizado"],
+  visited: nativeYesNoOptions,
+  bought: nativeYesNoOptions,
+};
 
-let session = null;
+let options = cloneOptions(defaultOptions);
 let currentProfile = null;
 let activeStoreContext = null;
 let stores = [];
 let leads = [];
-let realtimeChannel = null;
-let realtimeReloadTimer = null;
-const realtimePendingTables = new Set();
+let users = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
-let selectedValues = {
-  channel: "",
-  campaign: "",
-  conversationStart: "",
-  conclusion: "",
-  visited: "",
-  bought: "",
-};
+let selectedValues = createEmptySelection();
 
-const authScreen = document.querySelector("#authScreen");
-const appView = document.querySelector("#appView");
-const adminView = document.querySelector("#adminView");
-const storeView = document.querySelector("#storeView");
-const sessionRole = document.querySelector("#sessionRole");
-const logoutButton = document.querySelector("#logoutButton");
-const backAdminButton = document.querySelector("#backAdminButton");
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
-const loginForm = document.querySelector("#loginForm");
-const signupForm = document.querySelector("#signupForm");
-const authMessage = document.querySelector("#authMessage");
-const authTabs = document.querySelectorAll("[data-auth-tab]");
-const passwordToggleButtons = document.querySelectorAll("[data-toggle-password]");
-const loginNick = document.querySelector("#loginNick");
-const loginPassword = document.querySelector("#loginPassword");
-const signupName = document.querySelector("#signupName");
-const signupNick = document.querySelector("#signupNick");
-const signupPassword = document.querySelector("#signupPassword");
-
-const storeForm = document.querySelector("#storeForm");
-const storeName = document.querySelector("#storeName");
-const storeNick = document.querySelector("#storeNick");
-const storePassword = document.querySelector("#storePassword");
-const storeMessage = document.querySelector("#storeMessage");
-const storeEmptyState = document.querySelector("#storeEmptyState");
-const storeList = document.querySelector("#storeList");
-const adminOptionsList = document.querySelector("#adminOptionsList");
-const adminOptionsMessage = document.querySelector("#adminOptionsMessage");
-const analyticsToggle = document.querySelector("#analyticsToggle");
-const analyticsToggleLabel = document.querySelector("#analyticsToggleLabel");
-const analyticsContent = document.querySelector("#analyticsContent");
-const analyticsStoreFilter = document.querySelector("#analyticsStoreFilter");
-const analyticsDateModeButtons = document.querySelectorAll("[data-analytics-date-mode]");
-const analyticsSingleDate = document.querySelector("#analyticsSingleDate");
-const analyticsStartDate = document.querySelector("#analyticsStartDate");
-const analyticsEndDate = document.querySelector("#analyticsEndDate");
-const analyticsSingleDateField = document.querySelector(".analytics-single-date");
-const analyticsRangeDateFields = document.querySelectorAll(".analytics-range-date");
-const analyticsQuickRangeButtons = document.querySelectorAll("[data-analytics-range]");
-
-const form = document.querySelector("#leadForm");
-const formTitle = document.querySelector("#formTitle");
-const submitButton = document.querySelector("#submitButton");
-const formMessage = document.querySelector("#formMessage");
-const clearFormButton = document.querySelector("#clearForm");
-const cancelEditButton = document.querySelector("#cancelEdit");
-const toggleOptionsEditButton = document.querySelector("#toggleOptionsEdit");
-const editingIdInput = document.querySelector("#editingId");
-const nameInput = document.querySelector("#name");
-const phoneInput = document.querySelector("#phone");
-const searchInput = document.querySelector("#search");
-const filtersPanel = document.querySelector("#filtersPanel");
-const toggleFiltersButton = document.querySelector("#toggleFilters");
-const channelFilter = document.querySelector("#channelFilter");
-const campaignFilter = document.querySelector("#campaignFilter");
-const conversationStartFilter = document.querySelector("#conversationStartFilter");
-const conclusionFilter = document.querySelector("#conclusionFilter");
-const visitedFilter = document.querySelector("#visitedFilter");
-const boughtFilter = document.querySelector("#boughtFilter");
-const startDateFilter = document.querySelector("#startDateFilter");
-const endDateFilter = document.querySelector("#endDateFilter");
-const clearFiltersButton = document.querySelector("#clearFilters");
-const emptyState = document.querySelector("#emptyState");
-const leadList = document.querySelector("#leadList");
-const storeOptionsPanel = document.querySelector("#storeOptionsPanel");
-const storeOptionsList = document.querySelector("#storeOptionsList");
-const storeOptionsMessage = document.querySelector("#storeOptionsMessage");
-const unsavedOptionsModal = document.querySelector("#unsavedOptionsModal");
-const unsavedCancel = document.querySelector("#unsavedCancel");
-const unsavedDiscard = document.querySelector("#unsavedDiscard");
-const unsavedSave = document.querySelector("#unsavedSave");
+const authScreen = $("#authScreen");
+const appView = $("#appView");
+const adminView = $("#adminView");
+const storeView = $("#storeView");
+const sessionRole = $("#sessionRole");
+const logoutButton = $("#logoutButton");
+const backAdminButton = $("#backAdminButton");
+const loginForm = $("#loginForm");
+const signupForm = $("#signupForm");
+const authMessage = $("#authMessage");
+const loginNick = $("#loginNick");
+const loginPassword = $("#loginPassword");
+const signupName = $("#signupName");
+const signupNick = $("#signupNick");
+const signupPassword = $("#signupPassword");
+const storeForm = $("#storeForm");
+const storeName = $("#storeName");
+const storeNick = $("#storeNick");
+const storePassword = $("#storePassword");
+const storeMessage = $("#storeMessage");
+const storeEmptyState = $("#storeEmptyState");
+const storeList = $("#storeList");
+const adminOptionsList = $("#adminOptionsList");
+const adminOptionsMessage = $("#adminOptionsMessage");
+const analyticsToggle = $("#analyticsToggle");
+const analyticsToggleLabel = $("#analyticsToggleLabel");
+const analyticsContent = $("#analyticsContent");
+const analyticsStoreFilter = $("#analyticsStoreFilter");
+const analyticsSingleDate = $("#analyticsSingleDate");
+const analyticsStartDate = $("#analyticsStartDate");
+const analyticsEndDate = $("#analyticsEndDate");
+const analyticsSingleDateField = $(".analytics-single-date");
+const analyticsRangeDateFields = $$(".analytics-range-date");
+const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
+const analyticsQuickRangeButtons = $$("[data-analytics-range]");
+const form = $("#leadForm");
+const formTitle = $("#formTitle");
+const submitButton = $("#submitButton");
+const formMessage = $("#formMessage");
+const clearFormButton = $("#clearForm");
+const cancelEditButton = $("#cancelEdit");
+const toggleOptionsEditButton = $("#toggleOptionsEdit");
+const editingIdInput = $("#editingId");
+const nameInput = $("#name");
+const phoneInput = $("#phone");
+const searchInput = $("#search");
+const filtersPanel = $("#filtersPanel");
+const toggleFiltersButton = $("#toggleFilters");
+const channelFilter = $("#channelFilter");
+const campaignFilter = $("#campaignFilter");
+const conversationStartFilter = $("#conversationStartFilter");
+const conclusionFilter = $("#conclusionFilter");
+const visitedFilter = $("#visitedFilter");
+const boughtFilter = $("#boughtFilter");
+const startDateFilter = $("#startDateFilter");
+const endDateFilter = $("#endDateFilter");
+const clearFiltersButton = $("#clearFilters");
+const emptyState = $("#emptyState");
+const leadList = $("#leadList");
+const storeOptionsPanel = $("#storeOptionsPanel");
+const storeOptionsList = $("#storeOptionsList");
+const storeOptionsMessage = $("#storeOptionsMessage");
+const unsavedOptionsModal = $("#unsavedOptionsModal");
+const unsavedCancel = $("#unsavedCancel");
+const unsavedDiscard = $("#unsavedDiscard");
+const unsavedSave = $("#unsavedSave");
 
 document.addEventListener("DOMContentLoaded", init);
 
-async function init() {
+function init() {
   setTodayLabel();
   bindEvents();
-  await restoreSession();
+  showAuth();
+  renderAll();
 }
 
 function bindEvents() {
-  authTabs.forEach((tab) => {
+  $$("[data-auth-tab]").forEach((tab) => {
     tab.addEventListener("click", () => setAuthTab(tab.dataset.authTab));
   });
 
-  passwordToggleButtons.forEach((button) => {
+  $$("[data-toggle-password]").forEach((button) => {
     button.addEventListener("click", () => togglePassword(button));
   });
 
@@ -158,7 +149,6 @@ function bindEvents() {
       guardUnsavedOptions(toggleStoreOptionsMode);
       return;
     }
-
     toggleStoreOptionsMode();
   });
   phoneInput.addEventListener("input", () => {
@@ -175,166 +165,86 @@ function bindEvents() {
     boughtFilter,
     startDateFilter,
     endDateFilter,
-  ].forEach((element) => {
-    element.addEventListener("input", renderLeadList);
-  });
+  ].forEach((element) => element.addEventListener("input", renderLeadList));
 
   toggleFiltersButton.addEventListener("click", toggleFilters);
   clearFiltersButton.addEventListener("click", clearFilters);
-
-  leadList.addEventListener("click", (event) => {
-    const actionButton = event.target.closest("[data-action]");
-    if (!actionButton) return;
-
-    if (actionButton.dataset.action === "edit") guardUnsavedOptions(() => editLead(actionButton.dataset.id));
-    if (actionButton.dataset.action === "delete") deleteLead(actionButton.dataset.id);
-  });
-
-  storeList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-store-login]");
-    if (!button) return;
-
-    guardUnsavedOptions(() => enterStoreContext(button.dataset.storeLogin));
-  });
-
-  window.addEventListener("beforeunload", (event) => {
-    if (!hasUnsavedOptions()) return;
-    event.preventDefault();
-    event.returnValue = "";
-  });
+  leadList.addEventListener("click", handleLeadListClick);
+  storeList.addEventListener("click", handleStoreListClick);
 }
 
-async function restoreSession() {
-  const { data, error } = await supabaseClient.auth.getSession();
-  if (error) {
-    showAuthMessage("Não foi possível carregar a sessão.");
+function handleAdminSignup(event) {
+  event.preventDefault();
+  clearAuthMessage();
+
+  const username = normalizeNick(signupNick.value);
+  if (!username) {
+    showAuthMessage("Digite um nick válido.");
     return;
   }
 
-  if (!data.session) {
-    showAuth();
+  if (users.some((user) => user.role === "admin")) {
+    showAuthMessage("Admin temporário já existe nesta aba.");
     return;
   }
 
-  session = data.session;
-  currentProfile = await loadCurrentProfile();
+  const admin = {
+    id: createId(),
+    username,
+    password: signupPassword.value,
+    fullName: signupName.value.trim() || username,
+    role: "admin",
+    storeId: null,
+  };
 
-  if (!currentProfile) {
-    showAuth();
-    return;
-  }
-
-  await openSession(data.session);
+  users.push(admin);
+  signupForm.reset();
+  openProfile(admin);
 }
 
-async function openSession(activeSession) {
-  session = activeSession;
-  currentProfile = currentProfile || (await loadCurrentProfile());
-  if (!currentProfile) {
-    showAuth();
-    showAuthMessage("Faça login com seu nick.");
+function handleLogin(event) {
+  event.preventDefault();
+  clearAuthMessage();
+
+  const username = normalizeNick(loginNick.value);
+  const matchedUser = users.find((user) => user.username === username && user.password === loginPassword.value);
+
+  if (!matchedUser) {
+    showAuthMessage("Login temporário não encontrado. Crie um admin nesta aba.");
     return;
   }
+
+  openProfile(matchedUser);
+}
+
+function openProfile(profile) {
+  currentProfile = profile;
   authScreen.hidden = true;
   appView.hidden = false;
 
-  if (currentProfile.role === "admin") {
+  if (profile.role === "admin") {
     activeStoreContext = null;
-    sessionRole.textContent = `Admin · ${currentProfile.username}`;
+    sessionRole.textContent = `Admin · ${profile.username}`;
     backAdminButton.hidden = true;
     adminView.hidden = false;
     storeView.hidden = true;
-    await loadOptions();
-    await loadAdminDashboard();
-    setupRealtimeSubscriptions();
+    renderAll();
     return;
   }
 
-  sessionRole.textContent = `Loja · ${currentProfile.store_name || currentProfile.username}`;
+  activeStoreContext = stores.find((store) => store.id === profile.storeId) || null;
+  sessionRole.textContent = `Loja · ${activeStoreContext?.name || profile.username}`;
   backAdminButton.hidden = true;
   adminView.hidden = true;
   storeView.hidden = false;
-  await loadOptions();
-  await loadLeads();
-  setupRealtimeSubscriptions();
+  renderAll();
 }
 
-async function ensureAnonymousSession() {
-  const { data: currentData } = await supabaseClient.auth.getSession();
-  if (currentData.session) {
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
-
-    if (!userError && userData.user) {
-      session = currentData.session;
-      return currentData.session;
-    }
-
-    await supabaseClient.auth.signOut();
-  }
-
-  const { data, error } = await supabaseClient.auth.signInAnonymously();
-  if (error || !data.session) {
-    showAuthMessage("Habilite Anonymous sign-ins no Supabase Auth.");
-    return null;
-  }
-
-  session = data.session;
-  return data.session;
-}
-
-async function loadCurrentProfile() {
-  const { data, error } = await supabaseClient.rpc("app_current_profile");
-
-  if (error) return null;
-
-  return data;
-}
-
-async function loadOptions() {
-  const storeId = getOptionsStoreId();
-  let loadedOptions = await loadOptionsRows(storeId);
-
-  if (storeId && !hasCustomOptionRows(loadedOptions)) {
-    loadedOptions = await loadOptionsRows(null);
-  }
-
-  options = normalizeOptions(loadedOptions);
-  renderChoiceButtons();
-  renderFilters();
-  renderOptionsEditors();
-}
-
-async function saveCurrentOptions(messageTarget) {
-  const storeId = getOptionsStoreId();
-  const normalizedOptions = normalizeOptions(options);
-  const deleteQuery = supabaseClient.from("lead_options").delete();
-  const { error: deleteError } = storeId
-    ? await deleteQuery.eq("store_id", storeId)
-    : await deleteQuery.is("store_id", null);
-
-  if (deleteError) {
-    showOptionsMessage(messageTarget, "Não foi possível atualizar as opções no banco.");
-    return false;
-  }
-
-  const rows = buildOptionRows(normalizedOptions, storeId);
-
-  if (rows.length) {
-    const { error: insertError } = await supabaseClient.from("lead_options").insert(rows);
-
-    if (insertError) {
-      showOptionsMessage(messageTarget, "Não foi possível salvar as opções no banco.");
-      return false;
-    }
-  }
-
-  options = normalizedOptions;
-  dirtyOptionKeys.clear();
-  renderChoiceButtons();
-  renderFilters();
-  renderOptionsEditors();
-  showOptionsMessage(messageTarget, "Opções salvas no banco de dados.", "success");
-  return true;
+function handleLogout() {
+  currentProfile = null;
+  activeStoreContext = null;
+  resetLeadForm();
+  showAuth();
 }
 
 function showAuth() {
@@ -350,877 +260,73 @@ function setAuthTab(tabName) {
   signupForm.hidden = isLogin;
   clearAuthMessage();
 
-  authTabs.forEach((tab) => {
+  $$("[data-auth-tab]").forEach((tab) => {
     tab.classList.toggle("is-active", tab.dataset.authTab === tabName);
   });
 }
 
-async function handleLogin(event) {
-  event.preventDefault();
-  clearAuthMessage();
-
-  if (!normalizeNick(loginNick.value)) {
-    showAuthMessage("Digite um nick válido.");
-    return;
-  }
-
-  const anonymousSession = await ensureAnonymousSession();
-  if (!anonymousSession) {
-    showAuthMessage("Não foi possível iniciar a sessão.");
-    return;
-  }
-
-  const { data, error } = await supabaseClient.rpc("app_login", {
-    login_username: normalizeNick(loginNick.value),
-    login_password: loginPassword.value,
-  });
-
-  if (error) {
-    showAuthMessage(formatAuthError(error));
-    return;
-  }
-
-  currentProfile = data;
-  await openSession(anonymousSession);
-}
-
-async function handleAdminSignup(event) {
-  event.preventDefault();
-  clearAuthMessage();
-
-  if (!normalizeNick(signupNick.value)) {
-    showAuthMessage("Digite um nick válido.");
-    return;
-  }
-
-  const anonymousSession = await ensureAnonymousSession();
-  if (!anonymousSession) {
-    showAuthMessage("Não foi possível iniciar a sessão.");
-    return;
-  }
-
-  const { data, error } = await supabaseClient.rpc("app_create_admin", {
-    admin_name: signupName.value.trim(),
-    admin_username: normalizeNick(signupNick.value),
-    admin_password: signupPassword.value,
-  });
-
-  if (error) {
-    showAuthMessage(formatAuthError(error));
-    return;
-  }
-
-  signupForm.reset();
-  currentProfile = data;
-  await openSession(anonymousSession);
-}
-
-async function handleLogout() {
-  teardownRealtimeSubscriptions();
-  await supabaseClient.rpc("app_logout");
-  await supabaseClient.auth.signOut();
-  session = null;
-  currentProfile = null;
-  activeStoreContext = null;
-  stores = [];
-  leads = [];
-  resetLeadForm();
-  showAuth();
-}
-
-function setupRealtimeSubscriptions() {
-  teardownRealtimeSubscriptions();
-
-  realtimeChannel = supabaseClient
-    .channel("lead-control-db-changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "stores" },
-      () => scheduleRealtimeReload("stores"),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "leads" },
-      () => scheduleRealtimeReload("leads"),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "lead_options" },
-      () => scheduleRealtimeReload("lead_options"),
-    )
-    .subscribe();
-}
-
-function teardownRealtimeSubscriptions() {
-  if (realtimeReloadTimer) {
-    clearTimeout(realtimeReloadTimer);
-    realtimeReloadTimer = null;
-  }
-  realtimePendingTables.clear();
-
-  if (realtimeChannel) {
-    supabaseClient.removeChannel(realtimeChannel);
-    realtimeChannel = null;
-  }
-}
-
-function scheduleRealtimeReload(table) {
-  if (!currentProfile) return;
-
-  realtimePendingTables.add(table);
-  if (realtimeReloadTimer) clearTimeout(realtimeReloadTimer);
-  realtimeReloadTimer = setTimeout(() => {
-    realtimeReloadTimer = null;
-    const tables = [...realtimePendingTables];
-    realtimePendingTables.clear();
-    refreshRealtimeData(tables);
-  }, 250);
-}
-
-async function refreshRealtimeData(tables) {
-  if (tables.includes("lead_options")) {
-    if (!hasUnsavedOptions()) {
-      await loadOptions();
-    }
-  }
-
-  if (currentProfile.role === "admin" && !activeStoreContext) {
-    if (tables.includes("stores")) {
-      await loadStores();
-      renderAnalyticsControls();
-    }
-
-    if (tables.includes("leads")) {
-      await loadAdminLeads();
-      renderAdminStats();
-    }
-    return;
-  }
-
-  if (tables.includes("leads")) {
-    await loadLeads();
-  }
-}
-
-async function loadAdminDashboard() {
-  await Promise.all([loadStores(), loadAdminLeads()]);
-  renderAdminStats();
-}
-
-async function loadStores() {
-  const { data, error } = await supabaseClient
-    .from("stores")
-    .select("id,name,username,created_at")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    showStoreMessage("Não foi possível carregar as lojas.");
-    return;
-  }
-
-  stores = data || [];
-  renderStoreList();
-}
-
-async function loadAdminLeads() {
-  const { data, error } = await supabaseClient
-    .from("leads")
-    .select(
-      "id,store_id,name,phone,channel,campaign,conversation_start,conclusion,visited,bought,created_at,updated_at,stores(name)",
-    )
-    .order("created_at", { ascending: false });
-
-  leads = error ? [] : (data || []).map(mapLeadFromDb);
-}
-
-async function handleCreateStore(event) {
+function handleCreateStore(event) {
   event.preventDefault();
   clearStoreMessage();
 
-  const name = storeName.value.trim();
+  if (!currentProfile || currentProfile.role !== "admin") return;
+
   const username = normalizeNick(storeNick.value);
-
-  if (!name) {
-    showStoreMessage("Digite o nome da loja.");
-    return;
-  }
-
   if (!username) {
-    showStoreMessage("Digite um identificador válido para a loja.");
+    showStoreMessage("Digite um nick válido para a loja.");
     return;
   }
 
-  const { error } = await supabaseClient.rpc("app_create_store", {
-    store_name: name,
-    store_username: username,
-    store_password: storePassword.value,
-  });
-
-  if (error) {
-    showStoreMessage(
-      error.message?.includes("duplicate") || error.message?.includes("existe")
-        ? "Já existe uma loja com esse nick."
-        : "Não foi possível criar a loja.",
-    );
+  if (users.some((user) => user.username === username)) {
+    showStoreMessage("Esse nick já existe nesta aba.");
     return;
   }
 
-  storeForm.reset();
-  showStoreMessage("Loja e login salvos no banco de dados.", "success");
-  await loadAdminDashboard();
-}
-
-function renderAdminStats() {
-  const bought = leads.filter((lead) => isPositiveAnswer(lead.bought)).length;
-  const conversion = leads.length ? Math.round((bought / leads.length) * 100) : 0;
-
-  document.querySelector("#totalStores").textContent = stores.length;
-  document.querySelector("#adminTotalLeads").textContent = leads.length;
-  document.querySelector("#adminSalesCount").textContent = bought;
-  document.querySelector("#adminConversionRate").textContent = `${conversion}%`;
-  document.querySelector("#todayCount").textContent = pluralize(leads.length, "lead");
-  renderAnalyticsControls();
-  renderAdminAnalytics();
-}
-
-function toggleAnalytics() {
-  const isOpening = analyticsContent.hidden;
-  analyticsContent.hidden = !isOpening;
-  analyticsToggle.setAttribute("aria-expanded", String(isOpening));
-  analyticsToggleLabel.textContent = isOpening ? "Ocultar análise" : "Mostrar análise";
-}
-
-function renderAnalyticsControls() {
-  const currentStore = analyticsStoreFilter.value;
-  analyticsStoreFilter.innerHTML = `<option value="">Todas as lojas</option>`;
-  analyticsStoreFilter.innerHTML += stores
-    .map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`)
-    .join("");
-  analyticsStoreFilter.value = stores.some((store) => store.id === currentStore) ? currentStore : "";
-}
-
-function setAnalyticsDateMode(mode) {
-  const nextMode = mode === "range" ? "range" : "single";
-
-  analyticsDateModeButtons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.analyticsDateMode === nextMode);
-  });
-
-  analyticsSingleDateField.hidden = nextMode !== "single";
-  analyticsRangeDateFields.forEach((field) => {
-    field.hidden = nextMode !== "range";
-  });
-
-  renderAdminAnalytics();
-}
-
-function setAnalyticsQuickRange(range) {
-  setAnalyticsDateMode("range");
-
-  const today = new Date();
-  const start = new Date(today);
-
-  if (range === "week") {
-    const day = start.getDay();
-    const distanceFromMonday = day === 0 ? 6 : day - 1;
-    start.setDate(start.getDate() - distanceFromMonday);
-  }
-
-  if (range === "month") {
-    start.setDate(1);
-  }
-
-  if (range === "year") {
-    start.setMonth(0, 1);
-  }
-
-  analyticsStartDate.value = formatInputDate(start);
-  analyticsEndDate.value = formatInputDate(today);
-  renderAdminAnalytics();
-}
-
-function renderAdminAnalytics() {
-  const filteredLeads = getAnalyticsFilteredLeads();
-  const total = filteredLeads.length;
-  const visited = filteredLeads.filter((lead) => isPositiveAnswer(lead.visited)).length;
-  const bought = filteredLeads.filter((lead) => isPositiveAnswer(lead.bought)).length;
-  const conversion = total ? Math.round((bought / total) * 100) : 0;
-
-  document.querySelector("#analyticsTotalLeads").textContent = total;
-  document.querySelector("#analyticsVisitedLeads").textContent = visited;
-  document.querySelector("#analyticsBoughtLeads").textContent = bought;
-  document.querySelector("#analyticsConversionRate").textContent = `${conversion}%`;
-
-  renderAnalyticsMetricCharts({ total, visited, bought });
-
-  renderMetricRanking({
-    containerId: "campaignRanking",
-    topLabelId: "topCampaignLabel",
-    rows: buildMetricRanking(filteredLeads, (lead) => lead.campaign),
-    emptyLabel: "Nenhuma campanha no filtro",
-  });
-  renderMetricRanking({
-    containerId: "storeRanking",
-    topLabelId: "topStoreLabel",
-    rows: buildMetricRanking(filteredLeads, getLeadStoreName),
-    emptyLabel: "Nenhuma loja no filtro",
-  });
-  renderMetricRanking({
-    containerId: "conversationStartRanking",
-    topLabelId: "topStartLabel",
-    rows: buildMetricRanking(filteredLeads, (lead) => lead.conversationStart),
-    emptyLabel: "Nenhum início no filtro",
-  });
-  renderMetricRanking({
-    containerId: "conclusionRanking",
-    topLabelId: "topConclusionLabel",
-    rows: buildMetricRanking(filteredLeads, (lead) => lead.conclusion),
-    emptyLabel: "Nenhum fim no filtro",
-  });
-  renderMetricRanking({
-    containerId: "visitedRanking",
-    topLabelId: "topVisitedLabel",
-    rows: buildMetricRanking(filteredLeads, (lead) => lead.visited || "Sem resposta"),
-    emptyLabel: "Nenhuma visita no filtro",
-    compact: true,
-  });
-  renderMetricRanking({
-    containerId: "boughtRanking",
-    topLabelId: "topBoughtLabel",
-    rows: buildMetricRanking(filteredLeads, (lead) => lead.bought || "Sem resposta"),
-    emptyLabel: "Nenhuma compra no filtro",
-    compact: true,
-  });
-}
-
-function getAnalyticsFilteredLeads() {
-  const selectedStoreId = analyticsStoreFilter.value;
-  const dateMode = getAnalyticsDateMode();
-
-  return leads.filter((lead) => {
-    const leadDate = getDateOnly(lead.createdAt);
-    const matchesStore = !selectedStoreId || lead.storeId === selectedStoreId;
-    const matchesSingleDate =
-      dateMode !== "single" || !analyticsSingleDate.value || leadDate === analyticsSingleDate.value;
-    const matchesStartDate =
-      dateMode !== "range" || !analyticsStartDate.value || leadDate >= analyticsStartDate.value;
-    const matchesEndDate =
-      dateMode !== "range" || !analyticsEndDate.value || leadDate <= analyticsEndDate.value;
-
-    return matchesStore && matchesSingleDate && matchesStartDate && matchesEndDate;
-  });
-}
-
-function getAnalyticsDateMode() {
-  const activeButton = [...analyticsDateModeButtons].find((button) =>
-    button.classList.contains("is-active"),
-  );
-
-  return activeButton?.dataset.analyticsDateMode || "single";
-}
-
-function buildMetricRanking(items, labelGetter) {
-  const grouped = new Map();
-
-  items.forEach((lead) => {
-    const label = String(labelGetter(lead) || "Sem resposta").trim() || "Sem resposta";
-    const current = grouped.get(label) || { label, count: 0, visited: 0, bought: 0 };
-    current.count += 1;
-    if (isPositiveAnswer(lead.visited)) current.visited += 1;
-    if (isPositiveAnswer(lead.bought)) current.bought += 1;
-    grouped.set(label, current);
-  });
-
-  return [...grouped.values()]
-    .map((row) => ({
-      ...row,
-      conversion: row.count ? Math.round((row.bought / row.count) * 100) : 0,
-    }))
-    .sort((first, second) => second.count - first.count || first.label.localeCompare(second.label));
-}
-
-function renderMetricRanking({ containerId, topLabelId, rows, emptyLabel, compact = false }) {
-  const container = document.querySelector(`#${containerId}`);
-  const topLabel = document.querySelector(`#${topLabelId}`);
-  const maxCount = rows[0]?.count || 0;
-
-  topLabel.textContent = rows[0]
-    ? `${rows[0].label} · ${pluralize(rows[0].count, "lead")}`
-    : "Sem dados";
-
-  if (!rows.length) {
-    container.innerHTML = `<div class="ranking-empty">${emptyLabel}</div>`;
-    return;
-  }
-
-  container.innerHTML = rows
-    .map((row, index) => {
-      const width = maxCount ? Math.max(8, Math.round((row.count / maxCount) * 100)) : 0;
-      const detail = compact
-        ? `${pluralize(row.count, "lead")}`
-        : `${pluralize(row.count, "lead")} · ${row.visited} visitas · ${row.bought} compras · ${row.conversion}%`;
-
-      return `
-        <div class="ranking-row">
-          <div class="ranking-row-top">
-            <span>${String(index + 1).padStart(2, "0")} · ${escapeHtml(row.label)}</span>
-            <strong>${escapeHtml(detail)}</strong>
-          </div>
-          <div class="bar-track" aria-hidden="true">
-            <span class="bar-fill" style="width: ${width}%"></span>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function renderAnalyticsMetricCharts({ total, visited, bought }) {
-  const visitRate = total ? Math.round((visited / total) * 100) : 0;
-  const buyRate = total ? Math.round((bought / total) * 100) : 0;
-  const visitorCloseRate = visited ? Math.round((bought / visited) * 100) : 0;
-
-  document.querySelector("#analyticsFunnelLabel").textContent = total
-    ? `${pluralize(total, "lead")} no filtro`
-    : "Sem dados";
-  document.querySelector("#analyticsRatesLabel").textContent = total
-    ? `${buyRate}% de conversão`
-    : "Sem dados";
-
-  renderMetricBars("analyticsFunnelChart", [
-    { label: "Leads", value: total, width: 100, detail: pluralize(total, "lead") },
-    { label: "Visitas", value: visited, width: visitRate, detail: `${visited} visitas` },
-    { label: "Compras", value: bought, width: buyRate, detail: `${bought} compras` },
-  ]);
-
-  renderMetricBars("analyticsRatesChart", [
-    { label: "Visita sobre leads", value: visitRate, width: visitRate, detail: `${visitRate}%` },
-    { label: "Compra sobre leads", value: buyRate, width: buyRate, detail: `${buyRate}%` },
-    {
-      label: "Compra após visita",
-      value: visitorCloseRate,
-      width: visitorCloseRate,
-      detail: `${visitorCloseRate}%`,
-    },
-  ]);
-}
-
-function renderMetricBars(containerId, rows) {
-  const container = document.querySelector(`#${containerId}`);
-
-  if (!rows.some((row) => row.value > 0)) {
-    container.innerHTML = `<div class="ranking-empty compact-empty">Sem dados para o gráfico</div>`;
-    return;
-  }
-
-  container.innerHTML = rows
-    .map((row) => {
-      const width = Math.max(row.value > 0 ? 6 : 0, Math.min(row.width, 100));
-
-      return `
-        <div class="metric-bar-row">
-          <div class="metric-bar-top">
-            <span>${escapeHtml(row.label)}</span>
-            <strong>${escapeHtml(row.detail)}</strong>
-          </div>
-          <div class="metric-bar-track" aria-hidden="true">
-            <span class="metric-bar-fill" style="width: ${width}%"></span>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function getLeadStoreName(lead) {
-  return lead.storeName || stores.find((store) => store.id === lead.storeId)?.name || "Sem loja";
-}
-
-function renderStoreList() {
-  storeEmptyState.style.display = stores.length ? "none" : "grid";
-  storeList.innerHTML = stores
-    .map((store) => {
-      return `
-        <article class="lead-card">
-          <div class="lead-card-header">
-            <div class="lead-person">
-              <strong>${escapeHtml(store.name)}</strong>
-              <span>Nick: ${escapeHtml(store.username)} · criada em ${formatShortDate(store.created_at)}</span>
-            </div>
-            <div class="lead-actions">
-              <button class="mini-button" type="button" data-store-login="${store.id}">Entrar na loja</button>
-              <span class="badge green">Loja ativa</span>
-            </div>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-async function enterStoreContext(storeId) {
-  const store = stores.find((item) => item.id === storeId);
-  if (!store) return;
-
-  activeStoreContext = {
-    id: store.id,
-    name: store.name,
+  const store = {
+    id: createId(),
+    name: storeName.value.trim(),
+    username,
+    createdAt: new Date().toISOString(),
   };
-  sessionRole.textContent = `Admin na loja · ${store.name}`;
-  backAdminButton.hidden = false;
-  adminView.hidden = true;
-  storeView.hidden = false;
-  resetLeadForm();
-  await loadOptions();
-  await loadLeads();
+  const storeUser = {
+    id: createId(),
+    username,
+    password: storePassword.value,
+    fullName: store.name,
+    role: "store",
+    storeId: store.id,
+  };
+
+  stores.push(store);
+  users.push(storeUser);
+  storeForm.reset();
+  showStoreMessage("Loja temporária criada nesta aba.", "success");
+  renderAll();
 }
 
-async function returnToAdmin() {
-  activeStoreContext = null;
-  resetLeadForm();
-  sessionRole.textContent = `Admin · ${currentProfile.username}`;
-  backAdminButton.hidden = true;
-  storeView.hidden = true;
-  adminView.hidden = false;
-  await loadOptions();
-  await loadAdminDashboard();
-}
-
-function renderOptionsEditors() {
-  if (currentProfile?.role === "admin") {
-    adminOptionsList.innerHTML = renderOptionsEditor("admin");
-  }
-
-  if (currentProfile?.role === "store" || activeStoreContext) {
-    storeOptionsList.innerHTML = renderOptionsEditor("store");
-  }
-}
-
-function renderOptionsEditor(scope) {
-  return optionGroups
-    .map((group) => {
-      const items = options[group] || [];
-      const isFixedGroup = fixedOptionGroups.has(group);
-      const rows = isFixedGroup
-        ? nativeYesNoOptions
-            .map((item) => `<span class="fixed-option">${escapeHtml(item)}</span>`)
-            .join("")
-        : items.length
-          ? items
-              .map(
-                (item, index) => `
-                  <div class="option-row">
-                    <input value="${escapeHtml(item)}" data-original-value="${escapeHtml(item)}" data-option-input="${scope}" data-group="${group}" data-index="${index}" />
-                    <button class="mini-button option-save-button" type="button" data-option-action="save" data-scope="${scope}" data-group="${group}" data-index="${index}" hidden>Salvar</button>
-                    <button class="mini-button danger" type="button" data-option-action="delete" data-scope="${scope}" data-group="${group}" data-index="${index}">Excluir</button>
-                  </div>
-                `,
-              )
-              .join("")
-          : `<div class="option-empty">Nada cadastrado.</div>`;
-
-      return `
-        <section class="option-group">
-          <div class="section-title">
-            <h3>${labels[group]}</h3>
-          </div>
-          <div class="${isFixedGroup ? "fixed-option-list" : "option-list"}">${rows}</div>
-          ${
-            isFixedGroup
-              ? ""
-              : `
-                <div class="option-add">
-                  <input placeholder="Nova opção" data-option-new="${scope}" data-group="${group}" />
-                  <button class="secondary-button" type="button" data-option-action="add" data-scope="${scope}" data-group="${group}">Adicionar</button>
-                </div>
-              `
-          }
-        </section>
-      `;
-    })
-    .join("");
-}
-
-async function handleOptionsEditorClick(event) {
-  const button = event.target.closest("[data-option-action]");
+function handleStoreListClick(event) {
+  const button = event.target.closest("[data-store-login]");
   if (!button) return;
 
-  const { action, group, scope } = button.dataset.optionAction
-    ? {
-        action: button.dataset.optionAction,
-        group: button.dataset.group,
-        scope: button.dataset.scope,
-      }
-    : {};
-  const messageTarget = scope === "admin" ? "admin" : "store";
-  clearOptionsMessage(messageTarget);
-
-  if (fixedOptionGroups.has(group)) return;
-
-  if (action === "add") {
-    const input = document.querySelector(`[data-option-new="${scope}"][data-group="${group}"]`);
-    const value = input.value.trim();
-    if (!value) {
-      showOptionsMessage(messageTarget, "Digite uma opção antes de adicionar.");
-      return;
-    }
-
-    options[group] = [...(options[group] || []), value];
-    input.value = "";
-  }
-
-  if (action === "save") {
-    const index = Number(button.dataset.index);
-    const input = document.querySelector(
-      `[data-option-input="${scope}"][data-group="${group}"][data-index="${index}"]`,
-    );
-    const value = input.value.trim();
-    if (!value) {
-      showOptionsMessage(messageTarget, "A opção não pode ficar vazia.");
-      return;
-    }
-
-    options[group][index] = value;
-    clearDirtyOption(button.dataset.scope, group, index);
-  }
-
-  if (action === "delete") {
-    const index = Number(button.dataset.index);
-    options[group] = (options[group] || []).filter((_, itemIndex) => itemIndex !== index);
-    clearDirtyOption(button.dataset.scope, group, index);
-
-    if (selectedValues[group] && !options[group].includes(selectedValues[group])) {
-      selectedValues[group] = "";
-    }
-  }
-
-  if (!collectDirtyOptionInputs()) {
-    showOptionsMessage(messageTarget, "A opção não pode ficar vazia.");
-    return;
-  }
-
-  options = normalizeOptions(options);
-  renderChoiceButtons();
-  renderFilters();
-  renderOptionsEditors();
-  showOptionsMessage(messageTarget, "Salvando...", "success");
-
-  const saved = await saveCurrentOptions(messageTarget);
-  if (!saved) await loadOptions();
+  const user = users.find((item) => item.role === "store" && item.storeId === button.dataset.storeLogin);
+  if (user) guardUnsavedOptions(() => openProfile(user));
 }
 
-function handleOptionsEditorInput(event) {
-  const input = event.target.closest("[data-option-input]");
-  if (!input) return;
-
-  const { group, index } = input.dataset;
-  if (fixedOptionGroups.has(group)) return;
-
-  const key = getDirtyOptionKey(input.dataset.optionInput, group, index);
-  const saveButton = document.querySelector(
-    `[data-option-action="save"][data-scope="${input.dataset.optionInput}"][data-group="${group}"][data-index="${index}"]`,
-  );
-  const isDirty = input.value.trim() !== input.dataset.originalValue;
-
-  if (isDirty) {
-    dirtyOptionKeys.add(key);
-  } else {
-    dirtyOptionKeys.delete(key);
-  }
-
-  if (saveButton) saveButton.hidden = !isDirty;
+function returnToAdmin() {
+  const admin = users.find((user) => user.role === "admin");
+  if (admin) openProfile(admin);
 }
 
-function getDirtyOptionKey(scope, group, index) {
-  return `${scope}:${group}:${index}`;
-}
-
-function clearDirtyOption(scope, group, index) {
-  dirtyOptionKeys.delete(getDirtyOptionKey(scope, group, index));
-}
-
-function hasUnsavedOptions() {
-  return dirtyOptionKeys.size > 0;
-}
-
-function collectDirtyOptionInputs() {
-  let isValid = true;
-
-  document.querySelectorAll("[data-option-input]").forEach((input) => {
-    const { group, index } = input.dataset;
-    if (!dirtyOptionKeys.has(getDirtyOptionKey(input.dataset.optionInput, group, index))) return;
-
-    const value = input.value.trim();
-    if (!value) {
-      isValid = false;
-      input.focus();
-      return;
-    }
-    options[group][Number(index)] = value;
-  });
-
-  return isValid;
-}
-
-function getActiveOptionsMessageTarget() {
-  return currentProfile?.role === "admin" && !activeStoreContext ? "admin" : "store";
-}
-
-function guardUnsavedOptions(action) {
-  if (!hasUnsavedOptions()) {
-    action();
-    return;
-  }
-
-  pendingUnsavedAction = action;
-  unsavedOptionsModal.hidden = false;
-}
-
-function closeUnsavedOptionsModal() {
-  pendingUnsavedAction = null;
-  unsavedOptionsModal.hidden = true;
-}
-
-async function discardUnsavedOptionsAndContinue() {
-  const action = pendingUnsavedAction;
-  dirtyOptionKeys.clear();
-  pendingUnsavedAction = null;
-  unsavedOptionsModal.hidden = true;
-  await loadOptions();
-  if (action) action();
-}
-
-async function saveUnsavedOptionsAndContinue() {
-  const action = pendingUnsavedAction;
-  const target = getActiveOptionsMessageTarget();
-  if (!collectDirtyOptionInputs()) {
-    showOptionsMessage(target, "A opção não pode ficar vazia.");
-    return;
-  }
-  const saved = await saveCurrentOptions(target);
-  if (!saved) return;
-
-  dirtyOptionKeys.clear();
-  pendingUnsavedAction = null;
-  unsavedOptionsModal.hidden = true;
-  if (action) action();
-}
-
-async function loadLeads() {
-  let query = supabaseClient
-    .from("leads")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const activeStoreId = getActiveStoreId();
-  if (activeStoreId) {
-    query = query.eq("store_id", activeStoreId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    showLeadMessage("Não foi possível carregar os leads.");
-    return;
-  }
-
-  leads = (data || []).map(mapLeadFromDb);
-  renderLeadApp();
-}
-
-function renderChoiceButtons() {
-  document.querySelectorAll("[data-choice-group]").forEach((container) => {
-    const group = container.dataset.choiceGroup;
-    const groupOptions = options[group] || [];
-
-    if (!groupOptions.length) {
-      container.innerHTML = `<div class="choice-empty">Nenhuma opção cadastrada.</div>`;
-      return;
-    }
-
-    container.innerHTML = groupOptions
-      .map(
-        (option) => `
-          <button class="choice-button" type="button" data-choice="${group}" data-value="${option}">
-            ${escapeHtml(option)}
-          </button>
-        `,
-      )
-      .join("");
-
-    container.onclick = (event) => {
-      const button = event.target.closest("[data-choice]");
-      if (!button) return;
-
-      selectedValues[group] =
-        (group === "bought" || group === "visited") && selectedValues[group] === button.dataset.value
-          ? ""
-          : button.dataset.value;
-      renderSelectedChoice(group);
-      clearLeadMessage();
-    };
-  });
-}
-
-function renderFilters() {
-  renderSelectOptions(channelFilter, options.channel, "Todos");
-  renderSelectOptions(campaignFilter, options.campaign, "Todos");
-  renderSelectOptions(conversationStartFilter, options.conversationStart, "Todos");
-  renderSelectOptions(conclusionFilter, options.conclusion, "Todos");
-  renderSelectOptions(visitedFilter, options.visited, "Todos", true);
-  renderSelectOptions(boughtFilter, options.bought, "Todos", true);
-}
-
-function renderSelectOptions(select, values, defaultLabel, includeEmptyOption = false) {
-  const currentValue = select.value;
-  select.innerHTML = `<option value="">${defaultLabel}</option>`;
-  select.innerHTML += (values || [])
-    .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
-    .join("");
-
-  if (includeEmptyOption) {
-    select.innerHTML += `<option value="sem-resposta">Sem resposta</option>`;
-  }
-
-  select.value = [...select.options].some((option) => option.value === currentValue)
-    ? currentValue
-    : "";
-}
-
-function toggleFilters() {
-  filtersPanel.hidden = !filtersPanel.hidden;
-  toggleFiltersButton.classList.toggle("is-active", !filtersPanel.hidden);
-}
-
-function clearFilters() {
-  [
-    channelFilter,
-    campaignFilter,
-    conversationStartFilter,
-    conclusionFilter,
-    visitedFilter,
-    boughtFilter,
-    startDateFilter,
-    endDateFilter,
-  ].forEach((element) => {
-    element.value = "";
-  });
-
-  renderLeadList();
-}
-
-async function handleLeadSubmit(event) {
+function handleLeadSubmit(event) {
   event.preventDefault();
-  clearLeadMessage();
 
-  const validationMessage = getValidationMessage();
-  if (validationMessage) {
-    showLeadMessage(validationMessage);
+  const store = getActiveStore();
+  if (!store) {
+    showFormMessage("Entre em uma loja para cadastrar leads.");
     return;
   }
 
-  const editingId = editingIdInput.value;
-  const payload = mapLeadToDb({
+  const payload = {
     name: nameInput.value.trim(),
     phone: phoneInput.value.trim(),
     channel: selectedValues.channel,
@@ -1229,165 +335,37 @@ async function handleLeadSubmit(event) {
     conclusion: selectedValues.conclusion,
     visited: selectedValues.visited,
     bought: selectedValues.bought,
-  });
+    storeId: store.id,
+    storeName: store.name,
+    updatedAt: new Date().toISOString(),
+  };
 
-  const request = editingId
-    ? supabaseClient.from("leads").update(payload).eq("id", editingId)
-    : supabaseClient.from("leads").insert({
-        ...payload,
-        store_id: getActiveStoreId(),
-      });
-
-  const { error } = await request;
-
-  if (error) {
-    showLeadMessage("Não foi possível salvar o lead.");
+  if (!payload.name || !payload.phone) {
+    showFormMessage("Preencha nome e telefone.");
     return;
   }
 
-  showLeadMessage(editingId ? "Lead atualizado com sucesso." : "Lead salvo com sucesso.", "success");
-  resetLeadForm({ keepMessage: true });
-  await loadLeads();
-}
-
-function getValidationMessage() {
-  if (!nameInput.value.trim()) return "Preencha o nome do lead.";
-  if (!phoneInput.value.trim()) return "Preencha o telefone do lead.";
-
-  const emptyRequiredGroup = optionGroups.find(
-    (group) => group !== "bought" && group !== "visited" && !(options[group] || []).length,
-  );
-  if (emptyRequiredGroup) {
-    return `Cadastre pelo menos uma opção em ${labels[emptyRequiredGroup]}.`;
+  if (editingIdInput.value) {
+    leads = leads.map((lead) => (lead.id === editingIdInput.value ? { ...lead, ...payload } : lead));
+    showFormMessage("Lead atualizado nesta aba.", "success");
+  } else {
+    leads.unshift({ id: createId(), createdAt: new Date().toISOString(), ...payload });
+    showFormMessage("Lead salvo temporariamente nesta aba.", "success");
   }
 
-  const missingGroup = Object.entries(selectedValues).find(
-    ([group, value]) => group !== "bought" && group !== "visited" && !value,
-  );
-  if (missingGroup) return `Selecione uma opção em ${labels[missingGroup[0]]}.`;
-
-  return "";
+  resetLeadForm();
+  renderAll();
 }
 
-function renderLeadApp() {
-  renderLeadStats();
-  renderLeadList();
-}
+function handleLeadListClick(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button) return;
 
-function renderLeadStats() {
-  const today = new Date().toDateString();
-  const todayLeads = leads.filter((lead) => new Date(lead.createdAt).toDateString() === today);
-  const visited = leads.filter((lead) => isPositiveAnswer(lead.visited)).length;
-  const bought = leads.filter((lead) => isPositiveAnswer(lead.bought)).length;
-  const conversion = leads.length ? Math.round((bought / leads.length) * 100) : 0;
-
-  document.querySelector("#todayCount").textContent = pluralize(todayLeads.length, "lead");
-  document.querySelector("#totalLeads").textContent = leads.length;
-  document.querySelector("#storeVisits").textContent = visited;
-  document.querySelector("#salesCount").textContent = bought;
-  document.querySelector("#conversionRate").textContent = `${conversion}%`;
-}
-
-function renderLeadList() {
-  const filteredLeads = getFilteredLeads();
-
-  emptyState.style.display = filteredLeads.length ? "none" : "grid";
-  leadList.innerHTML = filteredLeads.map(renderLeadCard).join("");
-}
-
-function getFilteredLeads() {
-  const term = normalize(searchInput.value);
-
-  return leads.filter((lead, index) => {
-    const leadNumber = getLeadNumber(index);
-    const matchesSearch =
-      !term ||
-      normalize(`${leadNumber} ${lead.id} ${lead.name} ${lead.phone}`).includes(term);
-    const matchesChannel = !channelFilter.value || lead.channel === channelFilter.value;
-    const matchesCampaign = !campaignFilter.value || lead.campaign === campaignFilter.value;
-    const matchesConversationStart =
-      !conversationStartFilter.value ||
-      lead.conversationStart === conversationStartFilter.value;
-    const matchesConclusion = !conclusionFilter.value || lead.conclusion === conclusionFilter.value;
-    const matchesVisited =
-      !visitedFilter.value ||
-      (visitedFilter.value === "sem-resposta" && !lead.visited) ||
-      lead.visited === visitedFilter.value;
-    const matchesBought =
-      !boughtFilter.value ||
-      (boughtFilter.value === "sem-resposta" && !lead.bought) ||
-      lead.bought === boughtFilter.value;
-    const matchesStartDate =
-      !startDateFilter.value || getDateOnly(lead.createdAt) >= startDateFilter.value;
-    const matchesEndDate =
-      !endDateFilter.value || getDateOnly(lead.createdAt) <= endDateFilter.value;
-
-    return (
-      matchesSearch &&
-      matchesChannel &&
-      matchesCampaign &&
-      matchesConversationStart &&
-      matchesConclusion &&
-      matchesVisited &&
-      matchesBought &&
-      matchesStartDate &&
-      matchesEndDate
-    );
-  });
-}
-
-function renderLeadCard(lead) {
-  const leadNumber = getLeadNumber(leads.findIndex((item) => item.id === lead.id));
-  const visitedLabel = lead.visited || "Sem resposta";
-  const boughtLabel = lead.bought || "Sem resposta";
-  const createdAt = new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(lead.createdAt));
-
-  return `
-    <article class="lead-card">
-      <div class="lead-card-header">
-        <div class="lead-person">
-          <strong>${leadNumber} · ${escapeHtml(lead.name)}</strong>
-          <span>${escapeHtml(lead.phone)} · ${createdAt}</span>
-        </div>
-        <div class="lead-actions">
-          <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
-          <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}">Excluir</button>
-        </div>
-      </div>
-
-      <div class="badge-row">
-        <span class="badge">${escapeHtml(lead.channel)}</span>
-        <span class="badge amber">${escapeHtml(lead.campaign)}</span>
-        <span class="badge ${isPositiveAnswer(lead.visited) ? "green" : "rose"}">Visitou: ${escapeHtml(visitedLabel)}</span>
-        <span class="badge ${isPositiveAnswer(lead.bought) ? "green" : "rose"}">Comprou: ${escapeHtml(boughtLabel)}</span>
-      </div>
-
-      <div class="lead-meta">
-        <div class="meta-item">
-          <span>Início</span>
-          <strong>${escapeHtml(lead.conversationStart)}</strong>
-        </div>
-        <div class="meta-item">
-          <span>Conclusão</span>
-          <strong>${escapeHtml(lead.conclusion)}</strong>
-        </div>
-        <div class="meta-item">
-          <span>Última atualização</span>
-          <strong>${formatShortDate(lead.updatedAt)}</strong>
-        </div>
-      </div>
-    </article>
-  `;
+  if (button.dataset.action === "edit") guardUnsavedOptions(() => editLead(button.dataset.id));
+  if (button.dataset.action === "delete") deleteLead(button.dataset.id);
 }
 
 function editLead(id) {
-  setStoreOptionsMode(false);
   const lead = leads.find((item) => item.id === id);
   if (!lead) return;
 
@@ -1395,120 +373,428 @@ function editLead(id) {
   nameInput.value = lead.name;
   phoneInput.value = lead.phone;
   selectedValues = {
-    channel: lead.channel,
-    campaign: lead.campaign,
-    conversationStart: lead.conversationStart,
-    conclusion: lead.conclusion,
-    visited: lead.visited || null,
-    bought: lead.bought,
+    channel: lead.channel || "",
+    campaign: lead.campaign || "",
+    conversationStart: lead.conversationStart || "",
+    conclusion: lead.conclusion || "",
+    visited: lead.visited || "",
+    bought: lead.bought || "",
   };
-
-  Object.keys(selectedValues).forEach(renderSelectedChoice);
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
-  clearLeadMessage();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  renderChoiceButtons();
 }
 
-async function deleteLead(id) {
-  const lead = leads.find((item) => item.id === id);
-  if (!lead) return;
-
-  const confirmed = window.confirm(`Excluir o lead ${lead.name}?`);
-  if (!confirmed) return;
-
-  const { error } = await supabaseClient.from("leads").delete().eq("id", id);
-
-  if (error) {
-    showLeadMessage("Não foi possível excluir o lead.");
-    return;
-  }
-
-  await loadLeads();
+function deleteLead(id) {
+  leads = leads.filter((lead) => lead.id !== id);
+  renderAll();
 }
 
-function resetLeadForm(config = {}) {
+function resetLeadForm() {
   form.reset();
   editingIdInput.value = "";
-  selectedValues = {
-    channel: "",
-    campaign: "",
-    conversationStart: "",
-    conclusion: "",
-    visited: "",
-    bought: "",
-  };
-
-  Object.keys(selectedValues).forEach(renderSelectedChoice);
+  selectedValues = createEmptySelection();
   formTitle.textContent = "Cadastrar lead";
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
-
-  if (!config.keepMessage) clearLeadMessage();
+  renderChoiceButtons();
 }
 
-function toggleStoreOptionsMode() {
-  setStoreOptionsMode(storeOptionsPanel.hidden);
+function renderAll() {
+  renderChoiceButtons();
+  renderFilters();
+  renderOptionsEditors();
+  renderAdminDashboard();
+  renderLeadList();
+  renderTodayCount();
 }
 
-function setStoreOptionsMode(isEditingOptions) {
-  storeOptionsPanel.hidden = !isEditingOptions;
-  form.classList.toggle("is-options-mode", isEditingOptions);
-  toggleOptionsEditButton.textContent = isEditingOptions ? "Cadastrar lead" : "Editar opções";
-
-  if (isEditingOptions) {
-    resetLeadForm();
-    clearOptionsMessage("store");
-  }
+function renderAdminDashboard() {
+  $("#totalStores").textContent = stores.length;
+  $("#adminTotalLeads").textContent = leads.length;
+  $("#adminSalesCount").textContent = countByValue(leads, "bought", "Sim");
+  $("#adminConversionRate").textContent = formatPercent(countByValue(leads, "bought", "Sim"), leads.length);
+  renderStoreList();
+  renderAdminAnalytics();
 }
 
-function renderSelectedChoice(group) {
-  document.querySelectorAll(`[data-choice="${group}"]`).forEach((button) => {
-    button.classList.toggle("is-selected", button.dataset.value === selectedValues[group]);
+function renderStoreList() {
+  storeEmptyState.hidden = stores.length > 0;
+  storeList.innerHTML = stores
+    .map(
+      (store) => `
+        <article class="lead-card">
+          <div>
+            <strong>${escapeHtml(store.name)}</strong>
+            <span>${escapeHtml(store.username)}</span>
+          </div>
+          <button class="secondary-button" type="button" data-store-login="${store.id}">Entrar</button>
+        </article>
+      `,
+    )
+    .join("");
+
+  analyticsStoreFilter.innerHTML = '<option value="">Todas as lojas</option>' +
+    stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join("");
+}
+
+function renderLeadList() {
+  const filteredLeads = getFilteredLeads();
+  emptyState.hidden = filteredLeads.length > 0;
+  leadList.innerHTML = filteredLeads
+    .map(
+      (lead) => `
+        <article class="lead-card">
+          <div>
+            <strong>${escapeHtml(lead.name)}</strong>
+            <span>${escapeHtml(lead.phone)} · ${escapeHtml(lead.storeName || "")}</span>
+          </div>
+          <div class="lead-tags">
+            ${renderTag(lead.channel)}
+            ${renderTag(lead.campaign)}
+            ${renderTag(lead.conclusion)}
+            ${renderTag(lead.visited ? `Visitou: ${lead.visited}` : "")}
+            ${renderTag(lead.bought ? `Comprou: ${lead.bought}` : "")}
+          </div>
+          <div class="card-actions">
+            <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
+            <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}">Excluir</button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+
+  const storeLeads = getVisibleStoreLeads();
+  $("#totalLeads").textContent = storeLeads.length;
+  $("#storeVisits").textContent = countByValue(storeLeads, "visited", "Sim");
+  $("#salesCount").textContent = countByValue(storeLeads, "bought", "Sim");
+  $("#conversionRate").textContent = formatPercent(countByValue(storeLeads, "bought", "Sim"), storeLeads.length);
+}
+
+function renderChoiceButtons() {
+  optionGroups.forEach((group) => {
+    $$(`[data-choice-group="${group}"]`).forEach((container) => {
+      container.innerHTML = options[group]
+        .map((value) => {
+          const isActive = selectedValues[group] === value;
+          return `<button class="choice-button ${isActive ? "is-active" : ""}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
+        })
+        .join("");
+
+      if (fixedOptionGroups.has(group)) {
+        container.insertAdjacentHTML(
+          "beforeend",
+          `<button class="choice-button ${selectedValues[group] === "" ? "is-active" : ""}" type="button" data-choice="${group}" data-value="">Limpar</button>`,
+        );
+      }
+
+      container.querySelectorAll("[data-choice]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedValues[group] = button.dataset.value;
+          renderChoiceButtons();
+        });
+      });
+    });
   });
 }
 
-function mapLeadFromDb(lead) {
-  return {
-    id: lead.id,
-    storeId: lead.store_id,
-    storeName: lead.stores?.name || "",
-    name: lead.name,
-    phone: lead.phone,
-    channel: lead.channel,
-    campaign: lead.campaign,
-    conversationStart: lead.conversation_start,
-    conclusion: lead.conclusion,
-    visited: lead.visited,
-    bought: lead.bought || "",
-    createdAt: lead.created_at,
-    updatedAt: lead.updated_at,
-  };
+function renderFilters() {
+  fillSelect(channelFilter, options.channel, "Todos");
+  fillSelect(campaignFilter, options.campaign, "Todos");
+  fillSelect(conversationStartFilter, options.conversationStart, "Todos");
+  fillSelect(conclusionFilter, options.conclusion, "Todos");
+  fillSelect(visitedFilter, options.visited, "Todos");
+  fillSelect(boughtFilter, [...options.bought, "sem-resposta"], "Todos");
 }
 
-function mapLeadToDb(lead) {
-  return {
-    name: lead.name,
-    phone: lead.phone,
-    channel: lead.channel,
-    campaign: lead.campaign,
-    conversation_start: lead.conversationStart,
-    conclusion: lead.conclusion,
-    visited: lead.visited || null,
-    bought: lead.bought || null,
-    updated_at: new Date().toISOString(),
-  };
+function renderOptionsEditors() {
+  renderOptionsEditor(adminOptionsList, "admin");
+  renderOptionsEditor(storeOptionsList, "store");
 }
 
-function formatPhone(value) {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  if (digits.length <= 10) {
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+function renderOptionsEditor(container, scope) {
+  container.innerHTML = optionGroups
+    .map((group) => {
+      const isFixed = fixedOptionGroups.has(group);
+      const chips = options[group]
+        .map((value, index) =>
+          isFixed
+            ? `<span class="option-chip">${escapeHtml(value)}</span>`
+            : `<div class="option-row" data-group="${group}" data-index="${index}">
+                <input value="${escapeHtml(value)}" aria-label="${labels[group]}" />
+                <button class="mini-button option-save" type="button" data-option-action="save" hidden>Salvar</button>
+                <button class="mini-button danger" type="button" data-option-action="delete">Excluir</button>
+              </div>`,
+        )
+        .join("");
+      const addButton = isFixed
+        ? ""
+        : `<button class="mini-button" type="button" data-option-action="add" data-group="${group}">Adicionar</button>`;
+
+      return `
+        <section class="option-group" data-scope="${scope}">
+          <div class="option-group-heading">
+            <strong>${labels[group]}</strong>
+            ${addButton}
+          </div>
+          <div class="option-list">${chips}</div>
+        </section>
+      `;
+    })
+    .join("");
+}
+
+function handleOptionsEditorInput(event) {
+  const row = event.target.closest(".option-row");
+  if (!row) return;
+
+  dirtyOptionKeys.add(`${row.dataset.group}:${row.dataset.index}`);
+  const saveButton = row.querySelector("[data-option-action='save']");
+  if (saveButton) saveButton.hidden = false;
+}
+
+function handleOptionsEditorClick(event) {
+  const button = event.target.closest("[data-option-action]");
+  if (!button) return;
+
+  const action = button.dataset.optionAction;
+  const row = button.closest(".option-row");
+  const group = button.dataset.group || row?.dataset.group;
+  const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
+
+  if (fixedOptionGroups.has(group)) return;
+
+  if (action === "add") {
+    options[group].push("Nova opção");
+    dirtyOptionKeys.add(`${group}:${options[group].length - 1}`);
+    renderOptionsEditors();
+    return;
   }
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+
+  if (!row) return;
+
+  const index = Number(row.dataset.index);
+  if (action === "delete") {
+    options[group].splice(index, 1);
+    dirtyOptionKeys.clear();
+    renderAll();
+    showOptionsMessage(messageTarget, "Opção removida nesta aba.", "success");
+  }
+
+  if (action === "save") {
+    const value = row.querySelector("input").value.trim();
+    if (!value) {
+      showOptionsMessage(messageTarget, "Digite um valor.");
+      return;
+    }
+    options[group][index] = value;
+    dirtyOptionKeys.delete(`${group}:${index}`);
+    renderAll();
+    showOptionsMessage(messageTarget, "Opção salva nesta aba.", "success");
+  }
+}
+
+function toggleStoreOptionsMode() {
+  storeOptionsPanel.hidden = !storeOptionsPanel.hidden;
+}
+
+function hasUnsavedOptions() {
+  return dirtyOptionKeys.size > 0;
+}
+
+function guardUnsavedOptions(nextAction) {
+  if (!hasUnsavedOptions()) {
+    nextAction();
+    return;
+  }
+
+  pendingUnsavedAction = nextAction;
+  unsavedOptionsModal.hidden = false;
+}
+
+function closeUnsavedOptionsModal() {
+  pendingUnsavedAction = null;
+  unsavedOptionsModal.hidden = true;
+}
+
+function discardUnsavedOptionsAndContinue() {
+  dirtyOptionKeys.clear();
+  continuePendingAction();
+}
+
+function saveUnsavedOptionsAndContinue() {
+  dirtyOptionKeys.clear();
+  renderAll();
+  continuePendingAction();
+}
+
+function continuePendingAction() {
+  const nextAction = pendingUnsavedAction;
+  closeUnsavedOptionsModal();
+  if (nextAction) nextAction();
+}
+
+function renderAdminAnalytics() {
+  const filtered = getAnalyticsLeads();
+  const total = filtered.length;
+  const visited = countByValue(filtered, "visited", "Sim");
+  const bought = countByValue(filtered, "bought", "Sim");
+
+  $("#analyticsTotalLeads").textContent = total;
+  $("#analyticsVisitedLeads").textContent = visited;
+  $("#analyticsBoughtLeads").textContent = bought;
+  $("#analyticsConversionRate").textContent = formatPercent(bought, total);
+  $("#analyticsFunnelLabel").textContent = total ? `${total} leads` : "Sem dados";
+  $("#analyticsRatesLabel").textContent = total ? `${formatPercent(bought, total)} conversão` : "Sem dados";
+
+  renderMetricBars($("#analyticsFunnelChart"), [
+    ["Leads", total],
+    ["Visitaram", visited],
+    ["Compraram", bought],
+  ]);
+  renderMetricBars($("#analyticsRatesChart"), [
+    ["Visita", total ? Math.round((visited / total) * 100) : 0],
+    ["Compra", total ? Math.round((bought / total) * 100) : 0],
+  ], "%");
+  renderRanking($("#campaignRanking"), $("#topCampaignLabel"), filtered, "campaign");
+  renderRanking($("#storeRanking"), $("#topStoreLabel"), filtered, "storeName");
+  renderRanking($("#conversationStartRanking"), $("#topStartLabel"), filtered, "conversationStart");
+  renderRanking($("#conclusionRanking"), $("#topConclusionLabel"), filtered, "conclusion");
+  renderRanking($("#visitedRanking"), $("#topVisitedLabel"), filtered, "visited");
+  renderRanking($("#boughtRanking"), $("#topBoughtLabel"), filtered, "bought");
+}
+
+function renderMetricBars(container, rows, suffix = "") {
+  const max = Math.max(...rows.map(([, value]) => value), 1);
+  container.innerHTML = rows
+    .map(([label, value]) => `
+      <div class="metric-bar-row">
+        <span>${escapeHtml(label)}</span>
+        <div class="metric-bar-track"><i style="width:${Math.max((value / max) * 100, value ? 8 : 0)}%"></i></div>
+        <strong>${value}${suffix}</strong>
+      </div>
+    `)
+    .join("");
+}
+
+function renderRanking(container, labelElement, rows, key) {
+  const ranking = Object.entries(
+    rows.reduce((acc, row) => {
+      const value = row[key] || "Sem resposta";
+      acc[value] = (acc[value] || 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1]);
+  const max = ranking[0]?.[1] || 1;
+
+  labelElement.textContent = ranking[0] ? `${ranking[0][0]} (${ranking[0][1]})` : "Sem dados";
+  container.innerHTML = ranking
+    .slice(0, 5)
+    .map(([label, value]) => `
+      <div class="ranking-row">
+        <span>${escapeHtml(label)}</span>
+        <div class="ranking-track"><i style="width:${(value / max) * 100}%"></i></div>
+        <strong>${value}</strong>
+      </div>
+    `)
+    .join("");
+}
+
+function getFilteredLeads() {
+  const visible = getVisibleStoreLeads();
+  const search = searchInput.value.trim().toLowerCase();
+  return visible.filter((lead) => {
+    const matchesSearch = !search || [lead.name, lead.phone, lead.storeName].some((value) => value.toLowerCase().includes(search));
+    const matchesSimpleFilters =
+      matchesFilter(lead.channel, channelFilter.value) &&
+      matchesFilter(lead.campaign, campaignFilter.value) &&
+      matchesFilter(lead.conversationStart, conversationStartFilter.value) &&
+      matchesFilter(lead.conclusion, conclusionFilter.value) &&
+      matchesFilter(lead.visited, visitedFilter.value) &&
+      matchesFilter(lead.bought || "sem-resposta", boughtFilter.value);
+    const createdDate = lead.createdAt.slice(0, 10);
+    const matchesStart = !startDateFilter.value || createdDate >= startDateFilter.value;
+    const matchesEnd = !endDateFilter.value || createdDate <= endDateFilter.value;
+
+    return matchesSearch && matchesSimpleFilters && matchesStart && matchesEnd;
+  });
+}
+
+function getVisibleStoreLeads() {
+  const store = getActiveStore();
+  if (!store) return currentProfile?.role === "admin" ? leads : [];
+  return leads.filter((lead) => lead.storeId === store.id);
+}
+
+function getAnalyticsLeads() {
+  let result = [...leads];
+  if (analyticsStoreFilter.value) {
+    result = result.filter((lead) => lead.storeId === analyticsStoreFilter.value);
+  }
+
+  const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
+  if (mode === "single" && analyticsSingleDate.value) {
+    result = result.filter((lead) => lead.createdAt.slice(0, 10) === analyticsSingleDate.value);
+  }
+  if (mode === "range") {
+    if (analyticsStartDate.value) result = result.filter((lead) => lead.createdAt.slice(0, 10) >= analyticsStartDate.value);
+    if (analyticsEndDate.value) result = result.filter((lead) => lead.createdAt.slice(0, 10) <= analyticsEndDate.value);
+  }
+
+  return result;
+}
+
+function getActiveStore() {
+  if (currentProfile?.role === "store") return activeStoreContext;
+  return activeStoreContext;
+}
+
+function toggleAnalytics() {
+  analyticsContent.hidden = !analyticsContent.hidden;
+  analyticsToggle.setAttribute("aria-expanded", String(!analyticsContent.hidden));
+  analyticsToggleLabel.textContent = analyticsContent.hidden ? "Mostrar análise" : "Ocultar análise";
+}
+
+function setAnalyticsDateMode(mode) {
+  analyticsDateModeButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.analyticsDateMode === mode);
+  });
+  analyticsSingleDateField.hidden = mode !== "single";
+  analyticsRangeDateFields.forEach((field) => {
+    field.hidden = mode !== "range";
+  });
+  renderAdminAnalytics();
+}
+
+function setAnalyticsQuickRange(range) {
+  setAnalyticsDateMode("range");
+  const today = new Date();
+  const start = new Date(today);
+  if (range === "week") start.setDate(today.getDate() - 6);
+  if (range === "month") start.setMonth(today.getMonth() - 1);
+  if (range === "year") start.setFullYear(today.getFullYear() - 1);
+  analyticsStartDate.value = toDateInput(start);
+  analyticsEndDate.value = toDateInput(today);
+  renderAdminAnalytics();
+}
+
+function toggleFilters() {
+  filtersPanel.hidden = !filtersPanel.hidden;
+}
+
+function clearFilters() {
+  [searchInput, channelFilter, campaignFilter, conversationStartFilter, conclusionFilter, visitedFilter, boughtFilter, startDateFilter, endDateFilter].forEach((element) => {
+    element.value = "";
+  });
+  renderLeadList();
+}
+
+function renderTodayCount() {
+  const today = toDateInput(new Date());
+  const count = getVisibleStoreLeads().filter((lead) => lead.createdAt.slice(0, 10) === today).length;
+  $("#todayCount").textContent = `${count} ${count === 1 ? "lead" : "leads"}`;
 }
 
 function setTodayLabel() {
@@ -1518,14 +804,70 @@ function setTodayLabel() {
     month: "long",
   }).format(new Date());
 
-  document.querySelector("#todayLabel").textContent =
-    label.charAt(0).toUpperCase() + label.slice(1);
+  $("#todayLabel").textContent = label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function fillSelect(select, values, firstLabel) {
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">${firstLabel}</option>` +
+    values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+  select.value = values.includes(currentValue) ? currentValue : "";
+}
+
+function matchesFilter(value, filterValue) {
+  return !filterValue || value === filterValue;
+}
+
+function countByValue(rows, key, value) {
+  return rows.filter((row) => row[key] === value).length;
+}
+
+function formatPercent(value, total) {
+  return total ? `${Math.round((value / total) * 100)}%` : "0%";
+}
+
+function createEmptySelection() {
+  return optionGroups.reduce((acc, group) => ({ ...acc, [group]: "" }), {});
+}
+
+function cloneOptions(source) {
+  return Object.fromEntries(Object.entries(source).map(([key, value]) => [key, [...value]]));
+}
+
+function normalizeNick(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function createId() {
+  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+}
+
+function formatPhone(value) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function toDateInput(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function renderTag(value) {
+  return value ? `<span>${escapeHtml(value)}</span>` : "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function togglePassword(button) {
-  const input = document.querySelector(`#${button.dataset.togglePassword}`);
-  if (!input) return;
-
+  const input = $(`#${button.dataset.togglePassword}`);
   const isPassword = input.type === "password";
   input.type = isPassword ? "text" : "password";
   button.textContent = isPassword ? "Ocultar" : "Ver";
@@ -1536,36 +878,8 @@ function showAuthMessage(message, type = "error") {
   authMessage.classList.toggle("success", type === "success");
 }
 
-function formatAuthError(error) {
-  const message = typeof error === "string" ? error : error?.message || "";
-  const normalizedMessage = String(message).toLowerCase();
-  const isMissingRpc =
-    error?.status === 404 ||
-    error?.code === "PGRST202" ||
-    normalizedMessage.includes("could not find the function") ||
-    normalizedMessage.includes("schema cache");
-
-  if (isMissingRpc) {
-    return "Banco ainda não foi atualizado. Rode o supabase/schema.sql inteiro no SQL Editor.";
-  }
-  if (normalizedMessage.includes("already registered")) {
-    return "Esse nick já está cadastrado.";
-  }
-  if (normalizedMessage.includes("invalid login") || normalizedMessage.includes("senha inválidos")) {
-    return "Nick ou senha inválidos.";
-  }
-  if (normalizedMessage.includes("admin já existe")) {
-    return "Já existe um admin. Entre com o nick e senha cadastrados.";
-  }
-  if (normalizedMessage.includes("app_user_sessions_auth_user_id_fkey")) {
-    return "Sessão antiga do navegador. Clique em Sair ou recarregue a página e tente criar o admin de novo.";
-  }
-  return message || "Não foi possível concluir a ação.";
-}
-
 function clearAuthMessage() {
-  authMessage.textContent = "";
-  authMessage.classList.remove("success");
+  showAuthMessage("");
 }
 
 function showStoreMessage(message, type = "error") {
@@ -1574,161 +888,15 @@ function showStoreMessage(message, type = "error") {
 }
 
 function clearStoreMessage() {
-  storeMessage.textContent = "";
-  storeMessage.classList.remove("success");
+  showStoreMessage("");
 }
 
-function showLeadMessage(message, type = "error") {
+function showFormMessage(message, type = "error") {
   formMessage.textContent = message;
   formMessage.classList.toggle("success", type === "success");
 }
 
-function clearLeadMessage() {
-  formMessage.textContent = "";
-  formMessage.classList.remove("success");
-}
-
-function pluralize(count, word) {
-  return `${count} ${count === 1 ? word : `${word}s`}`;
-}
-
-function formatShortDate(date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(date));
-}
-
-function getDateOnly(date) {
-  return formatInputDate(new Date(date));
-}
-
-function formatInputDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getLeadNumber(index) {
-  return `Lead ${String(index + 1).padStart(3, "0")}`;
-}
-
-function getActiveStoreId() {
-  return activeStoreContext?.id || currentProfile?.store_id || "";
-}
-
-function isPositiveAnswer(value) {
-  const normalizedValue = normalize(value || "");
-  return Boolean(value) && normalizedValue !== "nao" && normalizedValue !== "nao retornou";
-}
-
 function showOptionsMessage(target, message, type = "error") {
-  const element = target === "admin" ? adminOptionsMessage : storeOptionsMessage;
-  element.textContent = message;
-  element.classList.toggle("success", type === "success");
-}
-
-function clearOptionsMessage(target) {
-  const element = target === "admin" ? adminOptionsMessage : storeOptionsMessage;
-  element.textContent = "";
-  element.classList.remove("success");
-}
-
-function createEmptyOptions(includeNativeYesNo = true) {
-  return optionGroups.reduce((result, group) => {
-    result[group] =
-      includeNativeYesNo && (group === "visited" || group === "bought")
-        ? [...nativeYesNoOptions]
-        : [];
-    return result;
-  }, {});
-}
-
-function normalizeOptions(source) {
-  const normalizedOptions = createEmptyOptions();
-
-  optionGroups.forEach((group) => {
-    const values = Array.isArray(source?.[group]) ? source[group] : [];
-    normalizedOptions[group] = [
-      ...new Set(
-        [...normalizedOptions[group], ...values]
-          .map((value) => String(value).trim())
-          .filter(Boolean),
-      ),
-    ];
-  });
-
-  return normalizedOptions;
-}
-
-function getOptionsStoreId() {
-  return activeStoreContext?.id || (currentProfile?.role === "store" ? currentProfile.store_id : null);
-}
-
-async function loadOptionsRows(storeId) {
-  const query = supabaseClient
-    .from("lead_options")
-    .select("group_key,value,sort_order,store_id")
-    .order("group_key", { ascending: true })
-    .order("sort_order", { ascending: true });
-
-  const { data, error } = storeId ? await query.eq("store_id", storeId) : await query.is("store_id", null);
-
-  if (error) {
-    showOptionsMessage(currentProfile?.role === "admin" && !activeStoreContext ? "admin" : "store", "Não foi possível carregar as opções do banco.");
-    return createEmptyOptions(false);
-  }
-
-  return optionsFromRows(data || []);
-}
-
-function hasCustomOptionRows(nextOptions) {
-  return optionGroups.some((group) => (nextOptions[group] || []).length > 0);
-}
-
-function optionsFromRows(rows) {
-  const nextOptions = createEmptyOptions(false);
-
-  rows.forEach((row) => {
-    if (!optionGroups.includes(row.group_key)) return;
-    nextOptions[row.group_key] = [...(nextOptions[row.group_key] || []), row.value];
-  });
-
-  return nextOptions;
-}
-
-function buildOptionRows(sourceOptions, storeId) {
-  return optionGroups.filter((group) => !fixedOptionGroups.has(group)).flatMap((group) =>
-    (sourceOptions[group] || []).map((value, index) => ({
-      store_id: storeId,
-      group_key: group,
-      value,
-      sort_order: index,
-      created_by: currentProfile?.id || null,
-    })),
-  );
-}
-
-function normalizeNick(nick) {
-  return normalize(nick)
-    .replace(/[^a-z0-9._-]/g, "")
-    .replace(/^[._-]+|[._-]+$/g, "");
-}
-
-function normalize(value) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  target.textContent = message;
+  target.classList.toggle("success", type === "success");
 }
