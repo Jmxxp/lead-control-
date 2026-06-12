@@ -2,10 +2,6 @@ const SUPABASE_URL = "https://nuuebvpsfcgsgkefecab.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51dWVidnBzZmNnc2drZWZlY2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTQ5ODMsImV4cCI6MjA5Njc3MDk4M30.6PxIIOP2oQvlbUP87ab79VsXj5e4NCNhjUgnECIN5pA";
 const AUTH_EMAIL_DOMAIN = "leadcontrol.local";
-const API_BASE_URL =
-  window.location.port === "5500" || window.location.protocol === "file:"
-    ? "http://localhost:5173"
-    : "";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -19,6 +15,7 @@ const labels = {
 };
 
 const optionGroups = Object.keys(labels);
+const nativeYesNoOptions = ["Sim", "Não"];
 let options = createEmptyOptions();
 
 let session = null;
@@ -57,12 +54,22 @@ const signupPassword = document.querySelector("#signupPassword");
 const storeForm = document.querySelector("#storeForm");
 const storeName = document.querySelector("#storeName");
 const storeNick = document.querySelector("#storeNick");
-const storePassword = document.querySelector("#storePassword");
 const storeMessage = document.querySelector("#storeMessage");
 const storeEmptyState = document.querySelector("#storeEmptyState");
 const storeList = document.querySelector("#storeList");
 const adminOptionsList = document.querySelector("#adminOptionsList");
 const adminOptionsMessage = document.querySelector("#adminOptionsMessage");
+const analyticsToggle = document.querySelector("#analyticsToggle");
+const analyticsToggleLabel = document.querySelector("#analyticsToggleLabel");
+const analyticsContent = document.querySelector("#analyticsContent");
+const analyticsStoreFilter = document.querySelector("#analyticsStoreFilter");
+const analyticsDateModeButtons = document.querySelectorAll("[data-analytics-date-mode]");
+const analyticsSingleDate = document.querySelector("#analyticsSingleDate");
+const analyticsStartDate = document.querySelector("#analyticsStartDate");
+const analyticsEndDate = document.querySelector("#analyticsEndDate");
+const analyticsSingleDateField = document.querySelector(".analytics-single-date");
+const analyticsRangeDateFields = document.querySelectorAll(".analytics-range-date");
+const analyticsQuickRangeButtons = document.querySelectorAll("[data-analytics-range]");
 
 const form = document.querySelector("#leadForm");
 const formTitle = document.querySelector("#formTitle");
@@ -116,6 +123,17 @@ function bindEvents() {
   storeForm.addEventListener("submit", handleCreateStore);
   adminOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
+  analyticsToggle.addEventListener("click", toggleAnalytics);
+  analyticsStoreFilter.addEventListener("input", renderAdminAnalytics);
+  [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
+    element.addEventListener("input", renderAdminAnalytics);
+  });
+  analyticsDateModeButtons.forEach((button) => {
+    button.addEventListener("click", () => setAnalyticsDateMode(button.dataset.analyticsDateMode));
+  });
+  analyticsQuickRangeButtons.forEach((button) => {
+    button.addEventListener("click", () => setAnalyticsQuickRange(button.dataset.analyticsRange));
+  });
 
   form.addEventListener("submit", handleLeadSubmit);
   clearFormButton.addEventListener("click", resetLeadForm);
@@ -234,72 +252,66 @@ async function loadCurrentProfile() {
 }
 
 async function ensureProfile() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/ensure-profile`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
+  const username = emailToNick(session.user.email);
 
-    return response.ok;
-  } catch {
+  const { error } = await supabaseClient.from("profiles").insert({
+    id: session.user.id,
+    email: session.user.email || nickToAuthEmail(username || "admin"),
+    username,
+    role: "admin",
+    store_id: null,
+  });
+
+  if (error && error.code !== "23505") {
     return false;
   }
+
+  return true;
 }
 
 async function loadOptions() {
-  try {
-    const storeQuery = activeStoreContext ? `?store_id=${encodeURIComponent(activeStoreContext.id)}` : "";
-    const response = await fetch(`${API_BASE_URL}/api/options${storeQuery}`, {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
-    const result = await response.json();
+  const storeId = getOptionsStoreId();
+  let loadedOptions = await loadOptionsRows(storeId);
 
-    if (!response.ok) throw new Error(result.error);
-
-    options = normalizeOptions(result.options);
-  } catch {
-    options = createEmptyOptions();
+  if (storeId && !hasCustomOptionRows(loadedOptions)) {
+    loadedOptions = await loadOptionsRows(null);
   }
 
+  options = normalizeOptions(loadedOptions);
   renderChoiceButtons();
   renderFilters();
   renderOptionsEditors();
 }
 
 async function saveCurrentOptions(messageTarget) {
-  const storeQuery = activeStoreContext ? `?store_id=${encodeURIComponent(activeStoreContext.id)}` : "";
-  let response;
+  const storeId = getOptionsStoreId();
+  const normalizedOptions = normalizeOptions(options);
+  const deleteQuery = supabaseClient.from("lead_options").delete();
+  const { error: deleteError } = storeId
+    ? await deleteQuery.eq("store_id", storeId)
+    : await deleteQuery.is("store_id", null);
 
-  try {
-    response = await fetch(`${API_BASE_URL}/api/options${storeQuery}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ options }),
-    });
-  } catch {
-    showOptionsMessage(messageTarget, "Backend offline. Abra pelo http://localhost:5173.");
+  if (deleteError) {
+    showOptionsMessage(messageTarget, "Não foi possível atualizar as opções no banco.");
     return false;
   }
 
-  const result = await response.json().catch(() => ({}));
+  const rows = buildOptionRows(normalizedOptions, storeId);
 
-  if (!response.ok) {
-    showOptionsMessage(messageTarget, result.error || "Não foi possível salvar as opções.");
-    return false;
+  if (rows.length) {
+    const { error: insertError } = await supabaseClient.from("lead_options").insert(rows);
+
+    if (insertError) {
+      showOptionsMessage(messageTarget, "Não foi possível salvar as opções no banco.");
+      return false;
+    }
   }
 
-  options = normalizeOptions(result.options);
+  options = normalizedOptions;
   renderChoiceButtons();
   renderFilters();
   renderOptionsEditors();
-  showOptionsMessage(messageTarget, "Opções salvas.", "success");
+  showOptionsMessage(messageTarget, "Opções salvas no banco de dados.", "success");
   return true;
 }
 
@@ -398,7 +410,7 @@ async function loadAdminDashboard() {
 async function loadStores() {
   const { data, error } = await supabaseClient
     .from("stores")
-    .select("id,name,email,auth_user_id,created_at")
+    .select("id,name,username,email,created_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -413,42 +425,47 @@ async function loadStores() {
 async function loadAdminLeads() {
   const { data, error } = await supabaseClient
     .from("leads")
-    .select("id,bought")
+    .select(
+      "id,store_id,name,phone,channel,campaign,conversation_start,conclusion,visited,bought,created_at,updated_at,stores(name)",
+    )
     .order("created_at", { ascending: false });
 
-  if (!error) leads = (data || []).map(mapLeadFromDb);
+  leads = error ? [] : (data || []).map(mapLeadFromDb);
 }
 
 async function handleCreateStore(event) {
   event.preventDefault();
   clearStoreMessage();
 
-  if (!normalizeNick(storeNick.value)) {
-    showStoreMessage("Digite um nick válido para a loja.");
+  const name = storeName.value.trim();
+  const username = normalizeNick(storeNick.value || name);
+
+  if (!name) {
+    showStoreMessage("Digite o nome da loja.");
     return;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/create-store`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({
-      name: storeName.value.trim(),
-      username: normalizeNick(storeNick.value),
-      password: storePassword.value,
-    }),
+  if (!username) {
+    showStoreMessage("Digite um identificador válido para a loja.");
+    return;
+  }
+
+  const { error } = await supabaseClient.from("stores").insert({
+    name,
+    username,
+    email: nickToAuthEmail(username),
+    created_by: session.user.id,
   });
 
-  if (!response.ok) {
-    const result = await response.json().catch(() => ({}));
-    showStoreMessage(result.error || "Não foi possível criar a loja.");
+  if (error) {
+    showStoreMessage(
+      error.code === "23505" ? "Já existe uma loja com esse identificador." : "Não foi possível criar a loja.",
+    );
     return;
   }
 
   storeForm.reset();
-  showStoreMessage("Loja criada com login e senha.", "success");
+  showStoreMessage("Loja salva no banco de dados.", "success");
   await loadAdminDashboard();
 }
 
@@ -461,25 +478,276 @@ function renderAdminStats() {
   document.querySelector("#adminSalesCount").textContent = bought;
   document.querySelector("#adminConversionRate").textContent = `${conversion}%`;
   document.querySelector("#todayCount").textContent = pluralize(leads.length, "lead");
+  renderAnalyticsControls();
+  renderAdminAnalytics();
+}
+
+function toggleAnalytics() {
+  const isOpening = analyticsContent.hidden;
+  analyticsContent.hidden = !isOpening;
+  analyticsToggle.setAttribute("aria-expanded", String(isOpening));
+  analyticsToggleLabel.textContent = isOpening ? "Ocultar análise" : "Mostrar análise";
+}
+
+function renderAnalyticsControls() {
+  const currentStore = analyticsStoreFilter.value;
+  analyticsStoreFilter.innerHTML = `<option value="">Todas as lojas</option>`;
+  analyticsStoreFilter.innerHTML += stores
+    .map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`)
+    .join("");
+  analyticsStoreFilter.value = stores.some((store) => store.id === currentStore) ? currentStore : "";
+}
+
+function setAnalyticsDateMode(mode) {
+  const nextMode = mode === "range" ? "range" : "single";
+
+  analyticsDateModeButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.analyticsDateMode === nextMode);
+  });
+
+  analyticsSingleDateField.hidden = nextMode !== "single";
+  analyticsRangeDateFields.forEach((field) => {
+    field.hidden = nextMode !== "range";
+  });
+
+  renderAdminAnalytics();
+}
+
+function setAnalyticsQuickRange(range) {
+  setAnalyticsDateMode("range");
+
+  const today = new Date();
+  const start = new Date(today);
+
+  if (range === "week") {
+    const day = start.getDay();
+    const distanceFromMonday = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - distanceFromMonday);
+  }
+
+  if (range === "month") {
+    start.setDate(1);
+  }
+
+  if (range === "year") {
+    start.setMonth(0, 1);
+  }
+
+  analyticsStartDate.value = formatInputDate(start);
+  analyticsEndDate.value = formatInputDate(today);
+  renderAdminAnalytics();
+}
+
+function renderAdminAnalytics() {
+  const filteredLeads = getAnalyticsFilteredLeads();
+  const total = filteredLeads.length;
+  const visited = filteredLeads.filter((lead) => isPositiveAnswer(lead.visited)).length;
+  const bought = filteredLeads.filter((lead) => isPositiveAnswer(lead.bought)).length;
+  const conversion = total ? Math.round((bought / total) * 100) : 0;
+
+  document.querySelector("#analyticsTotalLeads").textContent = total;
+  document.querySelector("#analyticsVisitedLeads").textContent = visited;
+  document.querySelector("#analyticsBoughtLeads").textContent = bought;
+  document.querySelector("#analyticsConversionRate").textContent = `${conversion}%`;
+
+  renderAnalyticsMetricCharts({ total, visited, bought });
+
+  renderMetricRanking({
+    containerId: "campaignRanking",
+    topLabelId: "topCampaignLabel",
+    rows: buildMetricRanking(filteredLeads, (lead) => lead.campaign),
+    emptyLabel: "Nenhuma campanha no filtro",
+  });
+  renderMetricRanking({
+    containerId: "storeRanking",
+    topLabelId: "topStoreLabel",
+    rows: buildMetricRanking(filteredLeads, getLeadStoreName),
+    emptyLabel: "Nenhuma loja no filtro",
+  });
+  renderMetricRanking({
+    containerId: "conversationStartRanking",
+    topLabelId: "topStartLabel",
+    rows: buildMetricRanking(filteredLeads, (lead) => lead.conversationStart),
+    emptyLabel: "Nenhum início no filtro",
+  });
+  renderMetricRanking({
+    containerId: "conclusionRanking",
+    topLabelId: "topConclusionLabel",
+    rows: buildMetricRanking(filteredLeads, (lead) => lead.conclusion),
+    emptyLabel: "Nenhum fim no filtro",
+  });
+  renderMetricRanking({
+    containerId: "visitedRanking",
+    topLabelId: "topVisitedLabel",
+    rows: buildMetricRanking(filteredLeads, (lead) => lead.visited || "Sem resposta"),
+    emptyLabel: "Nenhuma visita no filtro",
+    compact: true,
+  });
+  renderMetricRanking({
+    containerId: "boughtRanking",
+    topLabelId: "topBoughtLabel",
+    rows: buildMetricRanking(filteredLeads, (lead) => lead.bought || "Sem resposta"),
+    emptyLabel: "Nenhuma compra no filtro",
+    compact: true,
+  });
+}
+
+function getAnalyticsFilteredLeads() {
+  const selectedStoreId = analyticsStoreFilter.value;
+  const dateMode = getAnalyticsDateMode();
+
+  return leads.filter((lead) => {
+    const leadDate = getDateOnly(lead.createdAt);
+    const matchesStore = !selectedStoreId || lead.storeId === selectedStoreId;
+    const matchesSingleDate =
+      dateMode !== "single" || !analyticsSingleDate.value || leadDate === analyticsSingleDate.value;
+    const matchesStartDate =
+      dateMode !== "range" || !analyticsStartDate.value || leadDate >= analyticsStartDate.value;
+    const matchesEndDate =
+      dateMode !== "range" || !analyticsEndDate.value || leadDate <= analyticsEndDate.value;
+
+    return matchesStore && matchesSingleDate && matchesStartDate && matchesEndDate;
+  });
+}
+
+function getAnalyticsDateMode() {
+  const activeButton = [...analyticsDateModeButtons].find((button) =>
+    button.classList.contains("is-active"),
+  );
+
+  return activeButton?.dataset.analyticsDateMode || "single";
+}
+
+function buildMetricRanking(items, labelGetter) {
+  const grouped = new Map();
+
+  items.forEach((lead) => {
+    const label = String(labelGetter(lead) || "Sem resposta").trim() || "Sem resposta";
+    const current = grouped.get(label) || { label, count: 0, visited: 0, bought: 0 };
+    current.count += 1;
+    if (isPositiveAnswer(lead.visited)) current.visited += 1;
+    if (isPositiveAnswer(lead.bought)) current.bought += 1;
+    grouped.set(label, current);
+  });
+
+  return [...grouped.values()]
+    .map((row) => ({
+      ...row,
+      conversion: row.count ? Math.round((row.bought / row.count) * 100) : 0,
+    }))
+    .sort((first, second) => second.count - first.count || first.label.localeCompare(second.label));
+}
+
+function renderMetricRanking({ containerId, topLabelId, rows, emptyLabel, compact = false }) {
+  const container = document.querySelector(`#${containerId}`);
+  const topLabel = document.querySelector(`#${topLabelId}`);
+  const maxCount = rows[0]?.count || 0;
+
+  topLabel.textContent = rows[0]
+    ? `${rows[0].label} · ${pluralize(rows[0].count, "lead")}`
+    : "Sem dados";
+
+  if (!rows.length) {
+    container.innerHTML = `<div class="ranking-empty">${emptyLabel}</div>`;
+    return;
+  }
+
+  container.innerHTML = rows
+    .map((row, index) => {
+      const width = maxCount ? Math.max(8, Math.round((row.count / maxCount) * 100)) : 0;
+      const detail = compact
+        ? `${pluralize(row.count, "lead")}`
+        : `${pluralize(row.count, "lead")} · ${row.visited} visitas · ${row.bought} compras · ${row.conversion}%`;
+
+      return `
+        <div class="ranking-row">
+          <div class="ranking-row-top">
+            <span>${String(index + 1).padStart(2, "0")} · ${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(detail)}</strong>
+          </div>
+          <div class="bar-track" aria-hidden="true">
+            <span class="bar-fill" style="width: ${width}%"></span>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderAnalyticsMetricCharts({ total, visited, bought }) {
+  const visitRate = total ? Math.round((visited / total) * 100) : 0;
+  const buyRate = total ? Math.round((bought / total) * 100) : 0;
+  const visitorCloseRate = visited ? Math.round((bought / visited) * 100) : 0;
+
+  document.querySelector("#analyticsFunnelLabel").textContent = total
+    ? `${pluralize(total, "lead")} no filtro`
+    : "Sem dados";
+  document.querySelector("#analyticsRatesLabel").textContent = total
+    ? `${buyRate}% de conversão`
+    : "Sem dados";
+
+  renderMetricBars("analyticsFunnelChart", [
+    { label: "Leads", value: total, width: 100, detail: pluralize(total, "lead") },
+    { label: "Visitas", value: visited, width: visitRate, detail: `${visited} visitas` },
+    { label: "Compras", value: bought, width: buyRate, detail: `${bought} compras` },
+  ]);
+
+  renderMetricBars("analyticsRatesChart", [
+    { label: "Visita sobre leads", value: visitRate, width: visitRate, detail: `${visitRate}%` },
+    { label: "Compra sobre leads", value: buyRate, width: buyRate, detail: `${buyRate}%` },
+    {
+      label: "Compra após visita",
+      value: visitorCloseRate,
+      width: visitorCloseRate,
+      detail: `${visitorCloseRate}%`,
+    },
+  ]);
+}
+
+function renderMetricBars(containerId, rows) {
+  const container = document.querySelector(`#${containerId}`);
+
+  if (!rows.some((row) => row.value > 0)) {
+    container.innerHTML = `<div class="ranking-empty compact-empty">Sem dados para o gráfico</div>`;
+    return;
+  }
+
+  container.innerHTML = rows
+    .map((row) => {
+      const width = Math.max(row.value > 0 ? 6 : 0, Math.min(row.width, 100));
+
+      return `
+        <div class="metric-bar-row">
+          <div class="metric-bar-top">
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.detail)}</strong>
+          </div>
+          <div class="metric-bar-track" aria-hidden="true">
+            <span class="metric-bar-fill" style="width: ${width}%"></span>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function getLeadStoreName(lead) {
+  return lead.storeName || stores.find((store) => store.id === lead.storeId)?.name || "Sem loja";
 }
 
 function renderStoreList() {
   storeEmptyState.style.display = stores.length ? "none" : "grid";
   storeList.innerHTML = stores
     .map((store) => {
-      const action = store.auth_user_id
-        ? `<button class="mini-button" type="button" data-store-login="${store.id}">Entrar na loja</button>`
-        : `<span class="badge rose">Sem login</span>`;
-
       return `
         <article class="lead-card">
           <div class="lead-card-header">
             <div class="lead-person">
               <strong>${escapeHtml(store.name)}</strong>
-              <span>Nick: ${escapeHtml(emailToNick(store.email))} · criada em ${formatShortDate(store.created_at)}</span>
+              <span>ID: ${escapeHtml(store.username || emailToNick(store.email))} · criada em ${formatShortDate(store.created_at)}</span>
             </div>
             <div class="lead-actions">
-              ${action}
+              <button class="mini-button" type="button" data-store-login="${store.id}">Entrar na loja</button>
               <span class="badge green">Loja ativa</span>
             </div>
           </div>
@@ -667,7 +935,7 @@ function renderChoiceButtons() {
       if (!button) return;
 
       selectedValues[group] =
-        group === "bought" && selectedValues[group] === button.dataset.value
+        (group === "bought" || group === "visited") && selectedValues[group] === button.dataset.value
           ? ""
           : button.dataset.value;
       renderSelectedChoice(group);
@@ -681,7 +949,7 @@ function renderFilters() {
   renderSelectOptions(campaignFilter, options.campaign, "Todos");
   renderSelectOptions(conversationStartFilter, options.conversationStart, "Todos");
   renderSelectOptions(conclusionFilter, options.conclusion, "Todos");
-  renderSelectOptions(visitedFilter, options.visited, "Todos");
+  renderSelectOptions(visitedFilter, options.visited, "Todos", true);
   renderSelectOptions(boughtFilter, options.bought, "Todos", true);
 }
 
@@ -769,14 +1037,14 @@ function getValidationMessage() {
   if (!phoneInput.value.trim()) return "Preencha o telefone do lead.";
 
   const emptyRequiredGroup = optionGroups.find(
-    (group) => group !== "bought" && !(options[group] || []).length,
+    (group) => group !== "bought" && group !== "visited" && !(options[group] || []).length,
   );
   if (emptyRequiredGroup) {
     return `Cadastre pelo menos uma opção em ${labels[emptyRequiredGroup]}.`;
   }
 
   const missingGroup = Object.entries(selectedValues).find(
-    ([group, value]) => group !== "bought" && !value,
+    ([group, value]) => group !== "bought" && group !== "visited" && !value,
   );
   if (missingGroup) return `Selecione uma opção em ${labels[missingGroup[0]]}.`;
 
@@ -823,7 +1091,10 @@ function getFilteredLeads() {
       !conversationStartFilter.value ||
       lead.conversationStart === conversationStartFilter.value;
     const matchesConclusion = !conclusionFilter.value || lead.conclusion === conclusionFilter.value;
-    const matchesVisited = !visitedFilter.value || lead.visited === visitedFilter.value;
+    const matchesVisited =
+      !visitedFilter.value ||
+      (visitedFilter.value === "sem-resposta" && !lead.visited) ||
+      lead.visited === visitedFilter.value;
     const matchesBought =
       !boughtFilter.value ||
       (boughtFilter.value === "sem-resposta" && !lead.bought) ||
@@ -849,6 +1120,7 @@ function getFilteredLeads() {
 
 function renderLeadCard(lead) {
   const leadNumber = getLeadNumber(leads.findIndex((item) => item.id === lead.id));
+  const visitedLabel = lead.visited || "Sem resposta";
   const boughtLabel = lead.bought || "Sem resposta";
   const createdAt = new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
@@ -874,7 +1146,7 @@ function renderLeadCard(lead) {
       <div class="badge-row">
         <span class="badge">${escapeHtml(lead.channel)}</span>
         <span class="badge amber">${escapeHtml(lead.campaign)}</span>
-        <span class="badge ${isPositiveAnswer(lead.visited) ? "green" : "rose"}">Visitou: ${escapeHtml(lead.visited)}</span>
+        <span class="badge ${isPositiveAnswer(lead.visited) ? "green" : "rose"}">Visitou: ${escapeHtml(visitedLabel)}</span>
         <span class="badge ${isPositiveAnswer(lead.bought) ? "green" : "rose"}">Comprou: ${escapeHtml(boughtLabel)}</span>
       </div>
 
@@ -909,7 +1181,7 @@ function editLead(id) {
     campaign: lead.campaign,
     conversationStart: lead.conversationStart,
     conclusion: lead.conclusion,
-    visited: lead.visited,
+    visited: lead.visited || null,
     bought: lead.bought,
   };
 
@@ -983,6 +1255,7 @@ function mapLeadFromDb(lead) {
   return {
     id: lead.id,
     storeId: lead.store_id,
+    storeName: lead.stores?.name || "",
     name: lead.name,
     phone: lead.phone,
     channel: lead.channel,
@@ -1004,7 +1277,7 @@ function mapLeadToDb(lead) {
     campaign: lead.campaign,
     conversation_start: lead.conversationStart,
     conclusion: lead.conclusion,
-    visited: lead.visited,
+    visited: lead.visited || "",
     bought: lead.bought || null,
     updated_at: new Date().toISOString(),
   };
@@ -1094,7 +1367,14 @@ function formatShortDate(date) {
 }
 
 function getDateOnly(date) {
-  return new Date(date).toISOString().slice(0, 10);
+  return formatInputDate(new Date(date));
+}
+
+function formatInputDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getLeadNumber(index) {
@@ -1122,9 +1402,12 @@ function clearOptionsMessage(target) {
   element.classList.remove("success");
 }
 
-function createEmptyOptions() {
+function createEmptyOptions(includeNativeYesNo = true) {
   return optionGroups.reduce((result, group) => {
-    result[group] = [];
+    result[group] =
+      includeNativeYesNo && (group === "visited" || group === "bought")
+        ? [...nativeYesNoOptions]
+        : [];
     return result;
   }, {});
 }
@@ -1134,10 +1417,64 @@ function normalizeOptions(source) {
 
   optionGroups.forEach((group) => {
     const values = Array.isArray(source?.[group]) ? source[group] : [];
-    normalizedOptions[group] = [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+    normalizedOptions[group] = [
+      ...new Set(
+        [...normalizedOptions[group], ...values]
+          .map((value) => String(value).trim())
+          .filter(Boolean),
+      ),
+    ];
   });
 
   return normalizedOptions;
+}
+
+function getOptionsStoreId() {
+  return activeStoreContext?.id || (currentProfile?.role === "store" ? currentProfile.store_id : null);
+}
+
+async function loadOptionsRows(storeId) {
+  const query = supabaseClient
+    .from("lead_options")
+    .select("group_key,value,sort_order,store_id")
+    .order("group_key", { ascending: true })
+    .order("sort_order", { ascending: true });
+
+  const { data, error } = storeId ? await query.eq("store_id", storeId) : await query.is("store_id", null);
+
+  if (error) {
+    showOptionsMessage(currentProfile?.role === "admin" && !activeStoreContext ? "admin" : "store", "Não foi possível carregar as opções do banco.");
+    return createEmptyOptions(false);
+  }
+
+  return optionsFromRows(data || []);
+}
+
+function hasCustomOptionRows(nextOptions) {
+  return optionGroups.some((group) => (nextOptions[group] || []).length > 0);
+}
+
+function optionsFromRows(rows) {
+  const nextOptions = createEmptyOptions(false);
+
+  rows.forEach((row) => {
+    if (!optionGroups.includes(row.group_key)) return;
+    nextOptions[row.group_key] = [...(nextOptions[row.group_key] || []), row.value];
+  });
+
+  return nextOptions;
+}
+
+function buildOptionRows(sourceOptions, storeId) {
+  return optionGroups.flatMap((group) =>
+    (sourceOptions[group] || []).map((value, index) => ({
+      store_id: storeId,
+      group_key: group,
+      value,
+      sort_order: index,
+      created_by: session.user.id,
+    })),
+  );
 }
 
 function nickToAuthEmail(nick) {

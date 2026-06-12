@@ -7,7 +7,6 @@ create table if not exists public.stores (
   name text not null,
   username text unique,
   email text not null unique,
-  auth_user_id uuid unique references auth.users(id) on delete set null,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -32,14 +31,38 @@ create table if not exists public.leads (
   campaign text not null,
   conversation_start text not null,
   conclusion text not null,
-  visited text not null,
+  visited text,
   bought text,
   created_by uuid default auth.uid() references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.lead_options (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references public.stores(id) on delete cascade,
+  group_key text not null check (
+    group_key in ('channel', 'campaign', 'conversationStart', 'conclusion', 'visited', 'bought')
+  ),
+  value text not null check (btrim(value) <> ''),
+  sort_order integer not null default 0,
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.leads alter column visited drop not null;
+
+create unique index if not exists lead_options_default_unique
+on public.lead_options (group_key, lower(value))
+where store_id is null;
+
+create unique index if not exists lead_options_store_unique
+on public.lead_options (store_id, group_key, lower(value))
+where store_id is not null;
+
 alter table public.stores add column if not exists username text;
+alter table public.stores drop column if exists auth_user_id;
 update public.stores
 set username = split_part(email, '@', 1)
 where username is null or username = '';
@@ -88,6 +111,11 @@ for each row execute function app_private.set_updated_at();
 drop trigger if exists leads_set_updated_at on public.leads;
 create trigger leads_set_updated_at
 before update on public.leads
+for each row execute function app_private.set_updated_at();
+
+drop trigger if exists lead_options_set_updated_at on public.lead_options;
+create trigger lead_options_set_updated_at
+before update on public.lead_options
 for each row execute function app_private.set_updated_at();
 
 create or replace function app_private.handle_new_user()
@@ -161,6 +189,7 @@ grant execute on all functions in schema app_private to authenticated;
 alter table public.profiles enable row level security;
 alter table public.stores enable row level security;
 alter table public.leads enable row level security;
+alter table public.lead_options enable row level security;
 
 drop policy if exists "profiles_select_own_or_admin" on public.profiles;
 create policy "profiles_select_own_or_admin"
@@ -168,6 +197,13 @@ on public.profiles
 for select
 to authenticated
 using (id = auth.uid() or app_private.is_admin());
+
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own"
+on public.profiles
+for insert
+to authenticated
+with check (id = auth.uid());
 
 drop policy if exists "stores_select_own_or_admin" on public.stores;
 create policy "stores_select_own_or_admin"
@@ -220,7 +256,53 @@ for delete
 to authenticated
 using (app_private.is_admin() or store_id = app_private.current_store_id());
 
+drop policy if exists "lead_options_select_store_or_admin" on public.lead_options;
+create policy "lead_options_select_store_or_admin"
+on public.lead_options
+for select
+to authenticated
+using (
+  app_private.is_admin()
+  or store_id is null
+  or store_id = app_private.current_store_id()
+);
+
+drop policy if exists "lead_options_insert_store_or_admin" on public.lead_options;
+create policy "lead_options_insert_store_or_admin"
+on public.lead_options
+for insert
+to authenticated
+with check (
+  app_private.is_admin()
+  or store_id = app_private.current_store_id()
+);
+
+drop policy if exists "lead_options_update_store_or_admin" on public.lead_options;
+create policy "lead_options_update_store_or_admin"
+on public.lead_options
+for update
+to authenticated
+using (
+  app_private.is_admin()
+  or store_id = app_private.current_store_id()
+)
+with check (
+  app_private.is_admin()
+  or store_id = app_private.current_store_id()
+);
+
+drop policy if exists "lead_options_delete_store_or_admin" on public.lead_options;
+create policy "lead_options_delete_store_or_admin"
+on public.lead_options
+for delete
+to authenticated
+using (
+  app_private.is_admin()
+  or store_id = app_private.current_store_id()
+);
+
 grant usage on schema public to anon, authenticated;
-grant select on public.profiles to authenticated;
+grant select, insert on public.profiles to authenticated;
 grant select, insert, update on public.stores to authenticated;
 grant select, insert, update, delete on public.leads to authenticated;
+grant select, insert, update, delete on public.lead_options to authenticated;

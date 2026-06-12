@@ -98,6 +98,156 @@
             </article>
           </section>
 
+          <section class="analytics-panel" aria-label="Análise das campanhas">
+            <button
+              class="analytics-toggle"
+              type="button"
+              id="analyticsToggle"
+              aria-expanded="false"
+              aria-controls="analyticsContent"
+            >
+              <span>
+                <small>Inteligência comercial</small>
+                <strong>Métricas e rankings das campanhas</strong>
+              </span>
+              <span id="analyticsToggleLabel">Mostrar análise</span>
+            </button>
+
+            <div id="analyticsContent" class="analytics-content" hidden>
+              <div class="analytics-controls">
+                <label class="field">
+                  <span>Loja</span>
+                  <select id="analyticsStoreFilter">
+                    <option value="">Todas as lojas</option>
+                  </select>
+                </label>
+
+                <div class="field analytics-mode-field">
+                  <span>Data</span>
+                  <div class="segmented-control" role="group" aria-label="Tipo de data">
+                    <button class="segment-button is-active" type="button" data-analytics-date-mode="single">
+                      Data específica
+                    </button>
+                    <button class="segment-button" type="button" data-analytics-date-mode="range">
+                      Período
+                    </button>
+                  </div>
+                </div>
+
+                <label class="field analytics-single-date">
+                  <span>Dia</span>
+                  <input id="analyticsSingleDate" type="date" />
+                </label>
+
+                <label class="field analytics-range-date" hidden>
+                  <span>Início</span>
+                  <input id="analyticsStartDate" type="date" />
+                </label>
+
+                <label class="field analytics-range-date" hidden>
+                  <span>Fim</span>
+                  <input id="analyticsEndDate" type="date" />
+                </label>
+
+                <div class="field quick-range-field">
+                  <span>Atalhos</span>
+                  <div class="quick-range-buttons">
+                    <button class="mini-button" type="button" data-analytics-range="week">Semana</button>
+                    <button class="mini-button" type="button" data-analytics-range="month">Mês</button>
+                    <button class="mini-button" type="button" data-analytics-range="year">Ano</button>
+                  </div>
+                </div>
+              </div>
+
+              <section class="analytics-kpis" aria-label="Resumo filtrado">
+                <article class="insight-card">
+                  <span>Leads captados</span>
+                  <strong id="analyticsTotalLeads">0</strong>
+                </article>
+                <article class="insight-card">
+                  <span>Vieram à loja</span>
+                  <strong id="analyticsVisitedLeads">0</strong>
+                </article>
+                <article class="insight-card">
+                  <span>Compraram</span>
+                  <strong id="analyticsBoughtLeads">0</strong>
+                </article>
+                <article class="insight-card">
+                  <span>Conversão</span>
+                  <strong id="analyticsConversionRate">0%</strong>
+                </article>
+              </section>
+
+              <section class="analytics-visuals" aria-label="Gráficos de métricas importantes">
+                <article class="chart-panel metric-chart-panel">
+                  <div class="chart-heading">
+                    <span>Funil comercial</span>
+                    <strong id="analyticsFunnelLabel">Sem dados</strong>
+                  </div>
+                  <div id="analyticsFunnelChart" class="metric-bars"></div>
+                </article>
+
+                <article class="chart-panel metric-chart-panel">
+                  <div class="chart-heading">
+                    <span>Taxas principais</span>
+                    <strong id="analyticsRatesLabel">Sem dados</strong>
+                  </div>
+                  <div id="analyticsRatesChart" class="metric-bars"></div>
+                </article>
+              </section>
+
+              <section class="analytics-grid" aria-label="Rankings de desempenho">
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Campanhas</span>
+                    <strong id="topCampaignLabel">Sem dados</strong>
+                  </div>
+                  <div id="campaignRanking" class="bar-ranking"></div>
+                </article>
+
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Lojas</span>
+                    <strong id="topStoreLabel">Sem dados</strong>
+                  </div>
+                  <div id="storeRanking" class="bar-ranking"></div>
+                </article>
+
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Início da conversa</span>
+                    <strong id="topStartLabel">Sem dados</strong>
+                  </div>
+                  <div id="conversationStartRanking" class="bar-ranking"></div>
+                </article>
+
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Fim da conversa</span>
+                    <strong id="topConclusionLabel">Sem dados</strong>
+                  </div>
+                  <div id="conclusionRanking" class="bar-ranking"></div>
+                </article>
+
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Visitas</span>
+                    <strong id="topVisitedLabel">Sem dados</strong>
+                  </div>
+                  <div id="visitedRanking" class="bar-ranking"></div>
+                </article>
+
+                <article class="chart-panel">
+                  <div class="chart-heading">
+                    <span>Compras</span>
+                    <strong id="topBoughtLabel">Sem dados</strong>
+                  </div>
+                  <div id="boughtRanking" class="bar-ranking"></div>
+                </article>
+              </section>
+            </div>
+          </section>
+
           <section class="admin-workspace">
             <form id="storeForm" class="form-panel" autocomplete="off">
               <div class="panel-heading">
@@ -113,22 +263,12 @@
               </label>
 
               <label class="field">
-                <span>Nick de login</span>
-                <input id="storeNick" type="text" placeholder="ex: loja-centro" required />
-              </label>
-
-              <label class="field">
-                <span>Senha da loja</span>
-                <div class="password-field">
-                  <input id="storePassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
-                  <button class="password-toggle" type="button" data-toggle-password="storePassword">
-                    Ver
-                  </button>
-                </div>
+                <span>Identificador da loja</span>
+                <input id="storeNick" type="text" placeholder="ex: loja-centro" />
               </label>
 
               <p id="storeMessage" class="form-message" role="status" aria-live="polite"></p>
-              <button class="primary-button" type="submit">Criar login da loja</button>
+              <button class="primary-button" type="submit">Criar loja</button>
             </form>
 
             <section class="list-panel options-panel" aria-label="Opções padrão">
@@ -140,7 +280,7 @@
               </div>
 
               <p class="panel-note">
-                Alterar aqui atualiza as opções de todas as lojas.
+                Alterar aqui salva as opções padrão no banco de dados.
               </p>
 
               <div id="adminOptionsList" class="options-editor"></div>
@@ -157,7 +297,7 @@
 
               <div id="storeEmptyState" class="empty-state">
                 <strong>Nenhuma loja cadastrada ainda.</strong>
-                <span>Crie a primeira loja para liberar o acesso individual.</span>
+                <span>Crie a primeira loja para organizar os leads.</span>
               </div>
 
               <div id="storeList" class="lead-list"></div>
@@ -265,6 +405,7 @@
               <div class="choice-section">
                 <div class="section-title">
                   <h3>Visitou a loja?</h3>
+                  <span>Opcional</span>
                 </div>
                 <div class="choice-grid two" data-choice-group="visited"></div>
               </div>
