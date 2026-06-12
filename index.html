@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-clean" />
-    <script src="app.js?v=20260612-clean" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20260612-brand-choice" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js?v=20260612-brand-choice" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -76,6 +77,8 @@
           <button class="ghost-button" type="button" id="logoutButton">Sair</button>
         </div>
       </header>
+
+      <div id="appNotification" class="app-notification" role="status" aria-live="polite" hidden></div>
 
       <main>
         <section id="adminView" class="admin-view" hidden>
@@ -290,7 +293,7 @@
               </div>
 
               <p class="panel-note">
-                Integração externa removida. As alterações atuais são temporárias.
+                As alterações são salvas para todas as lojas deste admin.
               </p>
 
               <div id="adminOptionsList" class="options-editor"></div>

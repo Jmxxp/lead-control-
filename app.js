@@ -1,3 +1,7 @@
+const SUPABASE_URL = "https://menlvmsgkhgqxiydphbn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lbmx2bXNna2hncXhpeWRwaGJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNTYxNzEsImV4cCI6MjA5NjgzMjE3MX0.ylQcT5KnVDvdP3Wa8ZKdI6FpXWnjXAkpzpfzRw0FP30";
+const SESSION_STORAGE_KEY = "lead-control-session";
+
 const labels = {
   channel: "Canal",
   campaign: "Campanha",
@@ -9,6 +13,7 @@ const labels = {
 
 const optionGroups = Object.keys(labels);
 const fixedOptionGroups = new Set(["visited", "bought"]);
+const fixedChannelOptions = new Set(["Instagram", "Facebook"]);
 const nativeYesNoOptions = ["Sim", "Não"];
 const defaultOptions = {
   channel: ["WhatsApp", "Instagram", "Facebook", "Ligação"],
@@ -19,14 +24,16 @@ const defaultOptions = {
   bought: nativeYesNoOptions,
 };
 
+let supabaseClient = null;
 let options = cloneOptions(defaultOptions);
+let optionRecords = createDefaultOptionRecords();
 let currentProfile = null;
 let activeStoreContext = null;
 let stores = [];
 let leads = [];
-let users = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
+const dirtyOptionValues = new Map();
 let selectedValues = createEmptySelection();
 
 const $ = (selector) => document.querySelector(selector);
@@ -37,6 +44,7 @@ const appView = $("#appView");
 const adminView = $("#adminView");
 const storeView = $("#storeView");
 const sessionRole = $("#sessionRole");
+const appNotification = $("#appNotification");
 const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
 const loginForm = $("#loginForm");
@@ -98,14 +106,28 @@ const unsavedOptionsModal = $("#unsavedOptionsModal");
 const unsavedCancel = $("#unsavedCancel");
 const unsavedDiscard = $("#unsavedDiscard");
 const unsavedSave = $("#unsavedSave");
+let notificationTimer = null;
 
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener("DOMContentLoaded", () => {
+  init().catch((error) => {
+    showAuth();
+    showAuthMessage(readableError(error));
+  });
+});
 
-function init() {
+async function init() {
   setTodayLabel();
   bindEvents();
   showAuth();
   renderAll();
+  initializeSupabase();
+
+  if (!isSupabaseReady()) {
+    showAuthMessage("Cole a URL e a chave pública/anon do Supabase no topo do app.js.");
+    return;
+  }
+
+  await restoreSession();
 }
 
 function bindEvents() {
@@ -173,7 +195,32 @@ function bindEvents() {
   storeList.addEventListener("click", handleStoreListClick);
 }
 
-function handleAdminSignup(event) {
+function initializeSupabase() {
+  if (!isSupabaseConfigured() || !window.supabase?.createClient) return;
+
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function isSupabaseConfigured() {
+  return (
+    SUPABASE_URL.startsWith("https://") &&
+    !SUPABASE_URL.includes("SEU-PROJETO") &&
+    SUPABASE_ANON_KEY &&
+    !SUPABASE_ANON_KEY.includes("SUA_CHAVE")
+  );
+}
+
+function isSupabaseReady() {
+  return Boolean(supabaseClient);
+}
+
+async function handleAdminSignup(event) {
   event.preventDefault();
   clearAuthMessage();
 
@@ -183,71 +230,131 @@ function handleAdminSignup(event) {
     return;
   }
 
-  if (users.some((user) => user.role === "admin")) {
-    showAuthMessage("Admin temporário já existe nesta aba.");
-    return;
+  try {
+    setFormBusy(signupForm, true);
+    const row = firstRow(await rpc("lc_create_admin", {
+      p_full_name: signupName.value.trim(),
+      p_nick: username,
+      p_password: signupPassword.value,
+    }));
+    signupForm.reset();
+    await openProfile(profileFromSessionRow(row));
+  } catch (error) {
+    showAuthMessage(readableError(error));
+  } finally {
+    setFormBusy(signupForm, false);
   }
-
-  const admin = {
-    id: createId(),
-    username,
-    password: signupPassword.value,
-    fullName: signupName.value.trim() || username,
-    role: "admin",
-    storeId: null,
-  };
-
-  users.push(admin);
-  signupForm.reset();
-  openProfile(admin);
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   clearAuthMessage();
 
   const username = normalizeNick(loginNick.value);
-  const matchedUser = users.find((user) => user.username === username && user.password === loginPassword.value);
-
-  if (!matchedUser) {
-    showAuthMessage("Login temporário não encontrado. Crie um admin nesta aba.");
+  if (!username) {
+    showAuthMessage("Digite seu nick.");
     return;
   }
 
-  openProfile(matchedUser);
+  try {
+    setFormBusy(loginForm, true);
+    const row = firstRow(await rpc("lc_login", {
+      p_nick: username,
+      p_password: loginPassword.value,
+    }));
+    loginForm.reset();
+    await openProfile(profileFromSessionRow(row));
+  } catch (error) {
+    showAuthMessage(readableError(error));
+  } finally {
+    setFormBusy(loginForm, false);
+  }
 }
 
-function openProfile(profile) {
-  currentProfile = profile;
-  authScreen.hidden = true;
-  appView.hidden = false;
+async function restoreSession() {
+  const saved = readStoredSession();
+  if (!saved?.sessionToken) return;
 
-  if (profile.role === "admin") {
-    activeStoreContext = null;
-    sessionRole.textContent = `Admin · ${profile.username}`;
-    backAdminButton.hidden = true;
-    adminView.hidden = false;
-    storeView.hidden = true;
-    renderAll();
+  if (saved.expiresAt && new Date(saved.expiresAt) <= new Date()) {
+    clearStoredSession();
     return;
   }
 
-  activeStoreContext = stores.find((store) => store.id === profile.storeId) || null;
-  sessionRole.textContent = `Loja · ${activeStoreContext?.name || profile.username}`;
+  try {
+    const row = firstRow(await rpc("lc_current_profile", {
+      p_session_token: saved.sessionToken,
+    }));
+    await openProfile(profileFromProfileRow(row, saved.sessionToken, saved.expiresAt));
+  } catch (error) {
+    clearStoredSession();
+    showAuthMessage("Sessão expirada. Entre novamente.");
+  }
+}
+
+async function openProfile(profile) {
+  currentProfile = profile;
+  saveStoredSession(profile);
+
+  authScreen.hidden = true;
+  appView.hidden = false;
+  await refreshRemoteState();
+
+  if (profile.role === "admin") {
+    showAdminDashboard();
+    return;
+  }
+
+  showStoreDashboard();
+}
+
+function showAdminDashboard() {
+  activeStoreContext = null;
+  sessionRole.textContent = `Admin · ${currentProfile.username}`;
   backAdminButton.hidden = true;
+  adminView.hidden = false;
+  storeView.hidden = true;
+  renderAll();
+}
+
+function showStoreDashboard() {
+  activeStoreContext = stores.find((store) => store.id === currentProfile.storeId) || {
+    id: currentProfile.storeId,
+    name: currentProfile.storeName || currentProfile.username,
+    username: currentProfile.username,
+  };
+  sessionRole.textContent = `Loja · ${activeStoreContext?.name || currentProfile.username}`;
+  backAdminButton.hidden = true;
+  toggleOptionsEditButton.hidden = true;
+  clearFormButton.hidden = true;
+  storeOptionsPanel.hidden = true;
   adminView.hidden = true;
   storeView.hidden = false;
   renderAll();
 }
 
-function handleLogout() {
-  currentProfile = null;
-  activeStoreContext = null;
-  resetLeadForm();
-  showAuth();
+async function handleLogout() {
+  try {
+    if (currentProfile?.sessionToken) {
+      await rpc("lc_logout", { p_session_token: currentProfile.sessionToken });
+    }
+  } catch (error) {
+    console.warn(error);
+  } finally {
+    clearStoredSession();
+    currentProfile = null;
+    activeStoreContext = null;
+    stores = [];
+    leads = [];
+    options = cloneOptions(defaultOptions);
+    optionRecords = createDefaultOptionRecords();
+    resetLeadForm();
+    showAuth();
+    renderAll();
+  }
 }
 
 function showAuth() {
+  clearAppNotification();
   authScreen.hidden = false;
   appView.hidden = true;
   adminView.hidden = true;
@@ -265,7 +372,7 @@ function setAuthTab(tabName) {
   });
 }
 
-function handleCreateStore(event) {
+async function handleCreateStore(event) {
   event.preventDefault();
   clearStoreMessage();
 
@@ -277,47 +384,53 @@ function handleCreateStore(event) {
     return;
   }
 
-  if (users.some((user) => user.username === username)) {
-    showStoreMessage("Esse nick já existe nesta aba.");
-    return;
+  try {
+    setFormBusy(storeForm, true);
+    await authenticatedRpc("lc_create_store", {
+      p_name: storeName.value.trim(),
+      p_nick: username,
+      p_password: storePassword.value,
+    });
+    storeForm.reset();
+    await refreshRemoteState();
+    showStoreMessage("Loja criada no Supabase.", "success");
+    renderAll();
+  } catch (error) {
+    showStoreMessage(readableError(error));
+  } finally {
+    setFormBusy(storeForm, false);
   }
-
-  const store = {
-    id: createId(),
-    name: storeName.value.trim(),
-    username,
-    createdAt: new Date().toISOString(),
-  };
-  const storeUser = {
-    id: createId(),
-    username,
-    password: storePassword.value,
-    fullName: store.name,
-    role: "store",
-    storeId: store.id,
-  };
-
-  stores.push(store);
-  users.push(storeUser);
-  storeForm.reset();
-  showStoreMessage("Loja temporária criada nesta aba.", "success");
-  renderAll();
 }
 
 function handleStoreListClick(event) {
   const button = event.target.closest("[data-store-login]");
-  if (!button) return;
+  if (!button || currentProfile?.role !== "admin") return;
+  guardUnsavedOptions(() => openStoreAsAdmin(button.dataset.storeLogin));
+}
 
-  const user = users.find((item) => item.role === "store" && item.storeId === button.dataset.storeLogin);
-  if (user) guardUnsavedOptions(() => openProfile(user));
+function openStoreAsAdmin(storeId) {
+  const store = stores.find((item) => item.id === storeId);
+  if (!store) return;
+
+  activeStoreContext = store;
+  sessionRole.textContent = `Admin · ${store.name}`;
+  backAdminButton.hidden = false;
+  toggleOptionsEditButton.hidden = false;
+  clearFormButton.hidden = true;
+  adminView.hidden = true;
+  storeView.hidden = false;
+  resetLeadForm();
+  renderAll();
 }
 
 function returnToAdmin() {
-  const admin = users.find((user) => user.role === "admin");
-  if (admin) openProfile(admin);
+  if (currentProfile?.role !== "admin") return;
+  clearFormButton.hidden = false;
+  showAdminDashboard();
+  resetLeadForm();
 }
 
-function handleLeadSubmit(event) {
+async function handleLeadSubmit(event) {
   event.preventDefault();
 
   const store = getActiveStore();
@@ -327,34 +440,36 @@ function handleLeadSubmit(event) {
   }
 
   const payload = {
-    name: nameInput.value.trim(),
-    phone: phoneInput.value.trim(),
-    channel: selectedValues.channel,
-    campaign: selectedValues.campaign,
-    conversationStart: selectedValues.conversationStart,
-    conclusion: selectedValues.conclusion,
-    visited: selectedValues.visited,
-    bought: selectedValues.bought,
-    storeId: store.id,
-    storeName: store.name,
-    updatedAt: new Date().toISOString(),
+    p_lead_id: editingIdInput.value || null,
+    p_name: nameInput.value.trim(),
+    p_phone: phoneInput.value.trim(),
+    p_channel: selectedValues.channel,
+    p_campaign: selectedValues.campaign,
+    p_conversation_start: selectedValues.conversationStart,
+    p_conclusion: selectedValues.conclusion,
+    p_visited: selectedValues.visited,
+    p_bought: selectedValues.bought,
+    p_store_id: store.id,
   };
 
-  if (!payload.name || !payload.phone) {
+  if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
     return;
   }
 
-  if (editingIdInput.value) {
-    leads = leads.map((lead) => (lead.id === editingIdInput.value ? { ...lead, ...payload } : lead));
-    showFormMessage("Lead atualizado nesta aba.", "success");
-  } else {
-    leads.unshift({ id: createId(), createdAt: new Date().toISOString(), ...payload });
-    showFormMessage("Lead salvo temporariamente nesta aba.", "success");
+  try {
+    setFormBusy(form, true);
+    await authenticatedRpc("lc_upsert_lead", payload);
+    const wasEditing = Boolean(editingIdInput.value);
+    await refreshRemoteState();
+    resetLeadForm();
+    showFormMessage(wasEditing ? "Lead atualizado no Supabase." : "Lead salvo no Supabase.", "success");
+    renderAll();
+  } catch (error) {
+    showFormMessage(readableError(error));
+  } finally {
+    setFormBusy(form, false);
   }
-
-  resetLeadForm();
-  renderAll();
 }
 
 function handleLeadListClick(event) {
@@ -386,9 +501,14 @@ function editLead(id) {
   renderChoiceButtons();
 }
 
-function deleteLead(id) {
-  leads = leads.filter((lead) => lead.id !== id);
-  renderAll();
+async function deleteLead(id) {
+  try {
+    await authenticatedRpc("lc_delete_lead", { p_lead_id: id });
+    await refreshRemoteState();
+    renderAll();
+  } catch (error) {
+    showFormMessage(readableError(error));
+  }
 }
 
 function resetLeadForm() {
@@ -399,6 +519,29 @@ function resetLeadForm() {
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
   renderChoiceButtons();
+}
+
+async function refreshRemoteState() {
+  if (!currentProfile?.sessionToken) return;
+
+  const [storeRows, optionRows, leadRows] = await Promise.all([
+    authenticatedRpc("lc_list_stores"),
+    authenticatedRpc("lc_list_options"),
+    authenticatedRpc("lc_list_leads"),
+  ]);
+
+  stores = (storeRows || []).map(mapStoreRow);
+  leads = (leadRows || []).map(mapLeadRow);
+  applyOptionRows(optionRows || []);
+
+  if (activeStoreContext) {
+    activeStoreContext = stores.find((store) => store.id === activeStoreContext.id) || activeStoreContext;
+  }
+}
+
+async function refreshOptions() {
+  applyOptionRows(await authenticatedRpc("lc_list_options"));
+  renderAll();
 }
 
 function renderAll() {
@@ -479,20 +622,21 @@ function renderChoiceButtons() {
       container.innerHTML = options[group]
         .map((value) => {
           const isActive = selectedValues[group] === value;
-          return `<button class="choice-button ${isActive ? "is-active" : ""}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
+          const className = [
+            "choice-button",
+            isActive ? "is-active" : "",
+            getChoiceClass(group, value),
+          ].filter(Boolean).join(" ");
+          return `<button class="${className}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${getChoiceLabel(group, value)}</button>`;
         })
         .join("");
 
-      if (fixedOptionGroups.has(group)) {
-        container.insertAdjacentHTML(
-          "beforeend",
-          `<button class="choice-button ${selectedValues[group] === "" ? "is-active" : ""}" type="button" data-choice="${group}" data-value="">Limpar</button>`,
-        );
-      }
-
       container.querySelectorAll("[data-choice]").forEach((button) => {
         button.addEventListener("click", () => {
-          selectedValues[group] = button.dataset.value;
+          selectedValues[group] =
+            fixedOptionGroups.has(group) && selectedValues[group] === button.dataset.value
+              ? ""
+              : button.dataset.value;
           renderChoiceButtons();
         });
       });
@@ -518,12 +662,12 @@ function renderOptionsEditor(container, scope) {
   container.innerHTML = optionGroups
     .map((group) => {
       const isFixed = fixedOptionGroups.has(group);
-      const chips = options[group]
-        .map((value, index) =>
-          isFixed
-            ? `<span class="option-chip">${escapeHtml(value)}</span>`
-            : `<div class="option-row" data-group="${group}" data-index="${index}">
-                <input value="${escapeHtml(value)}" aria-label="${labels[group]}" />
+      const chips = (optionRecords[group] || [])
+        .map((record) =>
+          isFixed || record.fixed
+            ? `<span class="option-chip">${escapeHtml(record.value)}</span>`
+            : `<div class="option-row" data-group="${group}" data-option-id="${record.id}">
+                <input value="${escapeHtml(dirtyOptionValues.get(record.id) ?? record.value)}" aria-label="${labels[group]}" />
                 <button class="mini-button option-save" type="button" data-option-action="save" hidden>Salvar</button>
                 <button class="mini-button danger" type="button" data-option-action="delete">Excluir</button>
               </div>`,
@@ -550,12 +694,13 @@ function handleOptionsEditorInput(event) {
   const row = event.target.closest(".option-row");
   if (!row) return;
 
-  dirtyOptionKeys.add(`${row.dataset.group}:${row.dataset.index}`);
+  dirtyOptionKeys.add(row.dataset.optionId);
+  dirtyOptionValues.set(row.dataset.optionId, event.target.value);
   const saveButton = row.querySelector("[data-option-action='save']");
   if (saveButton) saveButton.hidden = false;
 }
 
-function handleOptionsEditorClick(event) {
+async function handleOptionsEditorClick(event) {
   const button = event.target.closest("[data-option-action]");
   if (!button) return;
 
@@ -565,34 +710,47 @@ function handleOptionsEditorClick(event) {
   const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
 
   if (fixedOptionGroups.has(group)) return;
+  if (row && getOptionRecord(group, row.dataset.optionId)?.fixed) return;
 
-  if (action === "add") {
-    options[group].push("Nova opção");
-    dirtyOptionKeys.add(`${group}:${options[group].length - 1}`);
-    renderOptionsEditors();
-    return;
-  }
+  try {
+    button.disabled = true;
 
-  if (!row) return;
-
-  const index = Number(row.dataset.index);
-  if (action === "delete") {
-    options[group].splice(index, 1);
-    dirtyOptionKeys.clear();
-    renderAll();
-    showOptionsMessage(messageTarget, "Opção removida nesta aba.", "success");
-  }
-
-  if (action === "save") {
-    const value = row.querySelector("input").value.trim();
-    if (!value) {
-      showOptionsMessage(messageTarget, "Digite um valor.");
+    if (action === "add") {
+      await authenticatedRpc("lc_add_option", { p_group_key: group });
+      await refreshOptions();
+      showOptionsMessage(messageTarget, "Opção criada no Supabase.", "success");
       return;
     }
-    options[group][index] = value;
-    dirtyOptionKeys.delete(`${group}:${index}`);
-    renderAll();
-    showOptionsMessage(messageTarget, "Opção salva nesta aba.", "success");
+
+    if (!row) return;
+
+    if (action === "delete") {
+      await authenticatedRpc("lc_delete_option", { p_option_id: row.dataset.optionId });
+      dirtyOptionKeys.delete(row.dataset.optionId);
+      dirtyOptionValues.delete(row.dataset.optionId);
+      await refreshOptions();
+      showOptionsMessage(messageTarget, "Opção removida no Supabase.", "success");
+    }
+
+    if (action === "save") {
+      const value = row.querySelector("input").value.trim();
+      if (!value) {
+        showOptionsMessage(messageTarget, "Digite um valor.");
+        return;
+      }
+      await authenticatedRpc("lc_update_option", {
+        p_option_id: row.dataset.optionId,
+        p_value: value,
+      });
+      dirtyOptionKeys.delete(row.dataset.optionId);
+      dirtyOptionValues.delete(row.dataset.optionId);
+      await refreshOptions();
+      showOptionsMessage(messageTarget, "Opção salva no Supabase.", "success");
+    }
+  } catch (error) {
+    showOptionsMessage(messageTarget, readableError(error));
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -621,13 +779,33 @@ function closeUnsavedOptionsModal() {
 
 function discardUnsavedOptionsAndContinue() {
   dirtyOptionKeys.clear();
+  dirtyOptionValues.clear();
+  renderOptionsEditors();
   continuePendingAction();
 }
 
-function saveUnsavedOptionsAndContinue() {
+async function saveUnsavedOptionsAndContinue() {
+  try {
+    await saveDirtyOptions();
+    continuePendingAction();
+  } catch (error) {
+    showOptionsMessage(storeOptionsPanel.hidden ? adminOptionsMessage : storeOptionsMessage, readableError(error));
+  }
+}
+
+async function saveDirtyOptions() {
+  for (const optionId of Array.from(dirtyOptionKeys)) {
+    const value = dirtyOptionValues.get(optionId)?.trim();
+    if (!value) throw new Error("Digite um valor para salvar as opções.");
+    await authenticatedRpc("lc_update_option", {
+      p_option_id: optionId,
+      p_value: value,
+    });
+  }
+
   dirtyOptionKeys.clear();
-  renderAll();
-  continuePendingAction();
+  dirtyOptionValues.clear();
+  await refreshOptions();
 }
 
 function continuePendingAction() {
@@ -706,7 +884,7 @@ function getFilteredLeads() {
   const visible = getVisibleStoreLeads();
   const search = searchInput.value.trim().toLowerCase();
   return visible.filter((lead) => {
-    const matchesSearch = !search || [lead.name, lead.phone, lead.storeName].some((value) => value.toLowerCase().includes(search));
+    const matchesSearch = !search || [lead.name, lead.phone, lead.storeName].some((value) => String(value || "").toLowerCase().includes(search));
     const matchesSimpleFilters =
       matchesFilter(lead.channel, channelFilter.value) &&
       matchesFilter(lead.campaign, campaignFilter.value) &&
@@ -747,7 +925,9 @@ function getAnalyticsLeads() {
 }
 
 function getActiveStore() {
-  if (currentProfile?.role === "store") return activeStoreContext;
+  if (currentProfile?.role === "store") {
+    return activeStoreContext || stores.find((store) => store.id === currentProfile.storeId) || null;
+  }
   return activeStoreContext;
 }
 
@@ -807,6 +987,155 @@ function setTodayLabel() {
   $("#todayLabel").textContent = label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+async function rpc(functionName, args = {}) {
+  if (!supabaseClient) {
+    throw new Error("Supabase não configurado. Informe URL e chave pública/anon no app.js.");
+  }
+
+  const { data, error } = await supabaseClient.rpc(functionName, args);
+  if (error) throw error;
+  return data;
+}
+
+async function authenticatedRpc(functionName, args = {}) {
+  if (!currentProfile?.sessionToken) {
+    throw new Error("Sessão inválida. Entre novamente.");
+  }
+
+  return rpc(functionName, {
+    p_session_token: currentProfile.sessionToken,
+    ...args,
+  });
+}
+
+function profileFromSessionRow(row) {
+  if (!row) throw new Error("Resposta de sessão vazia.");
+  return {
+    id: row.user_id,
+    adminId: row.admin_id,
+    username: row.nick,
+    fullName: row.full_name,
+    role: row.role,
+    storeId: row.store_id,
+    storeName: row.store_name,
+    sessionToken: row.session_token,
+    expiresAt: row.expires_at,
+  };
+}
+
+function profileFromProfileRow(row, sessionToken, expiresAt) {
+  if (!row) throw new Error("Perfil não encontrado.");
+  return {
+    id: row.user_id,
+    adminId: row.admin_id,
+    username: row.nick,
+    fullName: row.full_name,
+    role: row.role,
+    storeId: row.store_id,
+    storeName: row.store_name,
+    sessionToken,
+    expiresAt,
+  };
+}
+
+function mapStoreRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    username: row.nick,
+    createdAt: row.created_at,
+    leadsCount: Number(row.leads_count || 0),
+    salesCount: Number(row.sales_count || 0),
+  };
+}
+
+function mapLeadRow(row) {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    storeName: row.store_name,
+    name: row.name,
+    phone: row.phone,
+    channel: row.channel || "",
+    campaign: row.campaign || "",
+    conversationStart: row.conversation_start || "",
+    conclusion: row.conclusion || "",
+    visited: row.visited || "",
+    bought: row.bought || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function applyOptionRows(rows) {
+  optionRecords = Object.fromEntries(optionGroups.map((group) => [group, []]));
+
+  rows.forEach((row) => {
+    if (!optionRecords[row.group_key]) return;
+    optionRecords[row.group_key].push({
+      id: row.id,
+      groupKey: row.group_key,
+      value: row.value,
+      sortOrder: row.sort_order,
+      fixed: row.fixed,
+    });
+  });
+
+  optionGroups.forEach((group) => {
+    optionRecords[group].sort((a, b) => a.sortOrder - b.sortOrder);
+  });
+
+  options = Object.fromEntries(
+    optionGroups.map((group) => [group, optionRecords[group].map((record) => record.value)]),
+  );
+  dirtyOptionKeys.clear();
+  dirtyOptionValues.clear();
+}
+
+function createDefaultOptionRecords() {
+  return Object.fromEntries(
+    optionGroups.map((group) => [
+      group,
+      defaultOptions[group].map((value, index) => ({
+        id: `default-${group}-${index}`,
+        groupKey: group,
+        value,
+        sortOrder: (index + 1) * 10,
+        fixed: fixedOptionGroups.has(group) || fixedChannelOptions.has(value),
+      })),
+    ]),
+  );
+}
+
+function firstRow(data) {
+  return Array.isArray(data) ? data[0] : data;
+}
+
+function readStoredSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredSession(profile) {
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    sessionToken: profile.sessionToken,
+    expiresAt: profile.expiresAt,
+  }));
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function setFormBusy(targetForm, isBusy) {
+  targetForm.querySelectorAll("button, input, select").forEach((element) => {
+    element.disabled = isBusy;
+  });
+}
+
 function fillSelect(select, values, firstLabel) {
   const currentValue = select.value;
   select.innerHTML = `<option value="">${firstLabel}</option>` +
@@ -838,10 +1167,6 @@ function normalizeNick(value) {
   return value.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
-function createId() {
-  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
-}
-
 function formatPhone(value) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 2) return digits;
@@ -852,6 +1177,29 @@ function formatPhone(value) {
 
 function toDateInput(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function getChoiceClass(group, value) {
+  if (group === "channel" && value === "Instagram") return "choice-instagram";
+  if (group === "channel" && value === "Facebook") return "choice-facebook";
+  if ((group === "visited" || group === "bought") && value === "Sim") return "choice-yes";
+  if ((group === "visited" || group === "bought") && value === "Não") return "choice-no";
+  return "";
+}
+
+function getChoiceLabel(group, value) {
+  const escapedValue = escapeHtml(value);
+  if (group === "channel" && value === "Instagram") {
+    return `<span class="choice-brand-mark">IG</span><span>${escapedValue}</span>`;
+  }
+  if (group === "channel" && value === "Facebook") {
+    return `<span class="choice-brand-mark">f</span><span>${escapedValue}</span>`;
+  }
+  return escapedValue;
+}
+
+function getOptionRecord(group, optionId) {
+  return (optionRecords[group] || []).find((record) => record.id === optionId) || null;
 }
 
 function renderTag(value) {
@@ -873,6 +1221,32 @@ function togglePassword(button) {
   button.textContent = isPassword ? "Ocultar" : "Ver";
 }
 
+function readableError(error) {
+  return error?.message || String(error || "Erro inesperado.");
+}
+
+function showAppNotification(message, type = "success") {
+  if (!message || !appNotification || appView.hidden) return;
+
+  clearTimeout(notificationTimer);
+  appNotification.textContent = message;
+  appNotification.classList.toggle("error", type === "error");
+  appNotification.hidden = false;
+
+  notificationTimer = setTimeout(() => {
+    appNotification.hidden = true;
+    appNotification.textContent = "";
+  }, 3600);
+}
+
+function clearAppNotification() {
+  clearTimeout(notificationTimer);
+  if (!appNotification) return;
+  appNotification.hidden = true;
+  appNotification.textContent = "";
+  appNotification.classList.remove("error");
+}
+
 function showAuthMessage(message, type = "error") {
   authMessage.textContent = message;
   authMessage.classList.toggle("success", type === "success");
@@ -885,6 +1259,7 @@ function clearAuthMessage() {
 function showStoreMessage(message, type = "error") {
   storeMessage.textContent = message;
   storeMessage.classList.toggle("success", type === "success");
+  if (type === "success") showAppNotification(message, "success");
 }
 
 function clearStoreMessage() {
@@ -894,9 +1269,11 @@ function clearStoreMessage() {
 function showFormMessage(message, type = "error") {
   formMessage.textContent = message;
   formMessage.classList.toggle("success", type === "success");
+  if (type === "success") showAppNotification(message, "success");
 }
 
 function showOptionsMessage(target, message, type = "error") {
   target.textContent = message;
   target.classList.toggle("success", type === "success");
+  if (type === "success") showAppNotification(message, "success");
 }
