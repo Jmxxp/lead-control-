@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-brand-logos" />
+    <link rel="stylesheet" href="styles.css?v=20260612-dimmed-choices" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-brand-logos" defer></script>
+    <script src="app.js?v=20260612-dimmed-choices" defer></script>
   </head>
   <body>
+    <button class="theme-toggle" type="button" id="themeToggle" aria-pressed="false">Modo escuro</button>
     <div class="app-shell">
       <section id="authScreen" class="auth-screen">
         <div class="auth-card">
@@ -426,10 +427,21 @@
               <div class="choice-section">
                 <div class="section-title">
                   <h3>Comprou?</h3>
-                  <span>Opcional</span>
+                  <span>Obrigatório se visitou</span>
                 </div>
                 <div class="choice-grid two" data-choice-group="bought"></div>
               </div>
+            </div>
+
+            <div id="purchaseDetails" class="purchase-details lead-entry" hidden>
+              <label class="field">
+                <span>Valor da compra</span>
+                <input id="purchaseAmount" type="text" inputmode="decimal" placeholder="0,00" />
+              </label>
+              <label class="field">
+                <span>OS</span>
+                <input id="serviceOrder" type="text" placeholder="Número da OS" />
+              </label>
             </div>
 
             <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>

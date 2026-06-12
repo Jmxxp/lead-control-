@@ -1,6 +1,7 @@
 const SUPABASE_URL = "https://menlvmsgkhgqxiydphbn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lbmx2bXNna2hncXhpeWRwaGJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNTYxNzEsImV4cCI6MjA5NjgzMjE3MX0.ylQcT5KnVDvdP3Wa8ZKdI6FpXWnjXAkpzpfzRw0FP30";
 const SESSION_STORAGE_KEY = "lead-control-session";
+const THEME_STORAGE_KEY = "lead-control-theme";
 
 const labels = {
   channel: "Canal",
@@ -45,6 +46,7 @@ const adminView = $("#adminView");
 const storeView = $("#storeView");
 const sessionRole = $("#sessionRole");
 const appNotification = $("#appNotification");
+const themeToggle = $("#themeToggle");
 const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
 const loginForm = $("#loginForm");
@@ -99,6 +101,9 @@ const endDateFilter = $("#endDateFilter");
 const clearFiltersButton = $("#clearFilters");
 const emptyState = $("#emptyState");
 const leadList = $("#leadList");
+const purchaseDetails = $("#purchaseDetails");
+const purchaseAmountInput = $("#purchaseAmount");
+const serviceOrderInput = $("#serviceOrder");
 const storeOptionsPanel = $("#storeOptionsPanel");
 const storeOptionsList = $("#storeOptionsList");
 const storeOptionsMessage = $("#storeOptionsMessage");
@@ -116,6 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function init() {
+  applyStoredTheme();
   setTodayLabel();
   bindEvents();
   showAuth();
@@ -176,6 +182,9 @@ function bindEvents() {
   phoneInput.addEventListener("input", () => {
     phoneInput.value = formatPhone(phoneInput.value);
   });
+  purchaseAmountInput.addEventListener("input", () => {
+    purchaseAmountInput.value = purchaseAmountInput.value.replace(/[^\d.,]/g, "");
+  });
 
   [
     searchInput,
@@ -193,6 +202,7 @@ function bindEvents() {
   clearFiltersButton.addEventListener("click", clearFilters);
   leadList.addEventListener("click", handleLeadListClick);
   storeList.addEventListener("click", handleStoreListClick);
+  themeToggle.addEventListener("click", toggleTheme);
 }
 
 function initializeSupabase() {
@@ -449,11 +459,26 @@ async function handleLeadSubmit(event) {
     p_conclusion: selectedValues.conclusion,
     p_visited: selectedValues.visited,
     p_bought: selectedValues.bought,
+    p_purchase_amount: selectedValues.bought === "Sim" ? parseCurrencyInput(purchaseAmountInput.value) : null,
+    p_service_order: selectedValues.bought === "Sim" ? serviceOrderInput.value.trim() : null,
     p_store_id: store.id,
   };
 
   if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
+    return;
+  }
+
+  if (payload.p_visited === "Sim" && !payload.p_bought) {
+    showFormMessage("Informe se o lead comprou ou não.");
+    return;
+  }
+
+  if (payload.p_bought === "Sim" && (!payload.p_purchase_amount || payload.p_purchase_amount <= 0 || !payload.p_service_order)) {
+    showFormMessage("Informe o valor da compra e a OS.");
+    purchaseDetails.hidden = false;
+    if (!payload.p_purchase_amount || payload.p_purchase_amount <= 0) purchaseAmountInput.focus();
+    else serviceOrderInput.focus();
     return;
   }
 
@@ -495,9 +520,12 @@ function editLead(id) {
     visited: lead.visited || "",
     bought: lead.bought || "",
   };
+  purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
+  serviceOrderInput.value = lead.serviceOrder || "";
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
+  updatePurchaseDetailsVisibility();
   renderChoiceButtons();
 }
 
@@ -515,9 +543,12 @@ function resetLeadForm() {
   form.reset();
   editingIdInput.value = "";
   selectedValues = createEmptySelection();
+  purchaseAmountInput.value = "";
+  serviceOrderInput.value = "";
   formTitle.textContent = "Cadastrar lead";
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
+  updatePurchaseDetailsVisibility();
   renderChoiceButtons();
 }
 
@@ -599,6 +630,8 @@ function renderLeadList() {
             ${renderTag(lead.conclusion)}
             ${renderTag(lead.visited ? `Visitou: ${lead.visited}` : "")}
             ${renderTag(lead.bought ? `Comprou: ${lead.bought}` : "")}
+            ${renderTag(lead.purchaseAmount ? `Valor: ${formatCurrency(lead.purchaseAmount)}` : "")}
+            ${renderTag(lead.serviceOrder ? `OS: ${lead.serviceOrder}` : "")}
           </div>
           <div class="card-actions">
             <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
@@ -625,6 +658,8 @@ function renderChoiceButtons() {
           const className = [
             "choice-button",
             isActive ? "is-active" : "",
+            group === "channel" && selectedValues.channel && !isActive ? "is-dimmed" : "",
+            (group === "visited" || group === "bought") && selectedValues[group] && !isActive ? "is-dimmed" : "",
             getChoiceClass(group, value),
           ].filter(Boolean).join(" ");
           return `<button class="${className}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${getChoiceLabel(group, value)}</button>`;
@@ -637,7 +672,15 @@ function renderChoiceButtons() {
             fixedOptionGroups.has(group) && selectedValues[group] === button.dataset.value
               ? ""
               : button.dataset.value;
+          if (group === "bought" && selectedValues.bought !== "Sim") {
+            purchaseAmountInput.value = "";
+            serviceOrderInput.value = "";
+          }
           renderChoiceButtons();
+          updatePurchaseDetailsVisibility();
+          if (group === "bought" && selectedValues.bought === "Sim") {
+            purchaseAmountInput.focus();
+          }
         });
       });
     });
@@ -1062,6 +1105,8 @@ function mapLeadRow(row) {
     conclusion: row.conclusion || "",
     visited: row.visited || "",
     bought: row.bought || "",
+    purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
+    serviceOrder: row.service_order || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1179,6 +1224,33 @@ function toDateInput(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function updatePurchaseDetailsVisibility() {
+  purchaseDetails.hidden = selectedValues.bought !== "Sim";
+}
+
+function parseCurrencyInput(value) {
+  const normalized = String(value || "")
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(value || 0));
+}
+
+function formatCurrencyInput(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
 function getChoiceClass(group, value) {
   if (group === "channel" && value === "Instagram") return "choice-instagram";
   if (group === "channel" && value === "Facebook") return "choice-facebook";
@@ -1237,6 +1309,22 @@ function togglePassword(button) {
   const isPassword = input.type === "password";
   input.type = isPassword ? "text" : "password";
   button.textContent = isPassword ? "Ocultar" : "Ver";
+}
+
+function applyStoredTheme() {
+  setTheme(localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light");
+}
+
+function toggleTheme() {
+  setTheme(document.body.classList.contains("is-dark") ? "light" : "dark");
+}
+
+function setTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("is-dark", isDark);
+  localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
+  themeToggle.textContent = isDark ? "Modo claro" : "Modo escuro";
+  themeToggle.setAttribute("aria-pressed", String(isDark));
 }
 
 function readableError(error) {

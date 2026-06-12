@@ -15,6 +15,22 @@
   --radius: 8px;
 }
 
+body.is-dark {
+  color-scheme: dark;
+  --bg: #111614;
+  --surface: #1a211f;
+  --surface-soft: #202a26;
+  --ink: #edf4f1;
+  --muted: #aab8b1;
+  --line: #34413c;
+  --green: #29a778;
+  --green-dark: #7ce0ba;
+  --blue: #4f8fd1;
+  --amber: #f0b64c;
+  --rose: #ff667d;
+  --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -34,6 +50,9 @@ body {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+  transition:
+    background 180ms ease,
+    color 180ms ease;
 }
 
 button,
@@ -44,6 +63,26 @@ select {
 
 button {
   cursor: pointer;
+}
+
+.theme-toggle {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  min-height: 40px;
+  border: 1px solid rgba(32, 33, 31, 0.12);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 14px;
+  font-weight: 900;
+  box-shadow: 0 14px 34px rgba(23, 38, 32, 0.12);
+}
+
+body.is-dark .theme-toggle {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
 }
 
 .app-shell {
@@ -73,6 +112,22 @@ button {
       transparent 16px
     );
   box-shadow: var(--shadow);
+}
+
+body.is-dark .topbar,
+body.is-dark .auth-card,
+body.is-dark .analytics-panel,
+body.is-dark .form-panel,
+body.is-dark .list-panel,
+body.is-dark .metric,
+body.is-dark .chart-panel,
+body.is-dark .insight-card,
+body.is-dark .today-card,
+body.is-dark .lead-card,
+body.is-dark .modal-dialog {
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(135deg, rgba(26, 33, 31, 0.96), rgba(26, 33, 31, 0.86));
 }
 
 .auth-screen {
@@ -645,8 +700,18 @@ h3 {
   grid-template-columns: 1fr 0.9fr;
 }
 
+.purchase-details {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(40, 92, 143, 0.18);
+  border-radius: var(--radius);
+  background: rgba(40, 92, 143, 0.06);
+}
+
 .double-choice {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .filters {
@@ -684,6 +749,18 @@ h3 {
     border-color 160ms ease,
     box-shadow 160ms ease,
     background 160ms ease;
+}
+
+body.is-dark .field input,
+body.is-dark .field select,
+body.is-dark .password-field,
+body.is-dark .option-row input,
+body.is-dark .option-add input {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.is-dark .field input::placeholder {
+  color: rgba(170, 184, 177, 0.72);
 }
 
 .field input::placeholder {
@@ -788,7 +865,7 @@ h3 {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.18);
+  background: transparent;
   color: #ffffff;
 }
 
@@ -850,6 +927,19 @@ h3 {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.18),
     0 12px 24px rgba(31, 111, 84, 0.22);
+}
+
+.choice-button.is-dimmed {
+  opacity: 0.38;
+  filter: grayscale(0.7) brightness(0.72);
+  box-shadow: none;
+}
+
+.choice-button.is-dimmed:hover {
+  opacity: 0.38;
+  filter: grayscale(0.7) brightness(0.72);
+  transform: none;
+  box-shadow: none;
 }
 
 .choice-instagram.is-active,
@@ -1262,6 +1352,7 @@ h3 {
   .choice-grid,
   .choice-grid.compact,
   .double-choice,
+  .purchase-details,
   .lead-meta,
   .option-row,
   .option-add,
