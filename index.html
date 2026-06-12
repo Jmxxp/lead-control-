@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-dark-filters" />
+    <link rel="stylesheet" href="styles.css?v=20260612-date-password" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-dark-filters" defer></script>
+    <script src="app.js?v=20260612-date-password" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -27,8 +28,8 @@
               <span>Senha</span>
               <div class="password-field">
                 <input id="loginPassword" type="password" placeholder="Sua senha" required />
-                <button class="password-toggle" type="button" data-toggle-password="loginPassword">
-                  Ver
+                <button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
               </div>
             </label>
@@ -48,8 +49,8 @@
               <span>Senha</span>
               <div class="password-field">
                 <input id="signupPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
-                <button class="password-toggle" type="button" data-toggle-password="signupPassword">
-                  Ver
+                <button class="password-toggle" type="button" data-toggle-password="signupPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
               </div>
             </label>
@@ -67,15 +68,21 @@
           <h1>Controle de Leads</h1>
         </div>
         <div class="topbar-actions">
-          <div class="today-card topbar-button" aria-label="Resumo do dia">
-            <span id="todayLabel">Hoje</span>
-            <strong id="todayCount">0 leads</strong>
+          <div class="topbar-status" aria-label="Resumo do dia">
+            <div class="today-card" aria-label="Data atual">
+              <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
+              <span id="todayLabel">Hoje</span>
+            </div>
           </div>
-          <button class="ghost-button topbar-button" type="button" id="backAdminButton" hidden>
-            Voltar admin
+          <button class="ghost-button topbar-button topbar-icon-button" type="button" id="backAdminButton" aria-label="Voltar admin" title="Voltar admin" hidden>
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
           </button>
-          <button class="ghost-button topbar-button" type="button" id="themeToggle" aria-pressed="false">Modo escuro</button>
-          <button class="ghost-button topbar-button" type="button" id="logoutButton">Sair</button>
+          <button class="ghost-button topbar-button topbar-icon-button" type="button" id="themeToggle" aria-label="Modo escuro" title="Modo escuro" aria-pressed="false">
+            <i class="fa-solid fa-moon" aria-hidden="true"></i>
+          </button>
+          <button class="ghost-button topbar-button topbar-icon-button" type="button" id="logoutButton" aria-label="Sair" title="Sair">
+            <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
         </div>
       </header>
 
@@ -275,8 +282,8 @@
                 <span>Senha da loja</span>
                 <div class="password-field">
                   <input id="storePassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
-                  <button class="password-toggle" type="button" data-toggle-password="storePassword">
-                    Ver
+                  <button class="password-toggle" type="button" data-toggle-password="storePassword" aria-label="Mostrar senha" title="Mostrar senha">
+                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
                   </button>
                 </div>
               </label>

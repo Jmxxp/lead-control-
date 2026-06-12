@@ -702,7 +702,9 @@ function renderOptionsEditors() {
 }
 
 function renderOptionsEditor(container, scope) {
-  container.innerHTML = optionGroups
+  const editableGroups = optionGroups.filter((group) => !fixedOptionGroups.has(group));
+
+  container.innerHTML = editableGroups
     .map((group) => {
       const isFixed = fixedOptionGroups.has(group);
       const chips = (optionRecords[group] || [])
@@ -1015,9 +1017,7 @@ function clearFilters() {
 }
 
 function renderTodayCount() {
-  const today = toDateInput(new Date());
-  const count = getVisibleStoreLeads().filter((lead) => lead.createdAt.slice(0, 10) === today).length;
-  $("#todayCount").textContent = `${count} ${count === 1 ? "lead" : "leads"}`;
+  setTodayLabel();
 }
 
 function setTodayLabel() {
@@ -1308,7 +1308,10 @@ function togglePassword(button) {
   const input = $(`#${button.dataset.togglePassword}`);
   const isPassword = input.type === "password";
   input.type = isPassword ? "text" : "password";
-  button.textContent = isPassword ? "Ocultar" : "Ver";
+  const label = isPassword ? "Ocultar senha" : "Mostrar senha";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.innerHTML = `<i class="fa-solid ${isPassword ? "fa-eye-slash" : "fa-eye"}" aria-hidden="true"></i>`;
 }
 
 function applyStoredTheme() {
@@ -1323,7 +1326,10 @@ function setTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("is-dark", isDark);
   localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
-  themeToggle.textContent = isDark ? "Claro" : "Escuro";
+  const label = isDark ? "Modo claro" : "Modo escuro";
+  themeToggle.setAttribute("aria-label", label);
+  themeToggle.title = label;
+  themeToggle.innerHTML = `<i class="fa-solid ${isDark ? "fa-sun" : "fa-moon"}" aria-hidden="true"></i>`;
   themeToggle.setAttribute("aria-pressed", String(isDark));
 }
 
