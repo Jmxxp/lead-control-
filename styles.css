@@ -784,42 +784,57 @@ h3 {
 .choice-brand-mark {
   display: inline-grid;
   place-items: center;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.22);
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
-  font-size: 0.82rem;
-  font-weight: 900;
+}
+
+.choice-brand-mark svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.choice-brand-mark svg path,
+.choice-brand-mark svg .instagram-dot {
+  fill: currentColor;
+  stroke: none;
 }
 
 .choice-instagram {
-  border-color: rgba(196, 55, 142, 0.38);
-  background: linear-gradient(135deg, #f58529 0%, #dd2a7b 45%, #8134af 72%, #515bd4 100%);
+  border-color: rgba(221, 42, 123, 0.5);
+  background: linear-gradient(135deg, #ffb000 0%, #ff4f5f 34%, #dd2a7b 58%, #8134af 78%, #405de6 100%);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(129, 52, 175, 0.16);
+  box-shadow: 0 14px 26px rgba(221, 42, 123, 0.22);
 }
 
 .choice-facebook {
-  border-color: rgba(24, 119, 242, 0.38);
-  background: linear-gradient(135deg, #1877f2 0%, #145db9 100%);
+  border-color: rgba(24, 119, 242, 0.52);
+  background: linear-gradient(135deg, #2496ff 0%, #1877f2 48%, #0b4cad 100%);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(24, 119, 242, 0.16);
+  box-shadow: 0 14px 26px rgba(24, 119, 242, 0.22);
 }
 
 .choice-yes {
-  border-color: rgba(31, 111, 84, 0.34);
-  background: var(--green);
+  border-color: rgba(0, 180, 120, 0.55);
+  background: linear-gradient(135deg, #00c781, #009e60);
   color: #ffffff;
-  box-shadow: 0 10px 20px rgba(31, 111, 84, 0.14);
+  box-shadow: 0 14px 26px rgba(0, 180, 120, 0.22);
 }
 
 .choice-no {
-  border-color: rgba(159, 58, 79, 0.34);
-  background: var(--rose);
+  border-color: rgba(239, 68, 68, 0.55);
+  background: linear-gradient(135deg, #ff4d5a, #dc2626);
   color: #ffffff;
-  box-shadow: 0 10px 20px rgba(159, 58, 79, 0.14);
+  box-shadow: 0 14px 26px rgba(239, 68, 68, 0.22);
 }
 
 .choice-button:hover {
@@ -839,28 +854,41 @@ h3 {
 
 .choice-instagram.is-active,
 .choice-facebook.is-active {
-  border-color: rgba(255, 255, 255, 0.5);
-  filter: saturate(1.08);
+  border-color: #ffffff;
+  filter: saturate(1.18) brightness(1.05);
+  transform: translateY(-2px) scale(1.015);
   box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.2),
-    0 16px 30px rgba(23, 38, 32, 0.22);
+    inset 0 0 0 3px rgba(255, 255, 255, 0.34),
+    0 0 0 3px rgba(40, 92, 143, 0.2),
+    0 20px 34px rgba(23, 38, 32, 0.28);
 }
 
 .choice-instagram.is-active {
-  background: linear-gradient(135deg, #f58529 0%, #dd2a7b 45%, #8134af 72%, #515bd4 100%);
+  background: linear-gradient(135deg, #ffb000 0%, #ff4f5f 34%, #dd2a7b 58%, #8134af 78%, #405de6 100%);
 }
 
 .choice-facebook.is-active {
-  background: linear-gradient(135deg, #1877f2 0%, #145db9 100%);
+  background: linear-gradient(135deg, #2496ff 0%, #1877f2 48%, #0b4cad 100%);
+}
+
+.choice-yes.is-active {
+  border-color: #ffffff;
+  background: linear-gradient(135deg, #00e08f, #008f56);
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.28),
+    0 0 0 3px rgba(0, 180, 120, 0.18),
+    0 16px 30px rgba(0, 180, 120, 0.26);
 }
 
 .choice-no.is-active {
-  border-color: var(--rose);
-  background: var(--rose);
+  border-color: #ffffff;
+  background: linear-gradient(135deg, #ff5b66, #c81e1e);
   color: #ffffff;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 12px 24px rgba(159, 58, 79, 0.22);
+    inset 0 0 0 3px rgba(255, 255, 255, 0.28),
+    0 0 0 3px rgba(239, 68, 68, 0.18),
+    0 16px 30px rgba(239, 68, 68, 0.26);
 }
 
 .choice-empty,
@@ -967,6 +995,11 @@ h3 {
   background: var(--green);
   color: #fff;
   box-shadow: 0 16px 34px rgba(31, 111, 84, 0.22);
+}
+
+#submitButton {
+  background: linear-gradient(135deg, #2f80ed, var(--blue));
+  box-shadow: 0 18px 36px rgba(40, 92, 143, 0.28);
 }
 
 .secondary-button {

@@ -1190,12 +1190,30 @@ function getChoiceClass(group, value) {
 function getChoiceLabel(group, value) {
   const escapedValue = escapeHtml(value);
   if (group === "channel" && value === "Instagram") {
-    return `<span class="choice-brand-mark">IG</span><span>${escapedValue}</span>`;
+    return `<span class="choice-brand-mark" aria-hidden="true">${getInstagramLogoSvg()}</span><span>${escapedValue}</span>`;
   }
   if (group === "channel" && value === "Facebook") {
-    return `<span class="choice-brand-mark">f</span><span>${escapedValue}</span>`;
+    return `<span class="choice-brand-mark" aria-hidden="true">${getFacebookLogoSvg()}</span><span>${escapedValue}</span>`;
   }
   return escapedValue;
+}
+
+function getInstagramLogoSvg() {
+  return `
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      <rect x="3.2" y="3.2" width="17.6" height="17.6" rx="5.1"></rect>
+      <circle cx="12" cy="12" r="4.1"></circle>
+      <circle class="instagram-dot" cx="17.15" cy="6.85" r="1.15"></circle>
+    </svg>
+  `;
+}
+
+function getFacebookLogoSvg() {
+  return `
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      <path d="M14.4 8.1h2.15V4.55A27.7 27.7 0 0 0 13.42 4c-3.1 0-5.22 1.9-5.22 5.36v3H4.75v3.97H8.2V24h4.22v-7.67h3.3l.62-3.97h-3.92V9.75c0-1.15.31-1.65 1.98-1.65Z"></path>
+    </svg>
+  `;
 }
 
 function getOptionRecord(group, optionId) {
