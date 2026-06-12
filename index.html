@@ -263,8 +263,18 @@
               </label>
 
               <label class="field">
-                <span>Identificador da loja</span>
-                <input id="storeNick" type="text" placeholder="ex: loja-centro" />
+                <span>Nick da loja</span>
+                <input id="storeNick" type="text" placeholder="ex: loja-centro" required />
+              </label>
+
+              <label class="field">
+                <span>Senha da loja</span>
+                <div class="password-field">
+                  <input id="storePassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                  <button class="password-toggle" type="button" data-toggle-password="storePassword">
+                    Ver
+                  </button>
+                </div>
               </label>
 
               <p id="storeMessage" class="form-message" role="status" aria-live="polite"></p>

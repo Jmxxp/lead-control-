@@ -5,6 +5,7 @@ App estático em HTML, CSS e JavaScript usando Supabase direto do navegador.
 ## Onde os dados ficam
 
 - Login e sessão: Supabase Auth. O SDK mantém a sessão no navegador para não pedir login toda hora.
+- Usuários do app: tabela `public.app_users`, com nick e senha criptografada.
 - Lojas: tabela `public.stores`.
 - Leads: tabela `public.leads`.
 - Opções do formulário: tabela `public.lead_options`.
@@ -16,10 +17,9 @@ Nenhum dado de negócio deve ficar em `localStorage`.
 1. Abra o Supabase Dashboard do projeto.
 2. Vá em `SQL Editor`.
 3. Rode todo o arquivo `supabase/schema.sql`.
-4. Em `Authentication > Providers`, deixe `Email` habilitado.
-5. Em `Authentication > Providers > Email`, desligue confirmação obrigatória de email.
+4. Em `Authentication > Providers`, habilite `Anonymous sign-ins`.
 
-O sistema usa nick na tela e um email técnico interno no formato `nick@leadcontrol.local`.
+O sistema usa apenas nick e senha. Não usa email real nem email técnico.
 
 ## Rodar o sistema
 

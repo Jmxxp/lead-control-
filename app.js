@@ -1,7 +1,6 @@
 const SUPABASE_URL = "https://nuuebvpsfcgsgkefecab.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51dWVidnBzZmNnc2drZWZlY2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTQ5ODMsImV4cCI6MjA5Njc3MDk4M30.6PxIIOP2oQvlbUP87ab79VsXj5e4NCNhjUgnECIN5pA";
-const AUTH_EMAIL_DOMAIN = "leadcontrol.local";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -54,6 +53,7 @@ const signupPassword = document.querySelector("#signupPassword");
 const storeForm = document.querySelector("#storeForm");
 const storeName = document.querySelector("#storeName");
 const storeNick = document.querySelector("#storeNick");
+const storePassword = document.querySelector("#storePassword");
 const storeMessage = document.querySelector("#storeMessage");
 const storeEmptyState = document.querySelector("#storeEmptyState");
 const storeList = document.querySelector("#storeList");
@@ -188,28 +188,23 @@ async function restoreSession() {
     return;
   }
 
+  session = data.session;
+  currentProfile = await loadCurrentProfile();
+
+  if (!currentProfile) {
+    showAuth();
+    return;
+  }
+
   await openSession(data.session);
 }
 
 async function openSession(activeSession) {
   session = activeSession;
-  const loadedProfile = await loadCurrentProfile();
-
-  if (!loadedProfile) {
-    const ensuredProfile = await ensureProfile();
-    if (!ensuredProfile) {
-      await supabaseClient.auth.signOut();
-      showAuth();
-      showAuthMessage("Não foi possível preparar o perfil do usuário.");
-      return;
-    }
-  }
-
-  currentProfile = loadedProfile || (await loadCurrentProfile());
+  currentProfile = currentProfile || (await loadCurrentProfile());
   if (!currentProfile) {
-    await supabaseClient.auth.signOut();
     showAuth();
-    showAuthMessage("Perfil ainda não ficou disponível. Tente entrar novamente.");
+    showAuthMessage("Faça login com seu nick.");
     return;
   }
   authScreen.hidden = true;
@@ -234,39 +229,35 @@ async function openSession(activeSession) {
   await loadLeads();
 }
 
+async function ensureAnonymousSession() {
+  const { data: currentData } = await supabaseClient.auth.getSession();
+  if (currentData.session) {
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+
+    if (!userError && userData.user) {
+      session = currentData.session;
+      return currentData.session;
+    }
+
+    await supabaseClient.auth.signOut();
+  }
+
+  const { data, error } = await supabaseClient.auth.signInAnonymously();
+  if (error || !data.session) {
+    showAuthMessage("Habilite Anonymous sign-ins no Supabase Auth.");
+    return null;
+  }
+
+  session = data.session;
+  return data.session;
+}
+
 async function loadCurrentProfile() {
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .select("id,email,role,store_id,stores(name,email)")
-    .eq("id", session.user.id)
-    .single();
+  const { data, error } = await supabaseClient.rpc("app_current_profile");
 
   if (error) return null;
 
-  return {
-    ...data,
-    username: emailToNick(data.email),
-    store_name: data.stores?.name || "",
-    store_username: emailToNick(data.stores?.email || ""),
-  };
-}
-
-async function ensureProfile() {
-  const username = emailToNick(session.user.email);
-
-  const { error } = await supabaseClient.from("profiles").insert({
-    id: session.user.id,
-    email: session.user.email || nickToAuthEmail(username || "admin"),
-    username,
-    role: "admin",
-    store_id: null,
-  });
-
-  if (error && error.code !== "23505") {
-    return false;
-  }
-
-  return true;
+  return data;
 }
 
 async function loadOptions() {
@@ -342,17 +333,24 @@ async function handleLogin(event) {
     return;
   }
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({
-    email: nickToAuthEmail(loginNick.value),
-    password: loginPassword.value,
-  });
-
-  if (error) {
-    showAuthMessage("Nick ou senha inválidos.");
+  const anonymousSession = await ensureAnonymousSession();
+  if (!anonymousSession) {
+    showAuthMessage("Não foi possível iniciar a sessão.");
     return;
   }
 
-  await openSession(data.session);
+  const { data, error } = await supabaseClient.rpc("app_login", {
+    login_username: normalizeNick(loginNick.value),
+    login_password: loginPassword.value,
+  });
+
+  if (error) {
+    showAuthMessage(formatAuthError(error));
+    return;
+  }
+
+  currentProfile = data;
+  await openSession(anonymousSession);
 }
 
 async function handleAdminSignup(event) {
@@ -364,34 +362,30 @@ async function handleAdminSignup(event) {
     return;
   }
 
-  const { data, error } = await supabaseClient.auth.signUp({
-    email: nickToAuthEmail(signupNick.value),
-    password: signupPassword.value,
-    options: {
-      data: {
-        full_name: signupName.value.trim(),
-        username: normalizeNick(signupNick.value),
-      },
-    },
+  const anonymousSession = await ensureAnonymousSession();
+  if (!anonymousSession) {
+    showAuthMessage("Não foi possível iniciar a sessão.");
+    return;
+  }
+
+  const { data, error } = await supabaseClient.rpc("app_create_admin", {
+    admin_name: signupName.value.trim(),
+    admin_username: normalizeNick(signupNick.value),
+    admin_password: signupPassword.value,
   });
 
   if (error) {
-    showAuthMessage(formatAuthError(error.message));
+    showAuthMessage(formatAuthError(error));
     return;
   }
 
   signupForm.reset();
-
-  if (!data.session) {
-    showAuthMessage("Cadastro criado. Faça login com seu nick.", "success");
-    setAuthTab("login");
-    return;
-  }
-
-  await openSession(data.session);
+  currentProfile = data;
+  await openSession(anonymousSession);
 }
 
 async function handleLogout() {
+  await supabaseClient.rpc("app_logout");
   await supabaseClient.auth.signOut();
   session = null;
   currentProfile = null;
@@ -410,7 +404,7 @@ async function loadAdminDashboard() {
 async function loadStores() {
   const { data, error } = await supabaseClient
     .from("stores")
-    .select("id,name,username,email,created_at")
+    .select("id,name,username,created_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -438,7 +432,7 @@ async function handleCreateStore(event) {
   clearStoreMessage();
 
   const name = storeName.value.trim();
-  const username = normalizeNick(storeNick.value || name);
+  const username = normalizeNick(storeNick.value);
 
   if (!name) {
     showStoreMessage("Digite o nome da loja.");
@@ -450,22 +444,23 @@ async function handleCreateStore(event) {
     return;
   }
 
-  const { error } = await supabaseClient.from("stores").insert({
-    name,
-    username,
-    email: nickToAuthEmail(username),
-    created_by: session.user.id,
+  const { error } = await supabaseClient.rpc("app_create_store", {
+    store_name: name,
+    store_username: username,
+    store_password: storePassword.value,
   });
 
   if (error) {
     showStoreMessage(
-      error.code === "23505" ? "Já existe uma loja com esse identificador." : "Não foi possível criar a loja.",
+      error.message?.includes("duplicate") || error.message?.includes("existe")
+        ? "Já existe uma loja com esse nick."
+        : "Não foi possível criar a loja.",
     );
     return;
   }
 
   storeForm.reset();
-  showStoreMessage("Loja salva no banco de dados.", "success");
+  showStoreMessage("Loja e login salvos no banco de dados.", "success");
   await loadAdminDashboard();
 }
 
@@ -744,7 +739,7 @@ function renderStoreList() {
           <div class="lead-card-header">
             <div class="lead-person">
               <strong>${escapeHtml(store.name)}</strong>
-              <span>ID: ${escapeHtml(store.username || emailToNick(store.email))} · criada em ${formatShortDate(store.created_at)}</span>
+              <span>Nick: ${escapeHtml(store.username)} · criada em ${formatShortDate(store.created_at)}</span>
             </div>
             <div class="lead-actions">
               <button class="mini-button" type="button" data-store-login="${store.id}">Entrar na loja</button>
@@ -764,7 +759,6 @@ async function enterStoreContext(storeId) {
   activeStoreContext = {
     id: store.id,
     name: store.name,
-    email: store.email,
   };
   sessionRole.textContent = `Admin na loja · ${store.name}`;
   backAdminButton.hidden = false;
@@ -1318,13 +1312,29 @@ function showAuthMessage(message, type = "error") {
   authMessage.classList.toggle("success", type === "success");
 }
 
-function formatAuthError(message) {
-  const normalizedMessage = String(message || "").toLowerCase();
+function formatAuthError(error) {
+  const message = typeof error === "string" ? error : error?.message || "";
+  const normalizedMessage = String(message).toLowerCase();
+  const isMissingRpc =
+    error?.status === 404 ||
+    error?.code === "PGRST202" ||
+    normalizedMessage.includes("could not find the function") ||
+    normalizedMessage.includes("schema cache");
+
+  if (isMissingRpc) {
+    return "Banco ainda não foi atualizado. Rode o supabase/schema.sql inteiro no SQL Editor.";
+  }
   if (normalizedMessage.includes("already registered")) {
     return "Esse nick já está cadastrado.";
   }
-  if (normalizedMessage.includes("invalid login")) {
+  if (normalizedMessage.includes("invalid login") || normalizedMessage.includes("senha inválidos")) {
     return "Nick ou senha inválidos.";
+  }
+  if (normalizedMessage.includes("admin já existe")) {
+    return "Já existe um admin. Entre com o nick e senha cadastrados.";
+  }
+  if (normalizedMessage.includes("app_user_sessions_auth_user_id_fkey")) {
+    return "Sessão antiga do navegador. Clique em Sair ou recarregue a página e tente criar o admin de novo.";
   }
   return message || "Não foi possível concluir a ação.";
 }
@@ -1475,14 +1485,6 @@ function buildOptionRows(sourceOptions, storeId) {
       created_by: session.user.id,
     })),
   );
-}
-
-function nickToAuthEmail(nick) {
-  return `${normalizeNick(nick)}@${AUTH_EMAIL_DOMAIN}`;
-}
-
-function emailToNick(email) {
-  return String(email || "").split("@")[0] || "";
 }
 
 function normalizeNick(nick) {
