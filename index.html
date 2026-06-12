@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
-    <link rel="stylesheet" href="styles.css?v=20260612-db-reset" />
+    <link rel="stylesheet" href="styles.css?v=20260612-realtime-options" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-db-reset" defer></script>
+    <script src="app.js?v=20260612-realtime-options" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -523,6 +523,21 @@
         </section>
       </main>
       </div>
+    </div>
+
+    <div id="unsavedOptionsModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="unsavedOptionsTitle">
+        <div>
+          <p class="eyebrow">Opções alteradas</p>
+          <h2 id="unsavedOptionsTitle">Salvar alterações?</h2>
+        </div>
+        <p>Você editou opções e ainda não salvou.</p>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" id="unsavedCancel">Continuar editando</button>
+          <button class="mini-button danger" type="button" id="unsavedDiscard">Sair sem salvar</button>
+          <button class="primary-button compact-primary" type="button" id="unsavedSave">Salvar e sair</button>
+        </div>
+      </section>
     </div>
   </body>
 </html>

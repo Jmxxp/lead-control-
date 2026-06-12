@@ -101,6 +101,14 @@ create unique index lead_options_store_unique
 on public.lead_options (store_id, group_key, lower(value))
 where store_id is not null;
 
+alter table public.stores replica identity full;
+alter table public.leads replica identity full;
+alter table public.lead_options replica identity full;
+
+alter publication supabase_realtime add table public.stores;
+alter publication supabase_realtime add table public.leads;
+alter publication supabase_realtime add table public.lead_options;
+
 create or replace function app_private.set_updated_at()
 returns trigger
 language plpgsql

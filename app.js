@@ -15,6 +15,7 @@ const labels = {
 
 const optionGroups = Object.keys(labels);
 const nativeYesNoOptions = ["Sim", "Não"];
+const fixedOptionGroups = new Set(["visited", "bought"]);
 let options = createEmptyOptions();
 
 let session = null;
@@ -22,6 +23,11 @@ let currentProfile = null;
 let activeStoreContext = null;
 let stores = [];
 let leads = [];
+let realtimeChannel = null;
+let realtimeReloadTimer = null;
+const realtimePendingTables = new Set();
+let pendingUnsavedAction = null;
+const dirtyOptionKeys = new Set();
 let selectedValues = {
   channel: "",
   campaign: "",
@@ -98,6 +104,10 @@ const leadList = document.querySelector("#leadList");
 const storeOptionsPanel = document.querySelector("#storeOptionsPanel");
 const storeOptionsList = document.querySelector("#storeOptionsList");
 const storeOptionsMessage = document.querySelector("#storeOptionsMessage");
+const unsavedOptionsModal = document.querySelector("#unsavedOptionsModal");
+const unsavedCancel = document.querySelector("#unsavedCancel");
+const unsavedDiscard = document.querySelector("#unsavedDiscard");
+const unsavedSave = document.querySelector("#unsavedSave");
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -118,11 +128,16 @@ function bindEvents() {
 
   loginForm.addEventListener("submit", handleLogin);
   signupForm.addEventListener("submit", handleAdminSignup);
-  logoutButton.addEventListener("click", handleLogout);
-  backAdminButton.addEventListener("click", returnToAdmin);
+  logoutButton.addEventListener("click", () => guardUnsavedOptions(handleLogout));
+  backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
   storeForm.addEventListener("submit", handleCreateStore);
   adminOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
+  adminOptionsList.addEventListener("input", handleOptionsEditorInput);
+  storeOptionsList.addEventListener("input", handleOptionsEditorInput);
+  unsavedCancel.addEventListener("click", closeUnsavedOptionsModal);
+  unsavedDiscard.addEventListener("click", discardUnsavedOptionsAndContinue);
+  unsavedSave.addEventListener("click", saveUnsavedOptionsAndContinue);
   analyticsToggle.addEventListener("click", toggleAnalytics);
   analyticsStoreFilter.addEventListener("input", renderAdminAnalytics);
   [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
@@ -138,7 +153,14 @@ function bindEvents() {
   form.addEventListener("submit", handleLeadSubmit);
   clearFormButton.addEventListener("click", resetLeadForm);
   cancelEditButton.addEventListener("click", resetLeadForm);
-  toggleOptionsEditButton.addEventListener("click", toggleStoreOptionsMode);
+  toggleOptionsEditButton.addEventListener("click", () => {
+    if (!storeOptionsPanel.hidden) {
+      guardUnsavedOptions(toggleStoreOptionsMode);
+      return;
+    }
+
+    toggleStoreOptionsMode();
+  });
   phoneInput.addEventListener("input", () => {
     phoneInput.value = formatPhone(phoneInput.value);
   });
@@ -164,7 +186,7 @@ function bindEvents() {
     const actionButton = event.target.closest("[data-action]");
     if (!actionButton) return;
 
-    if (actionButton.dataset.action === "edit") editLead(actionButton.dataset.id);
+    if (actionButton.dataset.action === "edit") guardUnsavedOptions(() => editLead(actionButton.dataset.id));
     if (actionButton.dataset.action === "delete") deleteLead(actionButton.dataset.id);
   });
 
@@ -172,7 +194,13 @@ function bindEvents() {
     const button = event.target.closest("[data-store-login]");
     if (!button) return;
 
-    enterStoreContext(button.dataset.storeLogin);
+    guardUnsavedOptions(() => enterStoreContext(button.dataset.storeLogin));
+  });
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!hasUnsavedOptions()) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 }
 
@@ -218,6 +246,7 @@ async function openSession(activeSession) {
     storeView.hidden = true;
     await loadOptions();
     await loadAdminDashboard();
+    setupRealtimeSubscriptions();
     return;
   }
 
@@ -227,6 +256,7 @@ async function openSession(activeSession) {
   storeView.hidden = false;
   await loadOptions();
   await loadLeads();
+  setupRealtimeSubscriptions();
 }
 
 async function ensureAnonymousSession() {
@@ -299,6 +329,7 @@ async function saveCurrentOptions(messageTarget) {
   }
 
   options = normalizedOptions;
+  dirtyOptionKeys.clear();
   renderChoiceButtons();
   renderFilters();
   renderOptionsEditors();
@@ -385,6 +416,7 @@ async function handleAdminSignup(event) {
 }
 
 async function handleLogout() {
+  teardownRealtimeSubscriptions();
   await supabaseClient.rpc("app_logout");
   await supabaseClient.auth.signOut();
   session = null;
@@ -394,6 +426,80 @@ async function handleLogout() {
   leads = [];
   resetLeadForm();
   showAuth();
+}
+
+function setupRealtimeSubscriptions() {
+  teardownRealtimeSubscriptions();
+
+  realtimeChannel = supabaseClient
+    .channel("lead-control-db-changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "stores" },
+      () => scheduleRealtimeReload("stores"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "leads" },
+      () => scheduleRealtimeReload("leads"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "lead_options" },
+      () => scheduleRealtimeReload("lead_options"),
+    )
+    .subscribe();
+}
+
+function teardownRealtimeSubscriptions() {
+  if (realtimeReloadTimer) {
+    clearTimeout(realtimeReloadTimer);
+    realtimeReloadTimer = null;
+  }
+  realtimePendingTables.clear();
+
+  if (realtimeChannel) {
+    supabaseClient.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+function scheduleRealtimeReload(table) {
+  if (!currentProfile) return;
+
+  realtimePendingTables.add(table);
+  if (realtimeReloadTimer) clearTimeout(realtimeReloadTimer);
+  realtimeReloadTimer = setTimeout(() => {
+    realtimeReloadTimer = null;
+    const tables = [...realtimePendingTables];
+    realtimePendingTables.clear();
+    refreshRealtimeData(tables);
+  }, 250);
+}
+
+async function refreshRealtimeData(tables) {
+  if (tables.includes("lead_options")) {
+    if (!hasUnsavedOptions()) {
+      await loadOptions();
+    }
+  }
+
+  if (currentProfile.role === "admin" && !activeStoreContext) {
+    if (tables.includes("stores")) {
+      await loadStores();
+      renderAnalyticsControls();
+    }
+
+    if (tables.includes("leads")) {
+      await loadAdminLeads();
+      renderAdminStats();
+    }
+    return;
+  }
+
+  if (tables.includes("leads")) {
+    await loadLeads();
+  }
 }
 
 async function loadAdminDashboard() {
@@ -794,30 +900,41 @@ function renderOptionsEditor(scope) {
   return optionGroups
     .map((group) => {
       const items = options[group] || [];
-      const rows = items.length
-        ? items
-            .map(
-              (item, index) => `
-                <div class="option-row">
-                  <input value="${escapeHtml(item)}" data-option-input="${scope}" data-group="${group}" data-index="${index}" />
-                  <button class="mini-button" type="button" data-option-action="save" data-scope="${scope}" data-group="${group}" data-index="${index}">Salvar</button>
-                  <button class="mini-button danger" type="button" data-option-action="delete" data-scope="${scope}" data-group="${group}" data-index="${index}">Excluir</button>
-                </div>
-              `,
-            )
+      const isFixedGroup = fixedOptionGroups.has(group);
+      const rows = isFixedGroup
+        ? nativeYesNoOptions
+            .map((item) => `<span class="fixed-option">${escapeHtml(item)}</span>`)
             .join("")
-        : `<div class="option-empty">Nada cadastrado.</div>`;
+        : items.length
+          ? items
+              .map(
+                (item, index) => `
+                  <div class="option-row">
+                    <input value="${escapeHtml(item)}" data-original-value="${escapeHtml(item)}" data-option-input="${scope}" data-group="${group}" data-index="${index}" />
+                    <button class="mini-button option-save-button" type="button" data-option-action="save" data-scope="${scope}" data-group="${group}" data-index="${index}" hidden>Salvar</button>
+                    <button class="mini-button danger" type="button" data-option-action="delete" data-scope="${scope}" data-group="${group}" data-index="${index}">Excluir</button>
+                  </div>
+                `,
+              )
+              .join("")
+          : `<div class="option-empty">Nada cadastrado.</div>`;
 
       return `
         <section class="option-group">
           <div class="section-title">
             <h3>${labels[group]}</h3>
           </div>
-          <div class="option-list">${rows}</div>
-          <div class="option-add">
-            <input placeholder="Nova opção" data-option-new="${scope}" data-group="${group}" />
-            <button class="secondary-button" type="button" data-option-action="add" data-scope="${scope}" data-group="${group}">Adicionar</button>
-          </div>
+          <div class="${isFixedGroup ? "fixed-option-list" : "option-list"}">${rows}</div>
+          ${
+            isFixedGroup
+              ? ""
+              : `
+                <div class="option-add">
+                  <input placeholder="Nova opção" data-option-new="${scope}" data-group="${group}" />
+                  <button class="secondary-button" type="button" data-option-action="add" data-scope="${scope}" data-group="${group}">Adicionar</button>
+                </div>
+              `
+          }
         </section>
       `;
     })
@@ -838,6 +955,8 @@ async function handleOptionsEditorClick(event) {
   const messageTarget = scope === "admin" ? "admin" : "store";
   clearOptionsMessage(messageTarget);
 
+  if (fixedOptionGroups.has(group)) return;
+
   if (action === "add") {
     const input = document.querySelector(`[data-option-new="${scope}"][data-group="${group}"]`);
     const value = input.value.trim();
@@ -847,6 +966,7 @@ async function handleOptionsEditorClick(event) {
     }
 
     options[group] = [...(options[group] || []), value];
+    input.value = "";
   }
 
   if (action === "save") {
@@ -861,15 +981,22 @@ async function handleOptionsEditorClick(event) {
     }
 
     options[group][index] = value;
+    clearDirtyOption(button.dataset.scope, group, index);
   }
 
   if (action === "delete") {
     const index = Number(button.dataset.index);
     options[group] = (options[group] || []).filter((_, itemIndex) => itemIndex !== index);
+    clearDirtyOption(button.dataset.scope, group, index);
 
     if (selectedValues[group] && !options[group].includes(selectedValues[group])) {
       selectedValues[group] = "";
     }
+  }
+
+  if (!collectDirtyOptionInputs()) {
+    showOptionsMessage(messageTarget, "A opção não pode ficar vazia.");
+    return;
   }
 
   options = normalizeOptions(options);
@@ -880,6 +1007,103 @@ async function handleOptionsEditorClick(event) {
 
   const saved = await saveCurrentOptions(messageTarget);
   if (!saved) await loadOptions();
+}
+
+function handleOptionsEditorInput(event) {
+  const input = event.target.closest("[data-option-input]");
+  if (!input) return;
+
+  const { group, index } = input.dataset;
+  if (fixedOptionGroups.has(group)) return;
+
+  const key = getDirtyOptionKey(input.dataset.optionInput, group, index);
+  const saveButton = document.querySelector(
+    `[data-option-action="save"][data-scope="${input.dataset.optionInput}"][data-group="${group}"][data-index="${index}"]`,
+  );
+  const isDirty = input.value.trim() !== input.dataset.originalValue;
+
+  if (isDirty) {
+    dirtyOptionKeys.add(key);
+  } else {
+    dirtyOptionKeys.delete(key);
+  }
+
+  if (saveButton) saveButton.hidden = !isDirty;
+}
+
+function getDirtyOptionKey(scope, group, index) {
+  return `${scope}:${group}:${index}`;
+}
+
+function clearDirtyOption(scope, group, index) {
+  dirtyOptionKeys.delete(getDirtyOptionKey(scope, group, index));
+}
+
+function hasUnsavedOptions() {
+  return dirtyOptionKeys.size > 0;
+}
+
+function collectDirtyOptionInputs() {
+  let isValid = true;
+
+  document.querySelectorAll("[data-option-input]").forEach((input) => {
+    const { group, index } = input.dataset;
+    if (!dirtyOptionKeys.has(getDirtyOptionKey(input.dataset.optionInput, group, index))) return;
+
+    const value = input.value.trim();
+    if (!value) {
+      isValid = false;
+      input.focus();
+      return;
+    }
+    options[group][Number(index)] = value;
+  });
+
+  return isValid;
+}
+
+function getActiveOptionsMessageTarget() {
+  return currentProfile?.role === "admin" && !activeStoreContext ? "admin" : "store";
+}
+
+function guardUnsavedOptions(action) {
+  if (!hasUnsavedOptions()) {
+    action();
+    return;
+  }
+
+  pendingUnsavedAction = action;
+  unsavedOptionsModal.hidden = false;
+}
+
+function closeUnsavedOptionsModal() {
+  pendingUnsavedAction = null;
+  unsavedOptionsModal.hidden = true;
+}
+
+async function discardUnsavedOptionsAndContinue() {
+  const action = pendingUnsavedAction;
+  dirtyOptionKeys.clear();
+  pendingUnsavedAction = null;
+  unsavedOptionsModal.hidden = true;
+  await loadOptions();
+  if (action) action();
+}
+
+async function saveUnsavedOptionsAndContinue() {
+  const action = pendingUnsavedAction;
+  const target = getActiveOptionsMessageTarget();
+  if (!collectDirtyOptionInputs()) {
+    showOptionsMessage(target, "A opção não pode ficar vazia.");
+    return;
+  }
+  const saved = await saveCurrentOptions(target);
+  if (!saved) return;
+
+  dirtyOptionKeys.clear();
+  pendingUnsavedAction = null;
+  unsavedOptionsModal.hidden = true;
+  if (action) action();
 }
 
 async function loadLeads() {
@@ -1271,7 +1495,7 @@ function mapLeadToDb(lead) {
     campaign: lead.campaign,
     conversation_start: lead.conversationStart,
     conclusion: lead.conclusion,
-    visited: lead.visited || "",
+    visited: lead.visited || null,
     bought: lead.bought || null,
     updated_at: new Date().toISOString(),
   };
@@ -1476,13 +1700,13 @@ function optionsFromRows(rows) {
 }
 
 function buildOptionRows(sourceOptions, storeId) {
-  return optionGroups.flatMap((group) =>
+  return optionGroups.filter((group) => !fixedOptionGroups.has(group)).flatMap((group) =>
     (sourceOptions[group] || []).map((value, index) => ({
       store_id: storeId,
       group_key: group,
       value,
       sort_order: index,
-      created_by: session.user.id,
+      created_by: currentProfile?.id || null,
     })),
   );
 }
