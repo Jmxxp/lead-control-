@@ -5,12 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-dimmed-choices" />
+    <link rel="stylesheet" href="styles.css?v=20260612-dark-filters" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-dimmed-choices" defer></script>
+    <script src="app.js?v=20260612-dark-filters" defer></script>
   </head>
   <body>
-    <button class="theme-toggle" type="button" id="themeToggle" aria-pressed="false">Modo escuro</button>
     <div class="app-shell">
       <section id="authScreen" class="auth-screen">
         <div class="auth-card">
@@ -68,14 +67,15 @@
           <h1>Controle de Leads</h1>
         </div>
         <div class="topbar-actions">
-          <div class="today-card" aria-label="Resumo do dia">
+          <div class="today-card topbar-button" aria-label="Resumo do dia">
             <span id="todayLabel">Hoje</span>
             <strong id="todayCount">0 leads</strong>
           </div>
-          <button class="ghost-button" type="button" id="backAdminButton" hidden>
+          <button class="ghost-button topbar-button" type="button" id="backAdminButton" hidden>
             Voltar admin
           </button>
-          <button class="ghost-button" type="button" id="logoutButton">Sair</button>
+          <button class="ghost-button topbar-button" type="button" id="themeToggle" aria-pressed="false">Modo escuro</button>
+          <button class="ghost-button topbar-button" type="button" id="logoutButton">Sair</button>
         </div>
       </header>
 

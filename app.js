@@ -1323,7 +1323,7 @@ function setTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("is-dark", isDark);
   localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
-  themeToggle.textContent = isDark ? "Modo claro" : "Modo escuro";
+  themeToggle.textContent = isDark ? "Claro" : "Escuro";
   themeToggle.setAttribute("aria-pressed", String(isDark));
 }
 
