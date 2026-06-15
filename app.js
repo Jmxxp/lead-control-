@@ -973,6 +973,12 @@ function confirmDeleteLead(id) {
 async function deleteLead(id) {
   try {
     await authenticatedRpc("lc_delete_lead", { p_lead_id: id });
+    if (!analyticsInspectorModal.hidden) {
+      closeAnalyticsInspector();
+    }
+    if (!leadDetailsModal.hidden) {
+      closeLeadDetailsModal();
+    }
     await refreshRemoteState();
     renderAll();
   } catch (error) {
@@ -996,12 +1002,15 @@ function openConfirmModal({ eyebrow = "Confirmação", title, message, confirmTe
   confirmTitle.textContent = title;
   confirmMessage.textContent = message;
   confirmAccept.textContent = confirmText;
+  document.body.appendChild(confirmModal);
   confirmModal.hidden = false;
+  syncModalLock();
 }
 
 function closeConfirmModal() {
   pendingConfirmAction = null;
   confirmModal.hidden = true;
+  syncModalLock();
 }
 
 async function runConfirmedAction() {
@@ -3333,6 +3342,14 @@ function clearAiSettingsMessage() {
 }
 
 async function handleAnalyticsInspectorClick(event) {
+  const deleteButton = event.target.closest("[data-inspector-delete-lead]");
+  if (deleteButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    confirmDeleteLead(deleteButton.dataset.inspectorDeleteLead);
+    return;
+  }
+
   const inspectedToggle = event.target.closest("[data-inspected-toggle]");
   if (inspectedToggle) {
     await toggleLeadInspected(inspectedToggle);
@@ -3367,6 +3384,10 @@ function renderAnalyticsLeadRow(lead) {
         />
         <span>Inspecionado</span>
       </label>
+      <button class="mini-button danger analytics-lead-delete" type="button" data-inspector-delete-lead="${lead.id}">
+        <i class="fa-solid fa-trash" aria-hidden="true"></i>
+        Excluir
+      </button>
     </article>
   `;
 }

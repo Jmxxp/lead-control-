@@ -2994,6 +2994,10 @@ body:not(.is-dark) .ai-chat-dialog {
   width: min(420px, 100%);
 }
 
+#confirmModal {
+  z-index: 80;
+}
+
 .account-dialog {
   width: min(520px, 100%);
 }
@@ -3048,7 +3052,7 @@ body:not(.is-dark) .ai-chat-dialog {
 
 .analytics-lead-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 14px;
   align-items: center;
   width: 100%;
@@ -3162,6 +3166,12 @@ body:not(.is-dark) .ai-chat-dialog {
   color: var(--green-dark);
 }
 
+.analytics-lead-delete {
+  min-height: 44px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .analytics-lead-tags {
   display: flex;
   flex-wrap: wrap;
@@ -3212,6 +3222,11 @@ body.is-dark .analytics-lead-item.is-inspected .analytics-inspected-toggle {
   border-color: rgba(40, 194, 143, 0.36);
   background: rgba(40, 194, 143, 0.14);
   color: var(--green-dark);
+}
+
+body.is-dark .analytics-lead-delete {
+  border-color: rgba(255, 91, 102, 0.34);
+  color: #ff8b96;
 }
 
 .lead-details-dialog {
@@ -3494,7 +3509,8 @@ body.is-dark .analytics-lead-item.is-inspected .analytics-inspected-toggle {
     grid-template-columns: 1fr;
   }
 
-  .analytics-inspected-toggle {
+  .analytics-inspected-toggle,
+  .analytics-lead-delete {
     justify-self: stretch;
   }
 
