@@ -35,6 +35,7 @@ let leads = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
 const dirtyOptionValues = new Map();
+let newOptionCounter = 0;
 let selectedValues = createEmptySelection();
 
 const $ = (selector) => document.querySelector(selector);
@@ -52,6 +53,7 @@ const backAdminButton = $("#backAdminButton");
 const loginForm = $("#loginForm");
 const signupForm = $("#signupForm");
 const authMessage = $("#authMessage");
+const authTitle = $("#authTitle");
 const loginNick = $("#loginNick");
 const loginPassword = $("#loginPassword");
 const signupName = $("#signupName");
@@ -104,6 +106,7 @@ const leadList = $("#leadList");
 const purchaseDetails = $("#purchaseDetails");
 const purchaseAmountInput = $("#purchaseAmount");
 const serviceOrderInput = $("#serviceOrder");
+const leadNotesInput = $("#leadNotes");
 const storeOptionsPanel = $("#storeOptionsPanel");
 const storeOptionsList = $("#storeOptionsList");
 const storeOptionsMessage = $("#storeOptionsMessage");
@@ -111,7 +114,18 @@ const unsavedOptionsModal = $("#unsavedOptionsModal");
 const unsavedCancel = $("#unsavedCancel");
 const unsavedDiscard = $("#unsavedDiscard");
 const unsavedSave = $("#unsavedSave");
+const confirmModal = $("#confirmModal");
+const confirmEyebrow = $("#confirmEyebrow");
+const confirmTitle = $("#confirmTitle");
+const confirmMessage = $("#confirmMessage");
+const confirmCancel = $("#confirmCancel");
+const confirmAccept = $("#confirmAccept");
+const leadDetailsModal = $("#leadDetailsModal");
+const leadDetailsTitle = $("#leadDetailsTitle");
+const leadDetailsContent = $("#leadDetailsContent");
+const leadDetailsClose = $("#leadDetailsClose");
 let notificationTimer = null;
+let pendingConfirmAction = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   init().catch((error) => {
@@ -147,7 +161,7 @@ function bindEvents() {
 
   loginForm.addEventListener("submit", handleLogin);
   signupForm.addEventListener("submit", handleAdminSignup);
-  logoutButton.addEventListener("click", () => guardUnsavedOptions(handleLogout));
+  logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
   storeForm.addEventListener("submit", handleCreateStore);
   adminOptionsList.addEventListener("click", handleOptionsEditorClick);
@@ -157,6 +171,15 @@ function bindEvents() {
   unsavedCancel.addEventListener("click", closeUnsavedOptionsModal);
   unsavedDiscard.addEventListener("click", discardUnsavedOptionsAndContinue);
   unsavedSave.addEventListener("click", saveUnsavedOptionsAndContinue);
+  confirmCancel.addEventListener("click", closeConfirmModal);
+  confirmAccept.addEventListener("click", runConfirmedAction);
+  confirmModal.addEventListener("click", (event) => {
+    if (event.target === confirmModal) closeConfirmModal();
+  });
+  leadDetailsClose.addEventListener("click", closeLeadDetailsModal);
+  leadDetailsModal.addEventListener("click", (event) => {
+    if (event.target === leadDetailsModal) closeLeadDetailsModal();
+  });
   analyticsToggle.addEventListener("click", toggleAnalytics);
   analyticsStoreFilter.addEventListener("input", renderAdminAnalytics);
   [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
@@ -375,6 +398,7 @@ function setAuthTab(tabName) {
   const isLogin = tabName === "login";
   loginForm.hidden = !isLogin;
   signupForm.hidden = isLogin;
+  authTitle.textContent = isLogin ? "Login" : "Criar admin";
   clearAuthMessage();
 
   $$("[data-auth-tab]").forEach((tab) => {
@@ -403,7 +427,7 @@ async function handleCreateStore(event) {
     });
     storeForm.reset();
     await refreshRemoteState();
-    showStoreMessage("Loja criada no Supabase.", "success");
+    showStoreMessage("Loja criada.", "success");
     renderAll();
   } catch (error) {
     showStoreMessage(readableError(error));
@@ -461,6 +485,7 @@ async function handleLeadSubmit(event) {
     p_bought: selectedValues.bought,
     p_purchase_amount: selectedValues.bought === "Sim" ? parseCurrencyInput(purchaseAmountInput.value) : null,
     p_service_order: selectedValues.bought === "Sim" ? serviceOrderInput.value.trim() : null,
+    p_notes: leadNotesInput.value.trim(),
     p_store_id: store.id,
   };
 
@@ -488,7 +513,7 @@ async function handleLeadSubmit(event) {
     const wasEditing = Boolean(editingIdInput.value);
     await refreshRemoteState();
     resetLeadForm();
-    showFormMessage(wasEditing ? "Lead atualizado no Supabase." : "Lead salvo no Supabase.", "success");
+    showFormMessage(wasEditing ? "Lead atualizado." : "Lead salvo.", "success");
     renderAll();
   } catch (error) {
     showFormMessage(readableError(error));
@@ -501,13 +526,16 @@ function handleLeadListClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
 
+  if (button.dataset.action === "view") openLeadDetailsModal(button.dataset.id);
   if (button.dataset.action === "edit") guardUnsavedOptions(() => editLead(button.dataset.id));
-  if (button.dataset.action === "delete") deleteLead(button.dataset.id);
+  if (button.dataset.action === "delete") confirmDeleteLead(button.dataset.id);
 }
 
 function editLead(id) {
   const lead = leads.find((item) => item.id === id);
   if (!lead) return;
+
+  if (!storeOptionsPanel.hidden) toggleStoreOptionsMode(false);
 
   editingIdInput.value = lead.id;
   nameInput.value = lead.name;
@@ -522,11 +550,25 @@ function editLead(id) {
   };
   purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
   serviceOrderInput.value = lead.serviceOrder || "";
+  leadNotesInput.value = lead.notes || "";
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
   updatePurchaseDetailsVisibility();
   renderChoiceButtons();
+}
+
+function confirmDeleteLead(id) {
+  const lead = leads.find((item) => item.id === id);
+  if (!lead) return;
+
+  openConfirmModal({
+    eyebrow: "Excluir lead",
+    title: "Excluir este lead?",
+    message: `Essa ação remove o lead "${lead.name}" da loja ${lead.storeName || "selecionada"}.`,
+    confirmText: "Excluir",
+    action: () => deleteLead(id),
+  });
 }
 
 async function deleteLead(id) {
@@ -539,15 +581,47 @@ async function deleteLead(id) {
   }
 }
 
+function confirmLogout() {
+  openConfirmModal({
+    eyebrow: "Sair",
+    title: "Deseja sair?",
+    message: "Você vai encerrar esta sessão e voltar para a tela de login.",
+    confirmText: "Sair",
+    action: handleLogout,
+  });
+}
+
+function openConfirmModal({ eyebrow = "Confirmação", title, message, confirmText = "Confirmar", action }) {
+  pendingConfirmAction = action;
+  confirmEyebrow.textContent = eyebrow;
+  confirmTitle.textContent = title;
+  confirmMessage.textContent = message;
+  confirmAccept.textContent = confirmText;
+  confirmModal.hidden = false;
+}
+
+function closeConfirmModal() {
+  pendingConfirmAction = null;
+  confirmModal.hidden = true;
+}
+
+async function runConfirmedAction() {
+  const action = pendingConfirmAction;
+  closeConfirmModal();
+  if (action) await action();
+}
+
 function resetLeadForm() {
   form.reset();
   editingIdInput.value = "";
   selectedValues = createEmptySelection();
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
+  leadNotesInput.value = "";
   formTitle.textContent = "Cadastrar lead";
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
+  if (!storeOptionsPanel.hidden) toggleStoreOptionsMode(false);
   updatePurchaseDetailsVisibility();
   renderChoiceButtons();
 }
@@ -620,9 +694,11 @@ function renderLeadList() {
     .map(
       (lead) => `
         <article class="lead-card">
-          <div>
-            <strong>${escapeHtml(lead.name)}</strong>
-            <span>${escapeHtml(lead.phone)} · ${escapeHtml(lead.storeName || "")}</span>
+          <div class="lead-card-top">
+            <div class="lead-person">
+              <strong>${escapeHtml(lead.name)}</strong>
+              <span>${escapeHtml(lead.storeName || "")}</span>
+            </div>
           </div>
           <div class="lead-tags">
             ${renderTag(lead.channel)}
@@ -633,9 +709,15 @@ function renderLeadList() {
             ${renderTag(lead.purchaseAmount ? `Valor: ${formatCurrency(lead.purchaseAmount)}` : "")}
             ${renderTag(lead.serviceOrder ? `OS: ${lead.serviceOrder}` : "")}
           </div>
+          ${renderLeadNotes(lead.notes)}
           <div class="card-actions">
+            <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer" aria-label="Chamar ${escapeHtml(lead.name)} no WhatsApp">
+              <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+              WhatsApp
+            </a>
             <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
             <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}">Excluir</button>
+            <button class="mini-button view-button" type="button" data-action="view" data-id="${lead.id}">Visualizar</button>
           </div>
         </article>
       `,
@@ -647,6 +729,66 @@ function renderLeadList() {
   $("#storeVisits").textContent = countByValue(storeLeads, "visited", "Sim");
   $("#salesCount").textContent = countByValue(storeLeads, "bought", "Sim");
   $("#conversionRate").textContent = formatPercent(countByValue(storeLeads, "bought", "Sim"), storeLeads.length);
+}
+
+function openLeadDetailsModal(id) {
+  const lead = leads.find((item) => item.id === id);
+  if (!lead) return;
+
+  leadDetailsTitle.textContent = lead.name;
+  leadDetailsContent.innerHTML = `
+    <div class="lead-details-summary">
+      <strong>${escapeHtml(lead.name)}</strong>
+      <span>${escapeHtml(lead.storeName || "")}</span>
+    </div>
+    <div class="lead-details-grid">
+      ${renderLeadDetailItem("Telefone", lead.phone)}
+      ${renderLeadDetailItem("Canal", lead.channel)}
+      ${renderLeadDetailItem("Campanha", lead.campaign)}
+      ${renderLeadDetailItem("Início da conversa", lead.conversationStart)}
+      ${renderLeadDetailItem("Conclusão", lead.conclusion)}
+      ${renderLeadDetailItem("Visitou a loja", lead.visited)}
+      ${renderLeadDetailItem("Comprou", lead.bought)}
+      ${renderLeadDetailItem("Valor da compra", lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "")}
+      ${renderLeadDetailItem("OS", lead.serviceOrder)}
+      ${renderLeadDetailItem("Registrado em", formatDateTime(lead.createdAt))}
+    </div>
+    <div class="lead-details-notes">
+      <span>Observações</span>
+      <p>${escapeHtml(lead.notes || "Sem observações.")}</p>
+    </div>
+    <div class="modal-actions">
+      <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer">
+        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+        WhatsApp
+      </a>
+      <button class="mini-button" type="button" data-detail-edit="${lead.id}">Editar</button>
+    </div>
+  `;
+
+  const editButton = leadDetailsContent.querySelector("[data-detail-edit]");
+  editButton.addEventListener("click", () => {
+    closeLeadDetailsModal();
+    guardUnsavedOptions(() => editLead(lead.id));
+  });
+
+  leadDetailsModal.hidden = false;
+  document.body.classList.add("is-modal-open");
+}
+
+function closeLeadDetailsModal() {
+  leadDetailsModal.hidden = true;
+  leadDetailsContent.innerHTML = "";
+  document.body.classList.remove("is-modal-open");
+}
+
+function renderLeadDetailItem(label, value) {
+  return `
+    <div class="lead-detail-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "-")}</strong>
+    </div>
+  `;
 }
 
 function renderChoiceButtons() {
@@ -711,16 +853,18 @@ function renderOptionsEditor(container, scope) {
         .map((record) =>
           isFixed || record.fixed
             ? `<span class="option-chip">${escapeHtml(record.value)}</span>`
-            : `<div class="option-row" data-group="${group}" data-option-id="${record.id}">
+            : `<div class="option-row${record.pending ? " is-pending" : ""}" data-group="${group}" data-option-id="${record.id}">
                 <input value="${escapeHtml(dirtyOptionValues.get(record.id) ?? record.value)}" aria-label="${labels[group]}" />
-                <button class="mini-button option-save" type="button" data-option-action="save" hidden>Salvar</button>
+                <button class="mini-button option-save" type="button" data-option-action="save" ${record.pending || dirtyOptionKeys.has(record.id) ? "" : "hidden"}>Salvar</button>
                 <button class="mini-button danger" type="button" data-option-action="delete">Excluir</button>
               </div>`,
         )
         .join("");
       const addButton = isFixed
         ? ""
-        : `<button class="mini-button" type="button" data-option-action="add" data-group="${group}">Adicionar</button>`;
+        : `<button class="mini-button option-add-button" type="button" data-option-action="add" data-group="${group}" aria-label="Adicionar ${labels[group]}" title="Adicionar ${labels[group]}">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          </button>`;
 
       return `
         <section class="option-group" data-scope="${scope}">
@@ -745,6 +889,59 @@ function handleOptionsEditorInput(event) {
   if (saveButton) saveButton.hidden = false;
 }
 
+function addPendingOption(group) {
+  const id = `new-${group}-${Date.now()}-${newOptionCounter++}`;
+  optionRecords[group].push({
+    id,
+    groupKey: group,
+    value: "",
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    fixed: false,
+    pending: true,
+  });
+  dirtyOptionKeys.add(id);
+  dirtyOptionValues.set(id, "");
+  renderOptionsEditors();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-option-id="${id}"] input`);
+    input?.focus();
+  });
+}
+
+function removePendingOption(group, optionId) {
+  optionRecords[group] = (optionRecords[group] || []).filter((record) => record.id !== optionId);
+  dirtyOptionKeys.delete(optionId);
+  dirtyOptionValues.delete(optionId);
+  renderOptionsEditors();
+}
+
+function clearPendingOptions() {
+  optionGroups.forEach((group) => {
+    optionRecords[group] = (optionRecords[group] || []).filter((record) => !isPendingOption(record.id));
+  });
+}
+
+function isPendingOption(optionId) {
+  return String(optionId || "").startsWith("new-");
+}
+
+function findOptionRecordById(optionId) {
+  for (const group of optionGroups) {
+    const record = (optionRecords[group] || []).find((item) => item.id === optionId);
+    if (record) return record;
+  }
+  return null;
+}
+
+function isDuplicateOptionValue(group, optionId, value) {
+  const normalized = value.trim().toLowerCase();
+  return (optionRecords[group] || []).some((record) =>
+    record.id !== optionId &&
+    !isPendingOption(record.id) &&
+    record.value.trim().toLowerCase() === normalized
+  );
+}
+
 async function handleOptionsEditorClick(event) {
   const button = event.target.closest("[data-option-action]");
   if (!button) return;
@@ -761,36 +958,52 @@ async function handleOptionsEditorClick(event) {
     button.disabled = true;
 
     if (action === "add") {
-      await authenticatedRpc("lc_add_option", { p_group_key: group });
-      await refreshOptions();
-      showOptionsMessage(messageTarget, "Opção criada no Supabase.", "success");
+      addPendingOption(group);
       return;
     }
 
     if (!row) return;
 
     if (action === "delete") {
+      if (isPendingOption(row.dataset.optionId)) {
+        removePendingOption(group, row.dataset.optionId);
+        return;
+      }
+
       await authenticatedRpc("lc_delete_option", { p_option_id: row.dataset.optionId });
       dirtyOptionKeys.delete(row.dataset.optionId);
       dirtyOptionValues.delete(row.dataset.optionId);
       await refreshOptions();
-      showOptionsMessage(messageTarget, "Opção removida no Supabase.", "success");
+      showOptionsMessage(messageTarget, "Opção removida.", "success");
     }
 
     if (action === "save") {
       const value = row.querySelector("input").value.trim();
       if (!value) {
         showOptionsMessage(messageTarget, "Digite um valor.");
+        row.querySelector("input").focus();
         return;
       }
-      await authenticatedRpc("lc_update_option", {
-        p_option_id: row.dataset.optionId,
-        p_value: value,
-      });
+      if (isDuplicateOptionValue(group, row.dataset.optionId, value)) {
+        showOptionsMessage(messageTarget, "Essa opção já existe.");
+        row.querySelector("input").focus();
+        return;
+      }
+      if (isPendingOption(row.dataset.optionId)) {
+        await authenticatedRpc("lc_add_option", {
+          p_group_key: group,
+          p_value: value,
+        });
+      } else {
+        await authenticatedRpc("lc_update_option", {
+          p_option_id: row.dataset.optionId,
+          p_value: value,
+        });
+      }
       dirtyOptionKeys.delete(row.dataset.optionId);
       dirtyOptionValues.delete(row.dataset.optionId);
       await refreshOptions();
-      showOptionsMessage(messageTarget, "Opção salva no Supabase.", "success");
+      showOptionsMessage(messageTarget, "Opção salva.", "success");
     }
   } catch (error) {
     showOptionsMessage(messageTarget, readableError(error));
@@ -799,8 +1012,17 @@ async function handleOptionsEditorClick(event) {
   }
 }
 
-function toggleStoreOptionsMode() {
-  storeOptionsPanel.hidden = !storeOptionsPanel.hidden;
+function toggleStoreOptionsMode(forceOpen = null) {
+  const shouldOpen = forceOpen === null ? storeOptionsPanel.hidden : forceOpen;
+  storeOptionsPanel.hidden = !shouldOpen;
+  form.classList.toggle("is-options-mode", shouldOpen);
+  formTitle.textContent = shouldOpen ? "Editar opções" : "Cadastrar lead";
+  toggleOptionsEditButton.innerHTML = shouldOpen
+    ? '<i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Sair'
+    : "Editar opções";
+  toggleOptionsEditButton.classList.toggle("is-exit-mode", shouldOpen);
+  cancelEditButton.hidden = shouldOpen || !editingIdInput.value;
+  clearFormButton.hidden = shouldOpen || clearFormButton.hidden;
 }
 
 function hasUnsavedOptions() {
@@ -823,6 +1045,7 @@ function closeUnsavedOptionsModal() {
 }
 
 function discardUnsavedOptionsAndContinue() {
+  clearPendingOptions();
   dirtyOptionKeys.clear();
   dirtyOptionValues.clear();
   renderOptionsEditors();
@@ -842,10 +1065,22 @@ async function saveDirtyOptions() {
   for (const optionId of Array.from(dirtyOptionKeys)) {
     const value = dirtyOptionValues.get(optionId)?.trim();
     if (!value) throw new Error("Digite um valor para salvar as opções.");
-    await authenticatedRpc("lc_update_option", {
-      p_option_id: optionId,
-      p_value: value,
-    });
+    const record = findOptionRecordById(optionId);
+    if (record && isDuplicateOptionValue(record.groupKey, optionId, value)) {
+      throw new Error(`A opção "${value}" já existe.`);
+    }
+    if (isPendingOption(optionId)) {
+      if (!record) throw new Error("Opção temporária não encontrada.");
+      await authenticatedRpc("lc_add_option", {
+        p_group_key: record.groupKey,
+        p_value: value,
+      });
+    } else {
+      await authenticatedRpc("lc_update_option", {
+        p_option_id: optionId,
+        p_value: value,
+      });
+    }
   }
 
   dirtyOptionKeys.clear();
@@ -1107,6 +1342,7 @@ function mapLeadRow(row) {
     bought: row.bought || "",
     purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
     serviceOrder: row.service_order || "",
+    notes: row.notes || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1176,7 +1412,7 @@ function clearStoredSession() {
 }
 
 function setFormBusy(targetForm, isBusy) {
-  targetForm.querySelectorAll("button, input, select").forEach((element) => {
+  targetForm.querySelectorAll("button, input, select, textarea").forEach((element) => {
     element.disabled = isBusy;
   });
 }
@@ -1224,6 +1460,14 @@ function toDateInput(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function updatePurchaseDetailsVisibility() {
   purchaseDetails.hidden = selectedValues.bought !== "Sim";
 }
@@ -1252,8 +1496,8 @@ function formatCurrencyInput(value) {
 }
 
 function getChoiceClass(group, value) {
-  if (group === "channel" && value === "Instagram") return "choice-instagram";
-  if (group === "channel" && value === "Facebook") return "choice-facebook";
+  const channelBrand = group === "channel" ? getChannelBrand(value) : "";
+  if (channelBrand) return `choice-${channelBrand}`;
   if ((group === "visited" || group === "bought") && value === "Sim") return "choice-yes";
   if ((group === "visited" || group === "bought") && value === "Não") return "choice-no";
   return "";
@@ -1261,13 +1505,29 @@ function getChoiceClass(group, value) {
 
 function getChoiceLabel(group, value) {
   const escapedValue = escapeHtml(value);
-  if (group === "channel" && value === "Instagram") {
+  const channelBrand = group === "channel" ? getChannelBrand(value) : "";
+  if (channelBrand === "instagram") {
     return `<span class="choice-brand-mark" aria-hidden="true">${getInstagramLogoSvg()}</span><span>${escapedValue}</span>`;
   }
-  if (group === "channel" && value === "Facebook") {
+  if (channelBrand === "facebook") {
     return `<span class="choice-brand-mark" aria-hidden="true">${getFacebookLogoSvg()}</span><span>${escapedValue}</span>`;
   }
+  if (channelBrand === "google") {
+    return `<span class="choice-brand-mark" aria-hidden="true">${getGoogleAdsLogoSvg()}</span><span>${escapedValue}</span>`;
+  }
+  if (channelBrand === "linkedin") {
+    return `<span class="choice-brand-mark" aria-hidden="true">${getLinkedInLogoSvg()}</span><span>${escapedValue}</span>`;
+  }
   return escapedValue;
+}
+
+function getChannelBrand(value) {
+  const normalized = String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (normalized.includes("instagram")) return "instagram";
+  if (normalized.includes("facebook")) return "facebook";
+  if (normalized.includes("google")) return "google";
+  if (normalized.includes("linkedin")) return "linkedin";
+  return "";
 }
 
 function getInstagramLogoSvg() {
@@ -1283,7 +1543,25 @@ function getInstagramLogoSvg() {
 function getFacebookLogoSvg() {
   return `
     <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-      <path d="M14.4 8.1h2.15V4.55A27.7 27.7 0 0 0 13.42 4c-3.1 0-5.22 1.9-5.22 5.36v3H4.75v3.97H8.2V24h4.22v-7.67h3.3l.62-3.97h-3.92V9.75c0-1.15.31-1.65 1.98-1.65Z"></path>
+      <path class="brand-fill" d="M14.4 8.1h2.15V4.55A27.7 27.7 0 0 0 13.42 4c-3.1 0-5.22 1.9-5.22 5.36v3H4.75v3.97H8.2V24h4.22v-7.67h3.3l.62-3.97h-3.92V9.75c0-1.15.31-1.65 1.98-1.65Z"></path>
+    </svg>
+  `;
+}
+
+function getGoogleAdsLogoSvg() {
+  return `
+    <svg viewBox="0 0 28 24" focusable="false" aria-hidden="true">
+      <path class="logo-color" fill="#4285f4" d="M10.7 2.1a3.7 3.7 0 0 1 5.05 1.35l9.4 16.25a3.7 3.7 0 1 1-6.4 3.7L9.35 7.15A3.7 3.7 0 0 1 10.7 2.1Z"></path>
+      <path class="logo-color" fill="#34a853" d="M10.78 3.36a3.72 3.72 0 0 1 6.44 3.72L7.65 23.63a3.72 3.72 0 0 1-6.44-3.72L10.78 3.36Z"></path>
+      <circle class="logo-color" fill="#fbbc04" cx="4.38" cy="20.08" r="3.72"></circle>
+    </svg>
+  `;
+}
+
+function getLinkedInLogoSvg() {
+  return `
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      <path class="brand-fill" d="M20.45 20.45h-3.56v-5.58c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.13 1.45-2.13 2.95v5.67H9.35V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.26 2.37 4.26 5.45v6.29ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.55V9h3.57v11.45ZM22.22 0H1.78C.8 0 0 .78 0 1.74v20.52C0 23.22.8 24 1.78 24h20.44c.98 0 1.78-.78 1.78-1.74V1.74C24 .78 23.2 0 22.22 0Z"></path>
     </svg>
   `;
 }
@@ -1294,6 +1572,18 @@ function getOptionRecord(group, optionId) {
 
 function renderTag(value) {
   return value ? `<span>${escapeHtml(value)}</span>` : "";
+}
+
+function renderLeadNotes(notes) {
+  return notes
+    ? `<p class="lead-notes lead-notes-preview"><strong>Observações:</strong> ${escapeHtml(notes)}</p>`
+    : "";
+}
+
+function formatWhatsAppUrl(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const normalized = digits.startsWith("55") && digits.length >= 12 ? digits : `55${digits}`;
+  return `https://wa.me/${normalized}`;
 }
 
 function escapeHtml(value) {

@@ -5,15 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-date-password" />
+    <link rel="stylesheet" href="styles.css?v=20260612-edit-exit" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-date-password" defer></script>
+    <script src="app.js?v=20260612-edit-exit" defer></script>
   </head>
   <body>
     <div class="app-shell">
       <section id="authScreen" class="auth-screen">
         <div class="auth-card">
+          <div class="auth-heading">
+            <span class="auth-heading-icon" aria-hidden="true">
+              <i class="fa-solid fa-user"></i>
+            </span>
+            <div>
+              <p class="eyebrow">Acesso</p>
+              <h1 id="authTitle">Login</h1>
+            </div>
+          </div>
+
           <div class="auth-tabs" role="tablist" aria-label="Acesso">
             <button class="auth-tab is-active" type="button" data-auth-tab="login">Login</button>
             <button class="auth-tab" type="button" data-auth-tab="signup">Criar admin</button>
@@ -358,7 +368,7 @@
                     Editar opções
                   </button>
                   <button class="ghost-button" type="button" id="cancelEdit" hidden>
-                    Cancelar edição
+                    Sair da edição
                   </button>
                   <button class="ghost-button" type="button" id="clearForm">Limpar</button>
                 </div>
@@ -450,6 +460,15 @@
                 <input id="serviceOrder" type="text" placeholder="Número da OS" />
               </label>
             </div>
+
+            <label class="field lead-entry">
+              <span>Observações</span>
+              <textarea
+                id="leadNotes"
+                rows="4"
+                placeholder="Descreva exatamente o que aconteceu com esse lead"
+              ></textarea>
+            </label>
 
             <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
 
@@ -559,6 +578,35 @@
           <button class="mini-button danger" type="button" id="unsavedDiscard">Sair sem salvar</button>
           <button class="primary-button compact-primary" type="button" id="unsavedSave">Salvar e sair</button>
         </div>
+      </section>
+    </div>
+
+    <div id="confirmModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div>
+          <p class="eyebrow" id="confirmEyebrow">Confirmação</p>
+          <h2 id="confirmTitle">Confirmar ação?</h2>
+        </div>
+        <p id="confirmMessage">Essa ação precisa de confirmação.</p>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" id="confirmCancel">Cancelar</button>
+          <button class="mini-button danger" type="button" id="confirmAccept">Confirmar</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="leadDetailsModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog lead-details-dialog" role="dialog" aria-modal="true" aria-labelledby="leadDetailsTitle">
+        <div class="lead-details-header">
+          <div>
+            <p class="eyebrow">Lead registrado</p>
+            <h2 id="leadDetailsTitle">Detalhes do lead</h2>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="leadDetailsClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div id="leadDetailsContent" class="lead-details-content"></div>
       </section>
     </div>
   </body>

@@ -147,6 +147,7 @@ create table if not exists public.leads (
   bought text check (bought is null or bought in ('Sim', 'Não')),
   purchase_amount numeric(12,2) check (purchase_amount is null or purchase_amount > 0),
   service_order text,
+  notes text,
   created_by uuid references public.app_users(id) on delete set null,
   updated_by uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -162,6 +163,9 @@ alter table public.leads
 
 alter table public.leads
   add column if not exists service_order text;
+
+alter table public.leads
+  add column if not exists notes text;
 
 create unique index if not exists app_users_one_store_user_idx
   on public.app_users (store_id)
@@ -658,9 +662,15 @@ begin
 end;
 $$;
 
+drop function if exists public.lc_add_option(text, public.lead_option_group);
+drop function if exists public.lc_add_option(text, public.lead_option_group, text);
+drop function if exists app_private.rpc_add_option(text, public.lead_option_group);
+drop function if exists app_private.rpc_add_option(text, public.lead_option_group, text);
+
 create or replace function app_private.rpc_add_option(
   p_session_token text,
-  p_group_key public.lead_option_group
+  p_group_key public.lead_option_group,
+  p_value text default null
 )
 returns boolean
 language plpgsql
@@ -669,6 +679,7 @@ set search_path = app_private, public, extensions
 as $$
 declare
   v_session record;
+  v_value text;
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
@@ -680,11 +691,13 @@ begin
     raise exception 'Este grupo de opcoes e fixo.';
   end if;
 
+  v_value := coalesce(nullif(btrim(coalesce(p_value, '')), ''), app_private.next_option_label(v_session.admin_user_id, p_group_key));
+
   insert into public.lead_options (admin_user_id, group_key, value, sort_order)
   values (
     v_session.admin_user_id,
     p_group_key,
-    app_private.next_option_label(v_session.admin_user_id, p_group_key),
+    v_value,
     coalesce((
       select max(sort_order) + 10
       from public.lead_options
@@ -767,6 +780,10 @@ $$;
 
 drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, uuid);
 drop function if exists app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, uuid);
+drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, uuid);
+drop function if exists app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, uuid);
+drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid);
+drop function if exists app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid);
 drop function if exists public.lc_list_leads(text);
 drop function if exists app_private.rpc_list_leads(text);
 
@@ -785,6 +802,7 @@ returns table (
   bought text,
   purchase_amount numeric,
   service_order text,
+  notes text,
   created_at timestamptz,
   updated_at timestamptz
 )
@@ -812,6 +830,7 @@ begin
     l.bought,
     l.purchase_amount,
     l.service_order,
+    l.notes,
     l.created_at,
     l.updated_at
   from public.leads l
@@ -838,6 +857,7 @@ create or replace function app_private.rpc_upsert_lead(
   p_bought text default null,
   p_purchase_amount numeric default null,
   p_service_order text default null,
+  p_notes text default null,
   p_store_id uuid default null
 )
 returns uuid
@@ -908,6 +928,7 @@ begin
       bought,
       purchase_amount,
       service_order,
+      notes,
       created_by,
       updated_by
     )
@@ -924,6 +945,7 @@ begin
       nullif(btrim(coalesce(p_bought, '')), ''),
       case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then p_purchase_amount else null end,
       case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then nullif(btrim(coalesce(p_service_order, '')), '') else null end,
+      nullif(btrim(coalesce(p_notes, '')), ''),
       v_session.user_id,
       v_session.user_id
     )
@@ -942,6 +964,7 @@ begin
       bought = nullif(btrim(coalesce(p_bought, '')), ''),
       purchase_amount = case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then p_purchase_amount else null end,
       service_order = case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then nullif(btrim(coalesce(p_service_order, '')), '') else null end,
+      notes = nullif(btrim(coalesce(p_notes, '')), ''),
       updated_by = v_session.user_id
     where id = p_lead_id
       and admin_user_id = v_session.admin_user_id
@@ -1104,13 +1127,14 @@ $$;
 
 create or replace function public.lc_add_option(
   p_session_token text,
-  p_group_key public.lead_option_group
+  p_group_key public.lead_option_group,
+  p_value text default null
 )
 returns boolean
 language sql
 security invoker
 as $$
-  select app_private.rpc_add_option(p_session_token, p_group_key);
+  select app_private.rpc_add_option(p_session_token, p_group_key, p_value);
 $$;
 
 create or replace function public.lc_update_option(
@@ -1151,6 +1175,7 @@ returns table (
   bought text,
   purchase_amount numeric,
   service_order text,
+  notes text,
   created_at timestamptz,
   updated_at timestamptz
 )
@@ -1173,6 +1198,7 @@ create or replace function public.lc_upsert_lead(
   p_bought text default null,
   p_purchase_amount numeric default null,
   p_service_order text default null,
+  p_notes text default null,
   p_store_id uuid default null
 )
 returns uuid
@@ -1192,6 +1218,7 @@ as $$
     p_bought,
     p_purchase_amount,
     p_service_order,
+    p_notes,
     p_store_id
   );
 $$;
@@ -1235,11 +1262,11 @@ grant execute on function app_private.rpc_logout(text) to anon, authenticated;
 grant execute on function app_private.rpc_create_store(text, text, text, text) to anon, authenticated;
 grant execute on function app_private.rpc_list_stores(text) to anon, authenticated;
 grant execute on function app_private.rpc_list_options(text) to anon, authenticated;
-grant execute on function app_private.rpc_add_option(text, public.lead_option_group) to anon, authenticated;
+grant execute on function app_private.rpc_add_option(text, public.lead_option_group, text) to anon, authenticated;
 grant execute on function app_private.rpc_update_option(text, uuid, text) to anon, authenticated;
 grant execute on function app_private.rpc_delete_option(text, uuid) to anon, authenticated;
 grant execute on function app_private.rpc_list_leads(text) to anon, authenticated;
-grant execute on function app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, uuid) to anon, authenticated;
+grant execute on function app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid) to anon, authenticated;
 grant execute on function app_private.rpc_delete_lead(text, uuid) to anon, authenticated;
 
 grant execute on function public.lc_create_admin(text, text, text) to anon, authenticated;
@@ -1249,9 +1276,9 @@ grant execute on function public.lc_logout(text) to anon, authenticated;
 grant execute on function public.lc_create_store(text, text, text, text) to anon, authenticated;
 grant execute on function public.lc_list_stores(text) to anon, authenticated;
 grant execute on function public.lc_list_options(text) to anon, authenticated;
-grant execute on function public.lc_add_option(text, public.lead_option_group) to anon, authenticated;
+grant execute on function public.lc_add_option(text, public.lead_option_group, text) to anon, authenticated;
 grant execute on function public.lc_update_option(text, uuid, text) to anon, authenticated;
 grant execute on function public.lc_delete_option(text, uuid) to anon, authenticated;
 grant execute on function public.lc_list_leads(text) to anon, authenticated;
-grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, uuid) to anon, authenticated;
+grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid) to anon, authenticated;
 grant execute on function public.lc_delete_lead(text, uuid) to anon, authenticated;
