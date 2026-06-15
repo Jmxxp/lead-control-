@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260615-technician" />
+    <link rel="stylesheet" href="styles.css?v=20260615-ai-export" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260615-technician" defer></script>
+    <script src="app.js?v=20260615-ai-export" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -138,6 +138,17 @@
             </button>
 
             <div id="analyticsContent" class="analytics-content" hidden>
+              <div class="analytics-ai-row">
+                <button class="excel-export-button" type="button" id="exportLeadsButton">
+                  <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
+                  <span>Exportar Excel</span>
+                </button>
+                <button class="ai-insights-button" type="button" id="aiInsightsButton" aria-haspopup="dialog">
+                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                  <span>Analisar com IA</span>
+                </button>
+              </div>
+
               <div class="analytics-controls">
                 <label class="field">
                   <span>Loja</span>
@@ -664,6 +675,74 @@
       </div>
     </div>
 
+    <div id="aiChatModal" class="modal-backdrop ai-chat-backdrop" hidden>
+      <section class="modal-dialog ai-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="aiChatTitle">
+        <div class="ai-chat-header">
+          <div>
+            <p class="eyebrow">Inteligência artificial</p>
+            <h2 id="aiChatTitle">Análise dos leads</h2>
+            <span id="aiLeadContextLabel">0 leads no filtro atual</span>
+          </div>
+          <div class="ai-chat-actions">
+            <button class="ghost-button topbar-icon-button" type="button" id="aiSettingsToggle" aria-label="Configurar IA" title="Configurar IA">
+              <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+            </button>
+            <button class="ghost-button topbar-icon-button" type="button" id="aiChatClose" aria-label="Fechar" title="Fechar">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="ai-chat-layout">
+          <section class="ai-chat-main" aria-label="Chat de IA">
+            <div id="aiChatMessages" class="ai-chat-messages"></div>
+            <form id="aiChatForm" class="ai-chat-form">
+              <textarea id="aiChatInput" rows="3" placeholder="Pergunte sobre os leads filtrados"></textarea>
+              <button class="primary-button compact-primary" type="submit" id="aiChatSend">
+                <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                Enviar
+              </button>
+            </form>
+          </section>
+
+          <aside id="aiSettingsPanel" class="ai-settings-panel" aria-label="Configuração da IA" hidden>
+            <form id="aiSettingsForm" class="ai-settings-form">
+              <label class="field">
+                <span>Provedor</span>
+                <select id="aiProvider">
+                  <option value="gemini">Google Gemini</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Modelo</span>
+                <select id="aiModel"></select>
+              </label>
+
+              <label class="field">
+                <span>Chave de API</span>
+                <div class="password-field">
+                  <input id="aiApiKey" type="password" placeholder="API key" />
+                  <button class="password-toggle" type="button" data-toggle-password="aiApiKey" aria-label="Mostrar chave" title="Mostrar chave">
+                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>System prompt</span>
+                <textarea id="aiSystemPrompt" rows="8"></textarea>
+              </label>
+
+              <p id="aiSettingsMessage" class="form-message" role="status" aria-live="polite"></p>
+              <button class="secondary-button" type="submit">Salvar IA</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </div>
+
     <div id="settingsModal" class="modal-backdrop" hidden>
       <section class="modal-dialog account-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <div class="lead-details-header">
@@ -706,6 +785,51 @@
           <div class="modal-actions">
             <button class="ghost-button" type="button" id="settingsCancel">Cancelar</button>
             <button class="primary-button compact-primary" type="submit">Salvar conta</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="managedAccountModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog account-dialog" role="dialog" aria-modal="true" aria-labelledby="managedAccountTitle">
+        <div class="lead-details-header">
+          <div>
+            <p class="eyebrow">Acesso</p>
+            <h2 id="managedAccountTitle">Editar acesso</h2>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="managedAccountClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form id="managedAccountForm" class="account-form" autocomplete="off">
+          <input id="managedAccountType" type="hidden" />
+          <input id="managedAccountId" type="hidden" />
+
+          <label class="field">
+            <span id="managedAccountNameLabel">Nome</span>
+            <input id="managedAccountName" type="text" placeholder="Nome" required />
+          </label>
+
+          <label class="field">
+            <span>Nick de login</span>
+            <input id="managedAccountNick" type="text" placeholder="nick-de-login" required />
+          </label>
+
+          <label class="field">
+            <span>Nova senha</span>
+            <div class="password-field">
+              <input id="managedAccountPassword" type="password" minlength="6" placeholder="Deixe vazio para manter" />
+              <button class="password-toggle" type="button" data-toggle-password="managedAccountPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
+          </label>
+
+          <p id="managedAccountMessage" class="form-message" role="status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button class="ghost-button" type="button" id="managedAccountCancel">Cancelar</button>
+            <button class="primary-button compact-primary" type="submit">Salvar alterações</button>
           </div>
         </form>
       </section>
