@@ -32,6 +32,7 @@ let currentProfile = null;
 let activeStoreContext = null;
 let stores = [];
 let leads = [];
+let technicians = [];
 let customCategories = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
@@ -52,6 +53,7 @@ const appNotification = $("#appNotification");
 const themeToggle = $("#themeToggle");
 const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
+const settingsButton = $("#settingsButton");
 const loginForm = $("#loginForm");
 const signupForm = $("#signupForm");
 const authMessage = $("#authMessage");
@@ -66,6 +68,22 @@ const storeName = $("#storeName");
 const storeNick = $("#storeNick");
 const storePassword = $("#storePassword");
 const storeMessage = $("#storeMessage");
+const technicianForm = $("#technicianForm");
+const technicianName = $("#technicianName");
+const technicianNick = $("#technicianNick");
+const technicianPassword = $("#technicianPassword");
+const technicianMessage = $("#technicianMessage");
+const technicianEmptyState = $("#technicianEmptyState");
+const technicianList = $("#technicianList");
+const technicianListPanel = $("#technicianListPanel");
+const settingsModal = $("#settingsModal");
+const settingsClose = $("#settingsClose");
+const settingsCancel = $("#settingsCancel");
+const adminAccountForm = $("#adminAccountForm");
+const adminAccountNick = $("#adminAccountNick");
+const adminCurrentPassword = $("#adminCurrentPassword");
+const adminNewPassword = $("#adminNewPassword");
+const adminAccountMessage = $("#adminAccountMessage");
 const storeEmptyState = $("#storeEmptyState");
 const storeList = $("#storeList");
 const adminOptionsList = $("#adminOptionsList");
@@ -191,7 +209,15 @@ function bindEvents() {
   signupForm.addEventListener("submit", handleAdminSignup);
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
+  settingsButton.addEventListener("click", openSettingsModal);
+  settingsClose.addEventListener("click", closeSettingsModal);
+  settingsCancel.addEventListener("click", closeSettingsModal);
+  settingsModal.addEventListener("click", (event) => {
+    if (event.target === settingsModal) closeSettingsModal();
+  });
   storeForm.addEventListener("submit", handleCreateStore);
+  technicianForm.addEventListener("submit", handleCreateTechnician);
+  adminAccountForm.addEventListener("submit", handleAdminAccountSubmit);
   adminOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
   adminOptionsList.addEventListener("input", handleOptionsEditorInput);
@@ -377,7 +403,7 @@ async function openProfile(profile) {
   appView.hidden = false;
   await refreshRemoteState();
 
-  if (profile.role === "admin") {
+  if (profile.role === "admin" || profile.role === "technician") {
     showAdminDashboard();
     return;
   }
@@ -387,7 +413,13 @@ async function openProfile(profile) {
 
 function showAdminDashboard() {
   activeStoreContext = null;
-  sessionRole.textContent = `Admin · ${currentProfile.username}`;
+  const isTechnician = currentProfile.role === "technician";
+  sessionRole.textContent = `${isTechnician ? "Técnico" : "Admin"} · ${currentProfile.username}`;
+  storeForm.hidden = isTechnician;
+  technicianForm.hidden = isTechnician;
+  technicianListPanel.hidden = isTechnician;
+  settingsButton.hidden = isTechnician;
+  closeSettingsModal();
   backAdminButton.hidden = true;
   adminView.hidden = false;
   storeView.hidden = true;
@@ -402,6 +434,7 @@ function showStoreDashboard() {
   };
   sessionRole.textContent = `Loja · ${activeStoreContext?.name || currentProfile.username}`;
   backAdminButton.hidden = true;
+  settingsButton.hidden = true;
   toggleOptionsEditButton.hidden = true;
   clearFormButton.hidden = true;
   storeOptionsPanel.hidden = true;
@@ -423,6 +456,7 @@ async function handleLogout() {
     activeStoreContext = null;
     stores = [];
     leads = [];
+    technicians = [];
     customCategories = [];
     options = cloneOptions(defaultOptions);
     optionRecords = createDefaultOptionRecords();
@@ -435,6 +469,8 @@ async function handleLogout() {
 
 function showAuth() {
   clearAppNotification();
+  closeSettingsModal();
+  settingsButton.hidden = true;
   authScreen.hidden = false;
   appView.hidden = true;
   adminView.hidden = true;
@@ -481,6 +517,100 @@ async function handleCreateStore(event) {
   } finally {
     setFormBusy(storeForm, false);
   }
+}
+
+async function handleCreateTechnician(event) {
+  event.preventDefault();
+  clearTechnicianMessage();
+
+  if (!currentProfile || currentProfile.role !== "admin") return;
+
+  const username = normalizeNick(technicianNick.value);
+  if (!username) {
+    showTechnicianMessage("Digite um nick válido para o técnico.");
+    return;
+  }
+
+  try {
+    setFormBusy(technicianForm, true);
+    await authenticatedRpc("lc_create_technician", {
+      p_full_name: technicianName.value.trim(),
+      p_nick: username,
+      p_password: technicianPassword.value,
+    });
+    technicianForm.reset();
+    await refreshRemoteState();
+    showTechnicianMessage("Técnico criado.", "success");
+    renderAll();
+  } catch (error) {
+    showTechnicianMessage(readableError(error));
+  } finally {
+    setFormBusy(technicianForm, false);
+  }
+}
+
+async function handleAdminAccountSubmit(event) {
+  event.preventDefault();
+  clearAdminAccountMessage();
+
+  if (!currentProfile || currentProfile.role !== "admin") return;
+
+  const username = normalizeNick(adminAccountNick.value);
+  if (!username) {
+    showAdminAccountMessage("Digite um nick válido.");
+    return;
+  }
+
+  if (!adminCurrentPassword.value) {
+    showAdminAccountMessage("Digite sua senha atual.");
+    return;
+  }
+
+  if (adminNewPassword.value && adminNewPassword.value.length < 6) {
+    showAdminAccountMessage("A nova senha precisa ter pelo menos 6 caracteres.");
+    return;
+  }
+
+  try {
+    setFormBusy(adminAccountForm, true);
+    const row = firstRow(await authenticatedRpc("lc_update_admin_credentials", {
+      p_nick: username,
+      p_current_password: adminCurrentPassword.value,
+      p_new_password: adminNewPassword.value || null,
+    }));
+    currentProfile.username = row?.nick || username;
+    adminAccountNick.value = currentProfile.username;
+    adminCurrentPassword.value = "";
+    adminNewPassword.value = "";
+    sessionRole.textContent = `Admin · ${currentProfile.username}`;
+    saveStoredSession(currentProfile);
+    showAdminAccountMessage("Conta atualizada.", "success");
+  } catch (error) {
+    showAdminAccountMessage(readableError(error));
+  } finally {
+    setFormBusy(adminAccountForm, false);
+  }
+}
+
+function openSettingsModal() {
+  if (!currentProfile || currentProfile.role !== "admin") return;
+
+  adminAccountNick.value = currentProfile.username || "";
+  adminCurrentPassword.value = "";
+  adminNewPassword.value = "";
+  clearAdminAccountMessage();
+  settingsModal.hidden = false;
+  syncModalLock();
+  requestAnimationFrame(() => adminAccountNick.focus());
+}
+
+function closeSettingsModal() {
+  if (!settingsModal || settingsModal.hidden) return;
+  settingsModal.hidden = true;
+  adminCurrentPassword.value = "";
+  adminNewPassword.value = "";
+  clearAdminAccountMessage();
+  syncModalLock();
 }
 
 function handleStoreListClick(event) {
@@ -681,7 +811,14 @@ function resetLeadForm() {
 async function refreshRemoteState() {
   if (!currentProfile?.sessionToken) return;
 
-  const [storeRows, optionRows, customCategoryRows, leadRows] = await Promise.all([
+  const technicianRowsRequest = currentProfile.role === "admin"
+    ? authenticatedRpc("lc_list_technicians").catch((error) => {
+        if (isMissingRpcError(error)) return [];
+        throw error;
+      })
+    : Promise.resolve([]);
+
+  const [storeRows, optionRows, customCategoryRows, leadRows, technicianRows] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     authenticatedRpc("lc_list_options"),
     authenticatedRpc("lc_list_custom_categories").catch((error) => {
@@ -689,12 +826,14 @@ async function refreshRemoteState() {
       throw error;
     }),
     authenticatedRpc("lc_list_leads"),
+    technicianRowsRequest,
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
   applyOptionRows(optionRows || []);
   applyCustomCategoryRows(customCategoryRows || []);
   leads = (leadRows || []).map(mapLeadRow);
+  technicians = (technicianRows || []).map(mapTechnicianRow);
 
   if (activeStoreContext) {
     activeStoreContext = stores.find((store) => store.id === activeStoreContext.id) || activeStoreContext;
@@ -718,16 +857,23 @@ function renderAll() {
 }
 
 function renderAdminDashboard() {
+  const isAdmin = currentProfile?.role === "admin";
+  storeForm.hidden = !isAdmin;
+  technicianForm.hidden = !isAdmin;
+  technicianListPanel.hidden = !isAdmin;
+  settingsButton.hidden = !isAdmin;
   $("#totalStores").textContent = stores.length;
   $("#adminTotalLeads").textContent = leads.length;
   $("#adminSalesCount").textContent = countByValue(leads, "bought", "Sim");
   $("#adminConversionRate").textContent = formatPercent(countByValue(leads, "bought", "Sim"), leads.length);
   renderStoreList();
+  renderTechnicianList();
   renderAnalyticsFilters();
   renderAdminAnalytics();
 }
 
 function renderStoreList() {
+  const canEnterStore = currentProfile?.role === "admin";
   storeEmptyState.hidden = stores.length > 0;
   storeList.innerHTML = stores
     .map(
@@ -737,12 +883,31 @@ function renderStoreList() {
             <strong>${escapeHtml(store.name)}</strong>
             <span>${escapeHtml(store.username)}</span>
           </div>
-          <button class="secondary-button" type="button" data-store-login="${store.id}">Entrar</button>
+          ${canEnterStore
+            ? `<button class="secondary-button" type="button" data-store-login="${store.id}">Entrar</button>`
+            : `<span class="readonly-pill">Somente métricas</span>`}
         </article>
       `,
     )
     .join("");
 
+}
+
+function renderTechnicianList() {
+  if (!technicianList || technicianListPanel.hidden) return;
+
+  technicianEmptyState.hidden = technicians.length > 0;
+  technicianList.innerHTML = technicians
+    .map((technician) => `
+      <article class="lead-card technician-card">
+        <div>
+          <strong>${escapeHtml(technician.fullName || technician.username)}</strong>
+          <span>${escapeHtml(technician.username)}</span>
+        </div>
+        <span class="readonly-pill">Métricas e opções</span>
+      </article>
+    `)
+    .join("");
 }
 
 function renderLeadList() {
@@ -858,7 +1023,7 @@ function closeLeadDetailsModal() {
 function syncModalLock() {
   document.body.classList.toggle(
     "is-modal-open",
-    !leadDetailsModal.hidden || !analyticsInspectorModal.hidden,
+    !leadDetailsModal.hidden || !analyticsInspectorModal.hidden || !settingsModal.hidden,
   );
 }
 
@@ -1630,17 +1795,15 @@ function renderAnalyticsCategoryCards(section, rows) {
   }
 
   container.innerHTML = ranking
-    .map((item, index) => {
-      const score = getAnalyticsPerformanceScore(item);
-      const scoreWidth = score ? Math.max(score, 5) : 0;
-      const scoreColor = getPerformanceColor(score);
+    .map((item) => {
       return `
         <article class="analytics-category-card">
-          <div class="analytics-rank-number">${index + 1}</div>
+          <div class="analytics-lead-count-badge">
+            <b>${item.count}</b>
+            <span>${item.count === 1 ? "lead" : "leads"}</span>
+          </div>
           <div class="analytics-category-main">
             <strong>${escapeHtml(item.value)}</strong>
-            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · performance comercial ${score}%</span>
-            <div class="analytics-category-track" aria-label="Performance comercial ${score}%"><i style="width:${scoreWidth}%; --score-color:${scoreColor}"></i></div>
           </div>
           <div class="analytics-category-meta">
             <span>${item.visited} visitas</span>
@@ -1687,21 +1850,6 @@ function renderCustomAnalyticsSections(rows) {
       summary: `[data-custom-analytics-summary="${category.id}"]`,
     }, rows);
   });
-}
-
-function getAnalyticsPerformanceScore(item) {
-  if (!item.count) return 0;
-  const visitRate = item.visited / item.count;
-  const purchaseRate = item.bought / item.count;
-  return Math.round(((purchaseRate * 0.75) + (visitRate * 0.25)) * 100);
-}
-
-function getPerformanceColor(score) {
-  const clamped = Math.max(0, Math.min(100, Number(score) || 0));
-  const hue = clamped <= 50
-    ? Math.round((clamped / 50) * 48)
-    : Math.round(48 + ((clamped - 50) / 50) * 94);
-  return `hsl(${hue}, 86%, 52%)`;
 }
 
 function buildAnalyticsRanking(rows, key) {
@@ -1771,36 +1919,66 @@ function closeAnalyticsInspector() {
   syncModalLock();
 }
 
-function handleAnalyticsInspectorClick(event) {
+async function handleAnalyticsInspectorClick(event) {
+  const inspectedToggle = event.target.closest("[data-inspected-toggle]");
+  if (inspectedToggle) {
+    await toggleLeadInspected(inspectedToggle);
+    return;
+  }
+
   const button = event.target.closest("[data-inspector-lead-id]");
   if (!button) return;
   openLeadDetailsModal(button.dataset.inspectorLeadId);
 }
 
 function renderAnalyticsLeadRow(lead) {
+  const createdAt = formatDateTime(lead.createdAt);
   return `
-    <button class="analytics-lead-item" type="button" data-inspector-lead-id="${lead.id}">
-      <div>
+    <article class="analytics-lead-item${lead.inspected ? " is-inspected" : ""}">
+      <button class="analytics-lead-open" type="button" data-inspector-lead-id="${lead.id}">
         <span class="analytics-lead-avatar" aria-hidden="true">
           <i class="fa-solid fa-user"></i>
         </span>
-      </div>
-      <div>
-        <strong>${escapeHtml(lead.name)}</strong>
-        <span>${escapeHtml(lead.storeName || "")} · ${formatDateTime(lead.createdAt)}</span>
-      </div>
-      <div class="analytics-lead-facts">
-        ${renderLeadFact("Canal", lead.channel)}
-        ${renderLeadFact("Campanha", lead.campaign)}
-        ${renderLeadFact("Início", lead.conversationStart)}
-        ${renderLeadFact("Conclusão", lead.conclusion)}
-        ${renderLeadFact("Visitou", lead.visited || "Sem resposta")}
-        ${renderLeadFact("Comprou", lead.bought || "Sem resposta")}
-        ${renderCustomLeadFacts(lead)}
-      </div>
-      <i class="fa-solid fa-chevron-right analytics-lead-chevron" aria-hidden="true"></i>
-    </button>
+        <span class="analytics-lead-identity">
+          <strong>${escapeHtml(lead.name)}</strong>
+          <span>${escapeHtml(lead.storeName || "Loja não informada")}</span>
+          <time datetime="${escapeHtml(lead.createdAt)}">${createdAt}</time>
+        </span>
+      </button>
+      <label class="analytics-inspected-toggle">
+        <input
+          type="checkbox"
+          data-inspected-toggle
+          data-lead-id="${lead.id}"
+          ${lead.inspected ? "checked" : ""}
+        />
+        <span>Inspecionado</span>
+      </label>
+    </article>
   `;
+}
+
+async function toggleLeadInspected(input) {
+  const lead = leads.find((item) => item.id === input.dataset.leadId);
+  if (!lead) return;
+
+  const nextValue = input.checked;
+  const previousValue = Boolean(lead.inspected);
+  lead.inspected = nextValue;
+  input.closest(".analytics-lead-item")?.classList.toggle("is-inspected", nextValue);
+
+  try {
+    await authenticatedRpc("lc_set_lead_inspected", {
+      p_lead_id: lead.id,
+      p_inspected: nextValue,
+    });
+    showAppNotification("Atualizado");
+  } catch (error) {
+    lead.inspected = previousValue;
+    input.checked = previousValue;
+    input.closest(".analytics-lead-item")?.classList.toggle("is-inspected", previousValue);
+    showAppNotification(readableError(error), "error");
+  }
 }
 
 function getAnalyticsSections() {
@@ -2007,6 +2185,16 @@ function mapStoreRow(row) {
   };
 }
 
+function mapTechnicianRow(row) {
+  return {
+    id: row.id,
+    username: row.nick,
+    fullName: row.full_name,
+    createdAt: row.created_at,
+    isActive: row.is_active !== false,
+  };
+}
+
 function mapLeadRow(row) {
   const customValueRows = normalizeCustomValueRows(row.custom_values);
   return {
@@ -2024,6 +2212,7 @@ function mapLeadRow(row) {
     purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
     serviceOrder: row.service_order || "",
     notes: row.notes || "",
+    inspected: Boolean(row.inspected),
     customValueRows,
     customValues: Object.fromEntries(customValueRows.map((item) => [item.categoryId, item.value])),
     createdAt: row.created_at,
@@ -2328,21 +2517,6 @@ function renderTag(value) {
   return value ? `<span>${escapeHtml(value)}</span>` : "";
 }
 
-function renderLeadFact(label, value) {
-  return `
-    <span class="lead-fact">
-      <small>${escapeHtml(label)}</small>
-      <b>${escapeHtml(value || "-")}</b>
-    </span>
-  `;
-}
-
-function renderCustomLeadFacts(lead) {
-  return lead.customValueRows
-    .map((item) => renderLeadFact(item.categoryName, item.value))
-    .join("");
-}
-
 function renderCustomLeadTags(lead) {
   return lead.customValueRows
     .map((item) => renderTag(`${item.categoryName}: ${item.value}`))
@@ -2452,6 +2626,26 @@ function showStoreMessage(message, type = "error") {
 
 function clearStoreMessage() {
   showStoreMessage("");
+}
+
+function showTechnicianMessage(message, type = "error") {
+  technicianMessage.textContent = message;
+  technicianMessage.classList.toggle("success", type === "success");
+  if (type === "success") showAppNotification(message, "success");
+}
+
+function clearTechnicianMessage() {
+  showTechnicianMessage("");
+}
+
+function showAdminAccountMessage(message, type = "error") {
+  adminAccountMessage.textContent = message;
+  adminAccountMessage.classList.toggle("success", type === "success");
+  if (type === "success") showAppNotification(message, "success");
+}
+
+function clearAdminAccountMessage() {
+  showAdminAccountMessage("");
 }
 
 function showFormMessage(message, type = "error") {

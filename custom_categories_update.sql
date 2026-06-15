@@ -3,6 +3,12 @@
 
 set search_path = public, extensions;
 
+alter table public.leads
+  add column if not exists inspected boolean not null default false;
+
+create index if not exists leads_admin_inspected_created_idx
+  on public.leads (admin_user_id, inspected, created_at desc);
+
 create table if not exists public.lead_custom_categories (
   id uuid primary key default gen_random_uuid(),
   admin_user_id uuid not null references public.app_users(id) on delete cascade,
@@ -421,6 +427,7 @@ returns table (
   purchase_amount numeric,
   service_order text,
   notes text,
+  inspected boolean,
   custom_values jsonb,
   created_at timestamptz,
   updated_at timestamptz
@@ -450,6 +457,7 @@ begin
     l.purchase_amount,
     l.service_order,
     l.notes,
+    l.inspected,
     coalesce((
       select jsonb_agg(
         jsonb_build_object(
@@ -757,6 +765,7 @@ returns table (
   purchase_amount numeric,
   service_order text,
   notes text,
+  inspected boolean,
   custom_values jsonb,
   created_at timestamptz,
   updated_at timestamptz

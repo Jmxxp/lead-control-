@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260615-metrics-heading-contrast" />
+    <link rel="stylesheet" href="styles.css?v=20260615-technician" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260615-metrics-heading-contrast" defer></script>
+    <script src="app.js?v=20260615-technician" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -86,6 +86,9 @@
           </div>
           <button class="ghost-button topbar-button topbar-icon-button" type="button" id="backAdminButton" aria-label="Voltar admin" title="Voltar admin" hidden>
             <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+          </button>
+          <button class="ghost-button topbar-button topbar-icon-button" type="button" id="settingsButton" aria-label="Configurações" title="Configurações" hidden>
+            <i class="fa-solid fa-gear" aria-hidden="true"></i>
           </button>
           <button class="ghost-button topbar-button topbar-icon-button" type="button" id="themeToggle" aria-label="Modo escuro" title="Modo escuro" aria-pressed="false">
             <i class="fa-solid fa-moon" aria-hidden="true"></i>
@@ -345,6 +348,38 @@
               <button class="primary-button" type="submit">Criar loja</button>
             </form>
 
+            <form id="technicianForm" class="form-panel technician-panel" autocomplete="off">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Equipe</p>
+                  <h2>Criar técnico</h2>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>Nome do técnico</span>
+                <input id="technicianName" type="text" placeholder="Nome do técnico" required />
+              </label>
+
+              <label class="field">
+                <span>Nick do técnico</span>
+                <input id="technicianNick" type="text" placeholder="ex: tecnico" required />
+              </label>
+
+              <label class="field">
+                <span>Senha do técnico</span>
+                <div class="password-field">
+                  <input id="technicianPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                  <button class="password-toggle" type="button" data-toggle-password="technicianPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </label>
+
+              <p id="technicianMessage" class="form-message" role="status" aria-live="polite"></p>
+              <button class="primary-button" type="submit">Criar técnico</button>
+            </form>
+
             <section class="list-panel options-panel" aria-label="Opções padrão">
               <div class="panel-heading align-start">
                 <div>
@@ -359,6 +394,22 @@
 
               <div id="adminOptionsList" class="options-editor"></div>
               <p id="adminOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
+            </section>
+
+            <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Técnicos cadastrados">
+              <div class="panel-heading align-start">
+                <div>
+                  <p class="eyebrow">Equipe</p>
+                  <h2>Técnicos</h2>
+                </div>
+              </div>
+
+              <div id="technicianEmptyState" class="empty-state">
+                <strong>Nenhum técnico cadastrado ainda.</strong>
+                <span>Crie um acesso técnico para métricas e opções.</span>
+              </div>
+
+              <div id="technicianList" class="lead-list"></div>
             </section>
 
             <section class="list-panel store-list-panel" aria-label="Lojas cadastradas">
@@ -611,6 +662,53 @@
         </section>
       </main>
       </div>
+    </div>
+
+    <div id="settingsModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog account-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="lead-details-header">
+          <div>
+            <p class="eyebrow">Configurações</p>
+            <h2 id="settingsTitle">Conta admin</h2>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="settingsClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form id="adminAccountForm" class="account-form" autocomplete="off">
+          <label class="field">
+            <span>Nick do admin</span>
+            <input id="adminAccountNick" type="text" placeholder="Seu nick" required />
+          </label>
+
+          <label class="field">
+            <span>Senha atual</span>
+            <div class="password-field">
+              <input id="adminCurrentPassword" type="password" placeholder="Confirme sua senha" required />
+              <button class="password-toggle" type="button" data-toggle-password="adminCurrentPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Nova senha</span>
+            <div class="password-field">
+              <input id="adminNewPassword" type="password" minlength="6" placeholder="Opcional" />
+              <button class="password-toggle" type="button" data-toggle-password="adminNewPassword" aria-label="Mostrar senha" title="Mostrar senha">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
+          </label>
+
+          <p id="adminAccountMessage" class="form-message" role="status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button class="ghost-button" type="button" id="settingsCancel">Cancelar</button>
+            <button class="primary-button compact-primary" type="submit">Salvar conta</button>
+          </div>
+        </form>
+      </section>
     </div>
 
     <div id="unsavedOptionsModal" class="modal-backdrop" hidden>
