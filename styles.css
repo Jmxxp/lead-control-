@@ -921,6 +921,34 @@ body.is-dark .quick-range-buttons .mini-button {
   color: #ffffff;
 }
 
+.analytics-expand-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #bdbdbd;
+  border-radius: var(--radius);
+  background: #f5f5f5;
+  color: var(--ink);
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.analytics-expand-button:hover,
+.analytics-expand-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--green);
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.1);
+}
+
 .analytics-empty-card {
   display: grid;
   gap: 6px;
@@ -979,6 +1007,19 @@ body.is-dark .analytics-inspect-button:hover {
   border-color: #f4f4f4;
   background: #f4f4f4;
   color: #111111;
+}
+
+body.is-dark .analytics-expand-button {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #242424;
+  color: var(--ink);
+}
+
+body.is-dark .analytics-expand-button:hover,
+body.is-dark .analytics-expand-button:focus-visible {
+  border-color: rgba(40, 194, 143, 0.5);
+  background: #2c2c2c;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
 }
 
 .analytics-visuals {
@@ -2450,7 +2491,7 @@ body:not(.is-dark) .ai-chat-dialog {
 }
 
 .ai-message-content strong {
-  color: #ffffff;
+  color: #35d86f;
   font-weight: 950;
 }
 

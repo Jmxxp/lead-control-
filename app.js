@@ -65,6 +65,7 @@ let aiIsSending = false;
 let aiAbortController = null;
 let currentAiResponseMessage = null;
 let editingAiMessageIndex = null;
+const expandedAnalyticsSections = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -2010,6 +2011,10 @@ function renderAnalyticsCategoryCards(section, rows) {
 
   const ranking = buildAnalyticsRanking(rows, section);
   const total = rows.length;
+  const isExpanded = expandedAnalyticsSections.has(section.id);
+  const visibleLimit = 4;
+  const visibleRanking = isExpanded ? ranking : ranking.slice(0, visibleLimit);
+  const hasHiddenItems = ranking.length > visibleLimit;
 
   summary.innerHTML = ranking.length
     ? `<span><b>${ranking.length}</b> categorias</span><span><b>${total}</b> ${total === 1 ? "lead" : "leads"}</span>`
@@ -2025,7 +2030,7 @@ function renderAnalyticsCategoryCards(section, rows) {
     return;
   }
 
-  container.innerHTML = ranking
+  container.innerHTML = visibleRanking
     .map((item) => {
       return `
         <article class="analytics-category-card">
@@ -2052,7 +2057,18 @@ function renderAnalyticsCategoryCards(section, rows) {
         </article>
       `;
     })
-    .join("");
+    .join("") + (hasHiddenItems
+      ? `
+        <button
+          class="analytics-expand-button"
+          type="button"
+          data-analytics-expand-section="${escapeHtml(section.id)}"
+        >
+          <i class="fa-solid ${isExpanded ? "fa-chevron-up" : "fa-chevron-down"}" aria-hidden="true"></i>
+          ${isExpanded ? "Recolher ranking" : `Ver todos (${ranking.length})`}
+        </button>
+      `
+      : "");
 }
 
 function renderCustomAnalyticsSections(rows) {
@@ -2148,6 +2164,18 @@ function getAnalyticsGroupValue(lead, key) {
 }
 
 function handleAnalyticsClick(event) {
+  const expandButton = event.target.closest("[data-analytics-expand-section]");
+  if (expandButton) {
+    const sectionId = expandButton.dataset.analyticsExpandSection;
+    if (expandedAnalyticsSections.has(sectionId)) {
+      expandedAnalyticsSections.delete(sectionId);
+    } else {
+      expandedAnalyticsSections.add(sectionId);
+    }
+    renderAdminAnalytics();
+    return;
+  }
+
   const button = event.target.closest("[data-analytics-inspect]");
   if (!button) return;
   openAnalyticsInspector(button.dataset.analyticsSection, button.dataset.analyticsValue);
