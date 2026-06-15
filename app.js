@@ -82,6 +82,7 @@ const analyticsStartDate = $("#analyticsStartDate");
 const analyticsEndDate = $("#analyticsEndDate");
 const analyticsSingleDateField = $(".analytics-single-date");
 const analyticsRangeDateFields = $$(".analytics-range-date");
+const analyticsQuickRangeField = $(".quick-range-field");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const form = $("#leadForm");
@@ -1223,17 +1224,18 @@ function renderAnalyticsCategoryCards(section, rows) {
     return;
   }
 
-  const max = ranking[0]?.count || 1;
   container.innerHTML = ranking
     .map((item, index) => {
-      const percent = total ? Math.round((item.count / total) * 100) : 0;
+      const score = getAnalyticsPerformanceScore(item);
+      const scoreWidth = score ? Math.max(score, 6) : 0;
+      const scoreColor = getPerformanceColor(score);
       return `
         <article class="analytics-category-card">
           <div class="analytics-rank-number">${index + 1}</div>
           <div class="analytics-category-main">
             <strong>${escapeHtml(item.value)}</strong>
-            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · ${percent}% do filtro</span>
-            <div class="analytics-category-track"><i style="width:${Math.max((item.count / max) * 100, 8)}%"></i></div>
+            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · qualidade ${score}%</span>
+            <div class="analytics-category-track"><i style="width:${scoreWidth}%; --score-color:${scoreColor}"></i></div>
           </div>
           <div class="analytics-category-meta">
             <span>${item.visited} visitas</span>
@@ -1252,6 +1254,21 @@ function renderAnalyticsCategoryCards(section, rows) {
       `;
     })
     .join("");
+}
+
+function getAnalyticsPerformanceScore(item) {
+  if (!item.count) return 0;
+  const visitRate = item.visited / item.count;
+  const purchaseRate = item.bought / item.count;
+  return Math.round(((purchaseRate * 0.75) + (visitRate * 0.25)) * 100);
+}
+
+function getPerformanceColor(score) {
+  const clamped = Math.max(0, Math.min(100, Number(score) || 0));
+  const hue = clamped <= 50
+    ? Math.round((clamped / 50) * 48)
+    : Math.round(48 + ((clamped - 50) / 50) * 94);
+  return `hsl(${hue}, 86%, 52%)`;
 }
 
 function buildAnalyticsRanking(rows, key) {
@@ -1327,6 +1344,11 @@ function renderAnalyticsLeadRow(lead) {
   return `
     <button class="analytics-lead-item" type="button" data-inspector-lead-id="${lead.id}">
       <div>
+        <span class="analytics-lead-avatar" aria-hidden="true">
+          <i class="fa-solid fa-user"></i>
+        </span>
+      </div>
+      <div>
         <strong>${escapeHtml(lead.name)}</strong>
         <span>${escapeHtml(lead.storeName || "")} · ${formatDateTime(lead.createdAt)}</span>
       </div>
@@ -1337,7 +1359,7 @@ function renderAnalyticsLeadRow(lead) {
         ${renderTag(lead.visited ? `Visita: ${lead.visited}` : "Visita: sem resposta")}
         ${renderTag(lead.bought ? `Compra: ${lead.bought}` : "Compra: sem resposta")}
       </div>
-      <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+      <i class="fa-solid fa-chevron-right analytics-lead-chevron" aria-hidden="true"></i>
     </button>
   `;
 }
@@ -1422,11 +1444,13 @@ function setAnalyticsDateMode(mode) {
   analyticsRangeDateFields.forEach((field) => {
     field.hidden = mode !== "range";
   });
+  analyticsQuickRangeField.hidden = mode !== "range";
   renderAdminAnalytics();
 }
 
 function setAnalyticsQuickRange(range) {
-  setAnalyticsDateMode("range");
+  const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
+  if (mode !== "range") return;
   const today = new Date();
   const start = new Date(today);
   if (range === "week") start.setDate(today.getDate() - 6);
