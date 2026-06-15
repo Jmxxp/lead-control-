@@ -72,6 +72,11 @@ const analyticsToggle = $("#analyticsToggle");
 const analyticsToggleLabel = $("#analyticsToggleLabel");
 const analyticsContent = $("#analyticsContent");
 const analyticsStoreFilter = $("#analyticsStoreFilter");
+const analyticsChannelFilter = $("#analyticsChannelFilter");
+const analyticsCampaignFilter = $("#analyticsCampaignFilter");
+const analyticsConclusionFilter = $("#analyticsConclusionFilter");
+const analyticsVisitedFilter = $("#analyticsVisitedFilter");
+const analyticsBoughtFilter = $("#analyticsBoughtFilter");
 const analyticsSingleDate = $("#analyticsSingleDate");
 const analyticsStartDate = $("#analyticsStartDate");
 const analyticsEndDate = $("#analyticsEndDate");
@@ -120,12 +125,28 @@ const confirmTitle = $("#confirmTitle");
 const confirmMessage = $("#confirmMessage");
 const confirmCancel = $("#confirmCancel");
 const confirmAccept = $("#confirmAccept");
+const analyticsInspectorModal = $("#analyticsInspectorModal");
+const analyticsInspectorEyebrow = $("#analyticsInspectorEyebrow");
+const analyticsInspectorTitle = $("#analyticsInspectorTitle");
+const analyticsInspectorSubtitle = $("#analyticsInspectorSubtitle");
+const analyticsInspectorList = $("#analyticsInspectorList");
+const analyticsInspectorClose = $("#analyticsInspectorClose");
 const leadDetailsModal = $("#leadDetailsModal");
 const leadDetailsTitle = $("#leadDetailsTitle");
 const leadDetailsContent = $("#leadDetailsContent");
 const leadDetailsClose = $("#leadDetailsClose");
 let notificationTimer = null;
 let pendingConfirmAction = null;
+
+const analyticsSections = [
+  { id: "campaign", label: "Campanhas", key: "campaign", container: "#analyticsCampaignCards", summary: "#analyticsCampaignSummary" },
+  { id: "store", label: "Lojas", key: "storeName", container: "#analyticsStoreCards", summary: "#analyticsStoreSummary" },
+  { id: "channel", label: "Canais", key: "channel", container: "#analyticsChannelCards", summary: "#analyticsChannelSummary" },
+  { id: "start", label: "Início da conversa", key: "conversationStart", container: "#analyticsStartCards", summary: "#analyticsStartSummary" },
+  { id: "conclusion", label: "Resultado", key: "conclusion", container: "#analyticsConclusionCards", summary: "#analyticsConclusionSummary" },
+  { id: "visited", label: "Visitas", key: "visited", container: "#analyticsVisitedCards", summary: "#analyticsVisitedSummary" },
+  { id: "bought", label: "Compras", key: "bought", container: "#analyticsBoughtCards", summary: "#analyticsBoughtSummary" },
+];
 
 document.addEventListener("DOMContentLoaded", () => {
   init().catch((error) => {
@@ -176,12 +197,27 @@ function bindEvents() {
   confirmModal.addEventListener("click", (event) => {
     if (event.target === confirmModal) closeConfirmModal();
   });
+  analyticsInspectorClose.addEventListener("click", closeAnalyticsInspector);
+  analyticsInspectorModal.addEventListener("click", (event) => {
+    if (event.target === analyticsInspectorModal) closeAnalyticsInspector();
+  });
+  analyticsInspectorList.addEventListener("click", handleAnalyticsInspectorClick);
   leadDetailsClose.addEventListener("click", closeLeadDetailsModal);
   leadDetailsModal.addEventListener("click", (event) => {
     if (event.target === leadDetailsModal) closeLeadDetailsModal();
   });
   analyticsToggle.addEventListener("click", toggleAnalytics);
-  analyticsStoreFilter.addEventListener("input", renderAdminAnalytics);
+  [
+    analyticsStoreFilter,
+    analyticsChannelFilter,
+    analyticsCampaignFilter,
+    analyticsConclusionFilter,
+    analyticsVisitedFilter,
+    analyticsBoughtFilter,
+  ].forEach((element) => {
+    element.addEventListener("input", renderAdminAnalytics);
+  });
+  analyticsContent.addEventListener("click", handleAnalyticsClick);
   [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
     element.addEventListener("input", renderAdminAnalytics);
   });
@@ -664,6 +700,7 @@ function renderAdminDashboard() {
   $("#adminSalesCount").textContent = countByValue(leads, "bought", "Sim");
   $("#adminConversionRate").textContent = formatPercent(countByValue(leads, "bought", "Sim"), leads.length);
   renderStoreList();
+  renderAnalyticsFilters();
   renderAdminAnalytics();
 }
 
@@ -683,8 +720,6 @@ function renderStoreList() {
     )
     .join("");
 
-  analyticsStoreFilter.innerHTML = '<option value="">Todas as lojas</option>' +
-    stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join("");
 }
 
 function renderLeadList() {
@@ -773,13 +808,20 @@ function openLeadDetailsModal(id) {
   });
 
   leadDetailsModal.hidden = false;
-  document.body.classList.add("is-modal-open");
+  syncModalLock();
 }
 
 function closeLeadDetailsModal() {
   leadDetailsModal.hidden = true;
   leadDetailsContent.innerHTML = "";
-  document.body.classList.remove("is-modal-open");
+  syncModalLock();
+}
+
+function syncModalLock() {
+  document.body.classList.toggle(
+    "is-modal-open",
+    !leadDetailsModal.hidden || !analyticsInspectorModal.hidden,
+  );
 }
 
 function renderLeadDetailItem(label, value) {
@@ -834,8 +876,21 @@ function renderFilters() {
   fillSelect(campaignFilter, options.campaign, "Todos");
   fillSelect(conversationStartFilter, options.conversationStart, "Todos");
   fillSelect(conclusionFilter, options.conclusion, "Todos");
-  fillSelect(visitedFilter, options.visited, "Todos");
-  fillSelect(boughtFilter, [...options.bought, "sem-resposta"], "Todos");
+  fillSelectWithEntries(visitedFilter, withNoAnswer(options.visited), "Todos");
+  fillSelectWithEntries(boughtFilter, withNoAnswer(options.bought), "Todos");
+}
+
+function renderAnalyticsFilters() {
+  const currentStore = analyticsStoreFilter.value;
+  analyticsStoreFilter.innerHTML = '<option value="">Todas as lojas</option>' +
+    stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join("");
+  analyticsStoreFilter.value = stores.some((store) => store.id === currentStore) ? currentStore : "";
+
+  fillSelect(analyticsChannelFilter, options.channel, "Todos");
+  fillSelect(analyticsCampaignFilter, options.campaign, "Todas");
+  fillSelect(analyticsConclusionFilter, options.conclusion, "Todos");
+  fillSelectWithEntries(analyticsVisitedFilter, withNoAnswer(options.visited), "Todas");
+  fillSelectWithEntries(analyticsBoughtFilter, withNoAnswer(options.bought), "Todas");
 }
 
 function renderOptionsEditors() {
@@ -1104,24 +1159,10 @@ function renderAdminAnalytics() {
   $("#analyticsVisitedLeads").textContent = visited;
   $("#analyticsBoughtLeads").textContent = bought;
   $("#analyticsConversionRate").textContent = formatPercent(bought, total);
-  $("#analyticsFunnelLabel").textContent = total ? `${total} leads` : "Sem dados";
-  $("#analyticsRatesLabel").textContent = total ? `${formatPercent(bought, total)} conversão` : "Sem dados";
 
-  renderMetricBars($("#analyticsFunnelChart"), [
-    ["Leads", total],
-    ["Visitaram", visited],
-    ["Compraram", bought],
-  ]);
-  renderMetricBars($("#analyticsRatesChart"), [
-    ["Visita", total ? Math.round((visited / total) * 100) : 0],
-    ["Compra", total ? Math.round((bought / total) * 100) : 0],
-  ], "%");
-  renderRanking($("#campaignRanking"), $("#topCampaignLabel"), filtered, "campaign");
-  renderRanking($("#storeRanking"), $("#topStoreLabel"), filtered, "storeName");
-  renderRanking($("#conversationStartRanking"), $("#topStartLabel"), filtered, "conversationStart");
-  renderRanking($("#conclusionRanking"), $("#topConclusionLabel"), filtered, "conclusion");
-  renderRanking($("#visitedRanking"), $("#topVisitedLabel"), filtered, "visited");
-  renderRanking($("#boughtRanking"), $("#topBoughtLabel"), filtered, "bought");
+  analyticsSections.forEach((section) => {
+    renderAnalyticsCategoryCards(section, filtered);
+  });
 }
 
 function renderMetricBars(container, rows, suffix = "") {
@@ -1160,6 +1201,147 @@ function renderRanking(container, labelElement, rows, key) {
     .join("");
 }
 
+function renderAnalyticsCategoryCards(section, rows) {
+  const container = $(section.container);
+  const summary = $(section.summary);
+  if (!container || !summary) return;
+
+  const ranking = buildAnalyticsRanking(rows, section.key);
+  const total = rows.length;
+
+  summary.textContent = ranking.length
+    ? `${ranking.length} categorias · ${total} ${total === 1 ? "lead" : "leads"}`
+    : "Sem registros no filtro atual";
+
+  if (!ranking.length) {
+    container.innerHTML = `
+      <div class="analytics-empty-card">
+        <strong>Sem registros</strong>
+        <span>Ajuste os filtros acima para encontrar leads.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const max = ranking[0]?.count || 1;
+  container.innerHTML = ranking
+    .map((item, index) => {
+      const percent = total ? Math.round((item.count / total) * 100) : 0;
+      return `
+        <article class="analytics-category-card">
+          <div class="analytics-rank-number">${index + 1}</div>
+          <div class="analytics-category-main">
+            <strong>${escapeHtml(item.value)}</strong>
+            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · ${percent}% do filtro</span>
+            <div class="analytics-category-track"><i style="width:${Math.max((item.count / max) * 100, 8)}%"></i></div>
+          </div>
+          <div class="analytics-category-meta">
+            <span>${item.visited} visitas</span>
+            <span>${item.bought} compras</span>
+          </div>
+          <button
+            class="mini-button analytics-inspect-button"
+            type="button"
+            data-analytics-inspect
+            data-analytics-section="${section.id}"
+            data-analytics-value="${escapeHtml(item.value)}"
+          >
+            Listar
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function buildAnalyticsRanking(rows, key) {
+  const groups = new Map();
+
+  rows.forEach((lead) => {
+    const value = getAnalyticsGroupValue(lead, key);
+    const current = groups.get(value) || {
+      value,
+      count: 0,
+      visited: 0,
+      bought: 0,
+      latestAt: "",
+    };
+    current.count += 1;
+    if (lead.visited === "Sim") current.visited += 1;
+    if (lead.bought === "Sim") current.bought += 1;
+    if (!current.latestAt || lead.createdAt > current.latestAt) current.latestAt = lead.createdAt;
+    groups.set(value, current);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return String(b.latestAt).localeCompare(String(a.latestAt));
+  });
+}
+
+function getAnalyticsGroupValue(lead, key) {
+  return lead[key] || "Sem resposta";
+}
+
+function handleAnalyticsClick(event) {
+  const button = event.target.closest("[data-analytics-inspect]");
+  if (!button) return;
+  openAnalyticsInspector(button.dataset.analyticsSection, button.dataset.analyticsValue);
+}
+
+function openAnalyticsInspector(sectionId, value) {
+  const section = analyticsSections.find((item) => item.id === sectionId);
+  if (!section) return;
+
+  const filtered = getAnalyticsLeads();
+  const categoryLeads = filtered
+    .filter((lead) => getAnalyticsGroupValue(lead, section.key) === value)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  analyticsInspectorEyebrow.textContent = section.label;
+  analyticsInspectorTitle.textContent = value;
+  analyticsInspectorSubtitle.textContent =
+    `${categoryLeads.length} ${categoryLeads.length === 1 ? "lead encontrado" : "leads encontrados"} no filtro atual`;
+
+  analyticsInspectorList.innerHTML = categoryLeads.length
+    ? categoryLeads.map(renderAnalyticsLeadRow).join("")
+    : `<div class="analytics-empty-card"><strong>Nenhum lead</strong><span>Esse recorte não tem registros.</span></div>`;
+
+  analyticsInspectorModal.hidden = false;
+  syncModalLock();
+}
+
+function closeAnalyticsInspector() {
+  analyticsInspectorModal.hidden = true;
+  analyticsInspectorList.innerHTML = "";
+  syncModalLock();
+}
+
+function handleAnalyticsInspectorClick(event) {
+  const button = event.target.closest("[data-inspector-lead-id]");
+  if (!button) return;
+  openLeadDetailsModal(button.dataset.inspectorLeadId);
+}
+
+function renderAnalyticsLeadRow(lead) {
+  return `
+    <button class="analytics-lead-item" type="button" data-inspector-lead-id="${lead.id}">
+      <div>
+        <strong>${escapeHtml(lead.name)}</strong>
+        <span>${escapeHtml(lead.storeName || "")} · ${formatDateTime(lead.createdAt)}</span>
+      </div>
+      <div class="analytics-lead-tags">
+        ${renderTag(lead.channel)}
+        ${renderTag(lead.campaign)}
+        ${renderTag(lead.conclusion)}
+        ${renderTag(lead.visited ? `Visita: ${lead.visited}` : "Visita: sem resposta")}
+        ${renderTag(lead.bought ? `Compra: ${lead.bought}` : "Compra: sem resposta")}
+      </div>
+      <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
+  `;
+}
+
 function getFilteredLeads() {
   const visible = getVisibleStoreLeads();
   const search = searchInput.value.trim().toLowerCase();
@@ -1170,7 +1352,7 @@ function getFilteredLeads() {
       matchesFilter(lead.campaign, campaignFilter.value) &&
       matchesFilter(lead.conversationStart, conversationStartFilter.value) &&
       matchesFilter(lead.conclusion, conclusionFilter.value) &&
-      matchesFilter(lead.visited, visitedFilter.value) &&
+      matchesFilter(lead.visited || "sem-resposta", visitedFilter.value) &&
       matchesFilter(lead.bought || "sem-resposta", boughtFilter.value);
     const createdDate = lead.createdAt.slice(0, 10);
     const matchesStart = !startDateFilter.value || createdDate >= startDateFilter.value;
@@ -1190,6 +1372,21 @@ function getAnalyticsLeads() {
   let result = [...leads];
   if (analyticsStoreFilter.value) {
     result = result.filter((lead) => lead.storeId === analyticsStoreFilter.value);
+  }
+  if (analyticsChannelFilter.value) {
+    result = result.filter((lead) => lead.channel === analyticsChannelFilter.value);
+  }
+  if (analyticsCampaignFilter.value) {
+    result = result.filter((lead) => lead.campaign === analyticsCampaignFilter.value);
+  }
+  if (analyticsConclusionFilter.value) {
+    result = result.filter((lead) => lead.conclusion === analyticsConclusionFilter.value);
+  }
+  if (analyticsVisitedFilter.value) {
+    result = result.filter((lead) => (lead.visited || "sem-resposta") === analyticsVisitedFilter.value);
+  }
+  if (analyticsBoughtFilter.value) {
+    result = result.filter((lead) => (lead.bought || "sem-resposta") === analyticsBoughtFilter.value);
   }
 
   const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
@@ -1422,6 +1619,22 @@ function fillSelect(select, values, firstLabel) {
   select.innerHTML = `<option value="">${firstLabel}</option>` +
     values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
   select.value = values.includes(currentValue) ? currentValue : "";
+}
+
+function fillSelectWithEntries(select, entries, firstLabel) {
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">${firstLabel}</option>` +
+    entries.map(({ value, label }) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+  select.value = entries.some((entry) => entry.value === currentValue) ? currentValue : "";
+}
+
+function withNoAnswer(values) {
+  const entries = values.map((value) => ({
+    value,
+    label: value === "sem-resposta" ? "Sem resposta" : value,
+  }));
+  if (values.includes("sem-resposta")) return entries;
+  return [...entries, { value: "sem-resposta", label: "Sem resposta" }];
 }
 
 function matchesFilter(value, filterValue) {

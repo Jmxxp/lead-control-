@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260612-edit-exit" />
+    <link rel="stylesheet" href="styles.css?v=20260615-analytics-redesign" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260612-edit-exit" defer></script>
+    <script src="app.js?v=20260615-analytics-redesign" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -143,6 +143,41 @@
                   </select>
                 </label>
 
+                <label class="field">
+                  <span>Canal</span>
+                  <select id="analyticsChannelFilter">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Campanha</span>
+                  <select id="analyticsCampaignFilter">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Resultado</span>
+                  <select id="analyticsConclusionFilter">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Visita</span>
+                  <select id="analyticsVisitedFilter">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Compra</span>
+                  <select id="analyticsBoughtFilter">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+
                 <div class="field analytics-mode-field">
                   <span>Data</span>
                   <div class="segmented-control" role="group" aria-label="Tipo de data">
@@ -199,71 +234,75 @@
                 </article>
               </section>
 
-              <section class="analytics-visuals" aria-label="Gráficos de métricas importantes">
-                <article class="chart-panel metric-chart-panel">
-                  <div class="chart-heading">
-                    <span>Funil comercial</span>
-                    <strong id="analyticsFunnelLabel">Sem dados</strong>
+              <section class="analytics-board" aria-label="Inspeção detalhada dos registros">
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Campanhas</span>
+                      <strong id="analyticsCampaignSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="analyticsFunnelChart" class="metric-bars"></div>
+                  <div id="analyticsCampaignCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel metric-chart-panel">
-                  <div class="chart-heading">
-                    <span>Taxas principais</span>
-                    <strong id="analyticsRatesLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Lojas</span>
+                      <strong id="analyticsStoreSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="analyticsRatesChart" class="metric-bars"></div>
-                </article>
-              </section>
-
-              <section class="analytics-grid" aria-label="Rankings de desempenho">
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Campanhas</span>
-                    <strong id="topCampaignLabel">Sem dados</strong>
-                  </div>
-                  <div id="campaignRanking" class="bar-ranking"></div>
+                  <div id="analyticsStoreCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Lojas</span>
-                    <strong id="topStoreLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Canais</span>
+                      <strong id="analyticsChannelSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="storeRanking" class="bar-ranking"></div>
+                  <div id="analyticsChannelCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Início da conversa</span>
-                    <strong id="topStartLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Início da conversa</span>
+                      <strong id="analyticsStartSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="conversationStartRanking" class="bar-ranking"></div>
+                  <div id="analyticsStartCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Fim da conversa</span>
-                    <strong id="topConclusionLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Resultado</span>
+                      <strong id="analyticsConclusionSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="conclusionRanking" class="bar-ranking"></div>
+                  <div id="analyticsConclusionCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Visitas</span>
-                    <strong id="topVisitedLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Visitas</span>
+                      <strong id="analyticsVisitedSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="visitedRanking" class="bar-ranking"></div>
+                  <div id="analyticsVisitedCards" class="analytics-category-list"></div>
                 </article>
 
-                <article class="chart-panel">
-                  <div class="chart-heading">
-                    <span>Compras</span>
-                    <strong id="topBoughtLabel">Sem dados</strong>
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Compras</span>
+                      <strong id="analyticsBoughtSummary">Sem dados</strong>
+                    </div>
                   </div>
-                  <div id="boughtRanking" class="bar-ranking"></div>
+                  <div id="analyticsBoughtCards" class="analytics-category-list"></div>
                 </article>
               </section>
             </div>
@@ -592,6 +631,22 @@
           <button class="ghost-button" type="button" id="confirmCancel">Cancelar</button>
           <button class="mini-button danger" type="button" id="confirmAccept">Confirmar</button>
         </div>
+      </section>
+    </div>
+
+    <div id="analyticsInspectorModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog analytics-inspector-dialog" role="dialog" aria-modal="true" aria-labelledby="analyticsInspectorTitle">
+        <div class="analytics-inspector-header">
+          <div>
+            <p class="eyebrow" id="analyticsInspectorEyebrow">Categoria</p>
+            <h2 id="analyticsInspectorTitle">Leads filtrados</h2>
+            <span id="analyticsInspectorSubtitle"></span>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="analyticsInspectorClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div id="analyticsInspectorList" class="analytics-inspector-list"></div>
       </section>
     </div>
 
