@@ -32,11 +32,13 @@ let currentProfile = null;
 let activeStoreContext = null;
 let stores = [];
 let leads = [];
+let customCategories = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
 const dirtyOptionValues = new Map();
 let newOptionCounter = 0;
 let selectedValues = createEmptySelection();
+let selectedCustomValues = {};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -83,6 +85,8 @@ const analyticsEndDate = $("#analyticsEndDate");
 const analyticsSingleDateField = $(".analytics-single-date");
 const analyticsRangeDateFields = $$(".analytics-range-date");
 const analyticsQuickRangeField = $(".quick-range-field");
+const analyticsCustomFilters = $("#analyticsCustomFilters");
+const analyticsCustomSections = $("#analyticsCustomSections");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const form = $("#leadForm");
@@ -109,6 +113,8 @@ const endDateFilter = $("#endDateFilter");
 const clearFiltersButton = $("#clearFilters");
 const emptyState = $("#emptyState");
 const leadList = $("#leadList");
+const customLeadFields = $("#customLeadFields");
+const customLeadFilters = $("#customLeadFilters");
 const purchaseDetails = $("#purchaseDetails");
 const purchaseAmountInput = $("#purchaseAmount");
 const serviceOrderInput = $("#serviceOrder");
@@ -218,6 +224,7 @@ function bindEvents() {
   ].forEach((element) => {
     element.addEventListener("input", renderAdminAnalytics);
   });
+  analyticsCustomFilters.addEventListener("input", renderAdminAnalytics);
   analyticsContent.addEventListener("click", handleAnalyticsClick);
   [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
     element.addEventListener("input", renderAdminAnalytics);
@@ -257,6 +264,7 @@ function bindEvents() {
     startDateFilter,
     endDateFilter,
   ].forEach((element) => element.addEventListener("input", renderLeadList));
+  customLeadFilters.addEventListener("input", renderLeadList);
 
   toggleFiltersButton.addEventListener("click", toggleFilters);
   clearFiltersButton.addEventListener("click", clearFilters);
@@ -415,8 +423,10 @@ async function handleLogout() {
     activeStoreContext = null;
     stores = [];
     leads = [];
+    customCategories = [];
     options = cloneOptions(defaultOptions);
     optionRecords = createDefaultOptionRecords();
+    selectedCustomValues = {};
     resetLeadForm();
     showAuth();
     renderAll();
@@ -525,6 +535,9 @@ async function handleLeadSubmit(event) {
     p_notes: leadNotesInput.value.trim(),
     p_store_id: store.id,
   };
+  if (customCategories.length) {
+    payload.p_custom_values = buildCustomValuesPayload();
+  }
 
   if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
@@ -585,6 +598,7 @@ function editLead(id) {
     visited: lead.visited || "",
     bought: lead.bought || "",
   };
+  selectedCustomValues = { ...lead.customValues };
   purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
   serviceOrderInput.value = lead.serviceOrder || "";
   leadNotesInput.value = lead.notes || "";
@@ -652,6 +666,7 @@ function resetLeadForm() {
   form.reset();
   editingIdInput.value = "";
   selectedValues = createEmptySelection();
+  selectedCustomValues = {};
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
   leadNotesInput.value = "";
@@ -666,15 +681,20 @@ function resetLeadForm() {
 async function refreshRemoteState() {
   if (!currentProfile?.sessionToken) return;
 
-  const [storeRows, optionRows, leadRows] = await Promise.all([
+  const [storeRows, optionRows, customCategoryRows, leadRows] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     authenticatedRpc("lc_list_options"),
+    authenticatedRpc("lc_list_custom_categories").catch((error) => {
+      if (isMissingRpcError(error)) return [];
+      throw error;
+    }),
     authenticatedRpc("lc_list_leads"),
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
-  leads = (leadRows || []).map(mapLeadRow);
   applyOptionRows(optionRows || []);
+  applyCustomCategoryRows(customCategoryRows || []);
+  leads = (leadRows || []).map(mapLeadRow);
 
   if (activeStoreContext) {
     activeStoreContext = stores.find((store) => store.id === activeStoreContext.id) || activeStoreContext;
@@ -688,7 +708,9 @@ async function refreshOptions() {
 
 function renderAll() {
   renderChoiceButtons();
+  renderCustomChoiceButtons();
   renderFilters();
+  renderCustomLeadFilters();
   renderOptionsEditors();
   renderAdminDashboard();
   renderLeadList();
@@ -744,6 +766,7 @@ function renderLeadList() {
             ${renderTag(lead.bought ? `Comprou: ${lead.bought}` : "")}
             ${renderTag(lead.purchaseAmount ? `Valor: ${formatCurrency(lead.purchaseAmount)}` : "")}
             ${renderTag(lead.serviceOrder ? `OS: ${lead.serviceOrder}` : "")}
+            ${renderCustomLeadTags(lead)}
           </div>
           ${renderLeadNotes(lead.notes)}
           <div class="card-actions">
@@ -777,17 +800,31 @@ function openLeadDetailsModal(id) {
       <strong>${escapeHtml(lead.name)}</strong>
       <span>${escapeHtml(lead.storeName || "")}</span>
     </div>
-    <div class="lead-details-grid">
-      ${renderLeadDetailItem("Telefone", lead.phone)}
-      ${renderLeadDetailItem("Canal", lead.channel)}
-      ${renderLeadDetailItem("Campanha", lead.campaign)}
-      ${renderLeadDetailItem("Início da conversa", lead.conversationStart)}
-      ${renderLeadDetailItem("Conclusão", lead.conclusion)}
-      ${renderLeadDetailItem("Visitou a loja", lead.visited)}
-      ${renderLeadDetailItem("Comprou", lead.bought)}
-      ${renderLeadDetailItem("Valor da compra", lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "")}
-      ${renderLeadDetailItem("OS", lead.serviceOrder)}
-      ${renderLeadDetailItem("Registrado em", formatDateTime(lead.createdAt))}
+    <div class="lead-details-section">
+      <h3>Contato</h3>
+      <div class="lead-details-grid">
+        ${renderLeadDetailItem("Telefone", lead.phone)}
+        ${renderLeadDetailItem("Registrado em", formatDateTime(lead.createdAt))}
+      </div>
+    </div>
+    <div class="lead-details-section">
+      <h3>Atendimento</h3>
+      <div class="lead-details-grid">
+        ${renderLeadDetailItem("Canal", lead.channel)}
+        ${renderLeadDetailItem("Campanha", lead.campaign)}
+        ${renderLeadDetailItem("Início da conversa", lead.conversationStart)}
+        ${renderLeadDetailItem("Conclusão", lead.conclusion)}
+        ${renderCustomLeadDetailItems(lead)}
+      </div>
+    </div>
+    <div class="lead-details-section">
+      <h3>Resultado</h3>
+      <div class="lead-details-grid">
+        ${renderLeadDetailItem("Visitou a loja", lead.visited)}
+        ${renderLeadDetailItem("Comprou", lead.bought)}
+        ${renderLeadDetailItem("Valor da compra", lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "")}
+        ${renderLeadDetailItem("OS", lead.serviceOrder)}
+      </div>
     </div>
     <div class="lead-details-notes">
       <span>Observações</span>
@@ -872,6 +909,39 @@ function renderChoiceButtons() {
   });
 }
 
+function renderCustomChoiceButtons() {
+  if (!customLeadFields) return;
+
+  customLeadFields.innerHTML = customCategories
+    .map((category) => `
+      <div class="choice-section custom-choice-section">
+        <div class="section-title">
+          <h3>${escapeHtml(category.name)}</h3>
+          <span>Opcional</span>
+        </div>
+        <div class="choice-grid compact" data-custom-choice-category="${category.id}">
+          ${category.options.length
+            ? category.options.map((option) => {
+                const isActive = selectedCustomValues[category.id] === option.value;
+                return `<button class="choice-button${isActive ? " is-active" : ""}" type="button" data-custom-choice-value="${escapeHtml(option.value)}">${escapeHtml(option.value)}</button>`;
+              }).join("")
+            : `<span class="option-chip">Sem opções</span>`}
+        </div>
+      </div>
+    `)
+    .join("");
+
+  customLeadFields.querySelectorAll("[data-custom-choice-value]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const categoryId = button.closest("[data-custom-choice-category]")?.dataset.customChoiceCategory;
+      if (!categoryId) return;
+      selectedCustomValues[categoryId] =
+        selectedCustomValues[categoryId] === button.dataset.customChoiceValue ? "" : button.dataset.customChoiceValue;
+      renderCustomChoiceButtons();
+    });
+  });
+}
+
 function renderFilters() {
   fillSelect(channelFilter, options.channel, "Todos");
   fillSelect(campaignFilter, options.campaign, "Todos");
@@ -879,6 +949,10 @@ function renderFilters() {
   fillSelect(conclusionFilter, options.conclusion, "Todos");
   fillSelectWithEntries(visitedFilter, withNoAnswer(options.visited), "Todos");
   fillSelectWithEntries(boughtFilter, withNoAnswer(options.bought), "Todos");
+}
+
+function renderCustomLeadFilters() {
+  renderCustomFilters(customLeadFilters, "Todos");
 }
 
 function renderAnalyticsFilters() {
@@ -892,6 +966,37 @@ function renderAnalyticsFilters() {
   fillSelect(analyticsConclusionFilter, options.conclusion, "Todos");
   fillSelectWithEntries(analyticsVisitedFilter, withNoAnswer(options.visited), "Todas");
   fillSelectWithEntries(analyticsBoughtFilter, withNoAnswer(options.bought), "Todas");
+  renderCustomFilters(analyticsCustomFilters, "Todas");
+}
+
+function renderCustomFilters(container, firstLabel) {
+  if (!container) return;
+
+  const currentValues = Object.fromEntries(
+    Array.from(container.querySelectorAll("[data-custom-filter]")).map((select) => [select.dataset.customFilter, select.value]),
+  );
+
+  container.innerHTML = customCategories
+    .map((category) => {
+      const optionsHtml = withNoAnswer(category.options.map((option) => option.value))
+        .map(({ value, label }) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+        .join("");
+      return `
+        <label class="field">
+          <span>${escapeHtml(category.name)}</span>
+          <select data-custom-filter="${category.id}">
+            <option value="">${firstLabel}</option>
+            ${optionsHtml}
+          </select>
+        </label>
+      `;
+    })
+    .join("");
+
+  container.querySelectorAll("[data-custom-filter]").forEach((select) => {
+    const currentValue = currentValues[select.dataset.customFilter];
+    select.value = Array.from(select.options).some((option) => option.value === currentValue) ? currentValue : "";
+  });
 }
 
 function renderOptionsEditors() {
@@ -902,7 +1007,7 @@ function renderOptionsEditors() {
 function renderOptionsEditor(container, scope) {
   const editableGroups = optionGroups.filter((group) => !fixedOptionGroups.has(group));
 
-  container.innerHTML = editableGroups
+  const standardGroups = editableGroups
     .map((group) => {
       const isFixed = fixedOptionGroups.has(group);
       const chips = (optionRecords[group] || [])
@@ -933,15 +1038,73 @@ function renderOptionsEditor(container, scope) {
       `;
     })
     .join("");
+
+  container.innerHTML = standardGroups + renderCustomCategoriesEditor(scope);
+}
+
+function renderCustomCategoriesEditor(scope) {
+  const categoryCards = customCategories
+    .map((category) => {
+      const categoryKey = category.id;
+      const categoryName = dirtyOptionValues.get(categoryKey) ?? category.name;
+      const optionRows = category.options
+        .map((option) => `
+          <div class="option-row custom-option-row${option.pending ? " is-pending" : ""}" data-custom-category-id="${category.id}" data-option-id="${option.id}">
+            <input value="${escapeHtml(dirtyOptionValues.get(option.id) ?? option.value)}" aria-label="${escapeHtml(category.name)}" />
+            <button class="mini-button option-save" type="button" data-option-action="save-custom-option" ${option.pending || dirtyOptionKeys.has(option.id) ? "" : "hidden"}>Salvar</button>
+            <button class="mini-button danger" type="button" data-option-action="delete-custom-option">Excluir</button>
+          </div>
+        `)
+        .join("");
+
+      return `
+        <div class="custom-category-editor${category.pending ? " is-pending" : ""}" data-custom-category-id="${category.id}">
+          <div class="custom-category-heading">
+            <input value="${escapeHtml(categoryName)}" data-custom-category-name aria-label="Nome da categoria adicional" placeholder="Nome da categoria" />
+            <button class="mini-button option-save" type="button" data-option-action="save-custom-category" ${category.pending || dirtyOptionKeys.has(categoryKey) ? "" : "hidden"}>Salvar</button>
+            <button class="mini-button option-add-button" type="button" data-option-action="add-custom-option" ${category.pending ? "hidden" : ""} aria-label="Adicionar opção em ${escapeHtml(category.name)}" title="Adicionar opção">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            </button>
+            <button class="mini-button danger category-delete-button" type="button" data-option-action="delete-custom-category" aria-label="Excluir categoria ${escapeHtml(category.name)}" title="Excluir categoria">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i>
+              <span>Excluir categoria</span>
+            </button>
+          </div>
+          <div class="option-list custom-option-list">${optionRows || '<span class="option-chip">Sem opções</span>'}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <section class="option-group custom-category-group" data-scope="${scope}">
+      <div class="option-group-heading">
+        <strong>Categorias adicionais</strong>
+        <button class="mini-button option-add-button" type="button" data-option-action="add-custom-category" aria-label="Adicionar categoria" title="Adicionar categoria">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="custom-category-list">${categoryCards || '<span class="option-chip">Nenhuma categoria adicional</span>'}</div>
+    </section>
+  `;
 }
 
 function handleOptionsEditorInput(event) {
+  const customCategory = event.target.closest(".custom-category-editor");
+  if (customCategory && event.target.matches("[data-custom-category-name]")) {
+    dirtyOptionKeys.add(customCategory.dataset.customCategoryId);
+    dirtyOptionValues.set(customCategory.dataset.customCategoryId, event.target.value);
+    const saveButton = customCategory.querySelector("[data-option-action='save-custom-category']");
+    if (saveButton) saveButton.hidden = false;
+    return;
+  }
+
   const row = event.target.closest(".option-row");
   if (!row) return;
 
   dirtyOptionKeys.add(row.dataset.optionId);
   dirtyOptionValues.set(row.dataset.optionId, event.target.value);
-  const saveButton = row.querySelector("[data-option-action='save']");
+  const saveButton = row.querySelector("[data-option-action='save'], [data-option-action='save-custom-option']");
   if (saveButton) saveButton.hidden = false;
 }
 
@@ -964,8 +1127,63 @@ function addPendingOption(group) {
   });
 }
 
+function addPendingCustomCategory() {
+  const id = `new-custom-category-${Date.now()}-${newOptionCounter++}`;
+  customCategories.push({
+    id,
+    name: "",
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    options: [],
+    pending: true,
+  });
+  dirtyOptionKeys.add(id);
+  dirtyOptionValues.set(id, "");
+  renderOptionsEditors();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-custom-category-id="${id}"] [data-custom-category-name]`);
+    input?.focus();
+  });
+}
+
+function addPendingCustomOption(categoryId) {
+  const category = getCustomCategory(categoryId);
+  if (!category || category.pending) return;
+
+  const id = `new-custom-option-${Date.now()}-${newOptionCounter++}`;
+  category.options.push({
+    id,
+    categoryId,
+    value: "",
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    pending: true,
+  });
+  dirtyOptionKeys.add(id);
+  dirtyOptionValues.set(id, "");
+  renderOptionsEditors();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-option-id="${id}"] input`);
+    input?.focus();
+  });
+}
+
 function removePendingOption(group, optionId) {
   optionRecords[group] = (optionRecords[group] || []).filter((record) => record.id !== optionId);
+  dirtyOptionKeys.delete(optionId);
+  dirtyOptionValues.delete(optionId);
+  renderOptionsEditors();
+}
+
+function removePendingCustomCategory(categoryId) {
+  customCategories = customCategories.filter((category) => category.id !== categoryId);
+  dirtyOptionKeys.delete(categoryId);
+  dirtyOptionValues.delete(categoryId);
+  renderOptionsEditors();
+}
+
+function removePendingCustomOption(categoryId, optionId) {
+  const category = getCustomCategory(categoryId);
+  if (!category) return;
+  category.options = category.options.filter((option) => option.id !== optionId);
   dirtyOptionKeys.delete(optionId);
   dirtyOptionValues.delete(optionId);
   renderOptionsEditors();
@@ -975,6 +1193,12 @@ function clearPendingOptions() {
   optionGroups.forEach((group) => {
     optionRecords[group] = (optionRecords[group] || []).filter((record) => !isPendingOption(record.id));
   });
+  customCategories = customCategories
+    .filter((category) => !isPendingOption(category.id))
+    .map((category) => ({
+      ...category,
+      options: category.options.filter((option) => !isPendingOption(option.id)),
+    }));
 }
 
 function isPendingOption(optionId) {
@@ -984,8 +1208,23 @@ function isPendingOption(optionId) {
 function findOptionRecordById(optionId) {
   for (const group of optionGroups) {
     const record = (optionRecords[group] || []).find((item) => item.id === optionId);
-    if (record) return record;
+    if (record) return { ...record, kind: "standard-option" };
   }
+  return null;
+}
+
+function findEditableRecordById(recordId) {
+  const standardRecord = findOptionRecordById(recordId);
+  if (standardRecord) return standardRecord;
+
+  const category = getCustomCategory(recordId);
+  if (category) return { ...category, kind: "custom-category" };
+
+  for (const item of customCategories) {
+    const option = item.options.find((record) => record.id === recordId);
+    if (option) return { ...option, categoryId: item.id, kind: "custom-option" };
+  }
+
   return null;
 }
 
@@ -998,11 +1237,37 @@ function isDuplicateOptionValue(group, optionId, value) {
   );
 }
 
+function isDuplicateCustomCategoryName(categoryId, value) {
+  const normalized = value.trim().toLowerCase();
+  return customCategories.some((category) =>
+    category.id !== categoryId &&
+    !isPendingOption(category.id) &&
+    category.name.trim().toLowerCase() === normalized
+  );
+}
+
+function isDuplicateCustomOptionValue(categoryId, optionId, value) {
+  const normalized = value.trim().toLowerCase();
+  const category = getCustomCategory(categoryId);
+  if (!category) return false;
+
+  return category.options.some((option) =>
+    option.id !== optionId &&
+    !isPendingOption(option.id) &&
+    option.value.trim().toLowerCase() === normalized
+  );
+}
+
 async function handleOptionsEditorClick(event) {
   const button = event.target.closest("[data-option-action]");
   if (!button) return;
 
   const action = button.dataset.optionAction;
+  if (action.startsWith("add-custom") || action.startsWith("save-custom") || action.startsWith("delete-custom")) {
+    await handleCustomOptionsEditorClick(button);
+    return;
+  }
+
   const row = button.closest(".option-row");
   const group = button.dataset.group || row?.dataset.group;
   const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
@@ -1068,6 +1333,109 @@ async function handleOptionsEditorClick(event) {
   }
 }
 
+async function handleCustomOptionsEditorClick(button) {
+  const action = button.dataset.optionAction;
+  const editor = button.closest(".custom-category-editor");
+  const row = button.closest(".custom-option-row");
+  const categoryId = editor?.dataset.customCategoryId || row?.dataset.customCategoryId;
+  const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
+
+  try {
+    button.disabled = true;
+
+    if (action === "add-custom-category") {
+      addPendingCustomCategory();
+      return;
+    }
+
+    if (action === "add-custom-option") {
+      addPendingCustomOption(categoryId);
+      return;
+    }
+
+    if (action === "delete-custom-category") {
+      if (isPendingOption(categoryId)) {
+        removePendingCustomCategory(categoryId);
+        return;
+      }
+      await authenticatedRpc("lc_delete_custom_category", { p_category_id: categoryId });
+      dirtyOptionKeys.delete(categoryId);
+      dirtyOptionValues.delete(categoryId);
+      await refreshRemoteState();
+      renderAll();
+      showOptionsMessage(messageTarget, "Categoria removida.", "success");
+      return;
+    }
+
+    if (action === "delete-custom-option") {
+      if (isPendingOption(row.dataset.optionId)) {
+        removePendingCustomOption(categoryId, row.dataset.optionId);
+        return;
+      }
+      await authenticatedRpc("lc_delete_custom_option", { p_option_id: row.dataset.optionId });
+      dirtyOptionKeys.delete(row.dataset.optionId);
+      dirtyOptionValues.delete(row.dataset.optionId);
+      await refreshRemoteState();
+      renderAll();
+      showOptionsMessage(messageTarget, "Opção removida.", "success");
+      return;
+    }
+
+    if (action === "save-custom-category") {
+      const value = editor.querySelector("[data-custom-category-name]").value.trim();
+      if (!value) {
+        showOptionsMessage(messageTarget, "Digite o nome da categoria.");
+        editor.querySelector("[data-custom-category-name]").focus();
+        return;
+      }
+      if (isDuplicateCustomCategoryName(categoryId, value)) {
+        showOptionsMessage(messageTarget, "Essa categoria já existe.");
+        editor.querySelector("[data-custom-category-name]").focus();
+        return;
+      }
+      if (isPendingOption(categoryId)) {
+        await authenticatedRpc("lc_add_custom_category", { p_name: value });
+      } else {
+        await authenticatedRpc("lc_update_custom_category", { p_category_id: categoryId, p_name: value });
+      }
+      dirtyOptionKeys.delete(categoryId);
+      dirtyOptionValues.delete(categoryId);
+      await refreshRemoteState();
+      renderAll();
+      showOptionsMessage(messageTarget, "Categoria salva.", "success");
+      return;
+    }
+
+    if (action === "save-custom-option") {
+      const value = row.querySelector("input").value.trim();
+      if (!value) {
+        showOptionsMessage(messageTarget, "Digite um valor.");
+        row.querySelector("input").focus();
+        return;
+      }
+      if (isDuplicateCustomOptionValue(categoryId, row.dataset.optionId, value)) {
+        showOptionsMessage(messageTarget, "Essa opção já existe.");
+        row.querySelector("input").focus();
+        return;
+      }
+      if (isPendingOption(row.dataset.optionId)) {
+        await authenticatedRpc("lc_add_custom_option", { p_category_id: categoryId, p_value: value });
+      } else {
+        await authenticatedRpc("lc_update_custom_option", { p_option_id: row.dataset.optionId, p_value: value });
+      }
+      dirtyOptionKeys.delete(row.dataset.optionId);
+      dirtyOptionValues.delete(row.dataset.optionId);
+      await refreshRemoteState();
+      renderAll();
+      showOptionsMessage(messageTarget, "Opção salva.", "success");
+    }
+  } catch (error) {
+    showOptionsMessage(messageTarget, readableError(error));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function toggleStoreOptionsMode(forceOpen = null) {
   const shouldOpen = forceOpen === null ? storeOptionsPanel.hidden : forceOpen;
   storeOptionsPanel.hidden = !shouldOpen;
@@ -1121,27 +1489,63 @@ async function saveDirtyOptions() {
   for (const optionId of Array.from(dirtyOptionKeys)) {
     const value = dirtyOptionValues.get(optionId)?.trim();
     if (!value) throw new Error("Digite um valor para salvar as opções.");
-    const record = findOptionRecordById(optionId);
-    if (record && isDuplicateOptionValue(record.groupKey, optionId, value)) {
-      throw new Error(`A opção "${value}" já existe.`);
+
+    const record = findEditableRecordById(optionId);
+    if (!record) throw new Error("Alteração temporária não encontrada.");
+
+    if (record.kind === "standard-option") {
+      if (isDuplicateOptionValue(record.groupKey, optionId, value)) {
+        throw new Error(`A opção "${value}" já existe.`);
+      }
+      if (isPendingOption(optionId)) {
+        await authenticatedRpc("lc_add_option", {
+          p_group_key: record.groupKey,
+          p_value: value,
+        });
+      } else {
+        await authenticatedRpc("lc_update_option", {
+          p_option_id: optionId,
+          p_value: value,
+        });
+      }
     }
-    if (isPendingOption(optionId)) {
-      if (!record) throw new Error("Opção temporária não encontrada.");
-      await authenticatedRpc("lc_add_option", {
-        p_group_key: record.groupKey,
-        p_value: value,
-      });
-    } else {
-      await authenticatedRpc("lc_update_option", {
-        p_option_id: optionId,
-        p_value: value,
-      });
+
+    if (record.kind === "custom-category") {
+      if (isDuplicateCustomCategoryName(optionId, value)) {
+        throw new Error(`A categoria "${value}" já existe.`);
+      }
+      if (isPendingOption(optionId)) {
+        await authenticatedRpc("lc_add_custom_category", { p_name: value });
+      } else {
+        await authenticatedRpc("lc_update_custom_category", {
+          p_category_id: optionId,
+          p_name: value,
+        });
+      }
+    }
+
+    if (record.kind === "custom-option") {
+      if (isDuplicateCustomOptionValue(record.categoryId, optionId, value)) {
+        throw new Error(`A opção "${value}" já existe.`);
+      }
+      if (isPendingOption(optionId)) {
+        await authenticatedRpc("lc_add_custom_option", {
+          p_category_id: record.categoryId,
+          p_value: value,
+        });
+      } else {
+        await authenticatedRpc("lc_update_custom_option", {
+          p_option_id: optionId,
+          p_value: value,
+        });
+      }
     }
   }
 
   dirtyOptionKeys.clear();
   dirtyOptionValues.clear();
-  await refreshOptions();
+  await refreshRemoteState();
+  renderAll();
 }
 
 function continuePendingAction() {
@@ -1164,6 +1568,7 @@ function renderAdminAnalytics() {
   analyticsSections.forEach((section) => {
     renderAnalyticsCategoryCards(section, filtered);
   });
+  renderCustomAnalyticsSections(filtered);
 }
 
 function renderMetricBars(container, rows, suffix = "") {
@@ -1210,9 +1615,9 @@ function renderAnalyticsCategoryCards(section, rows) {
   const ranking = buildAnalyticsRanking(rows, section.key);
   const total = rows.length;
 
-  summary.textContent = ranking.length
-    ? `${ranking.length} categorias · ${total} ${total === 1 ? "lead" : "leads"}`
-    : "Sem registros no filtro atual";
+  summary.innerHTML = ranking.length
+    ? `<span><b>${ranking.length}</b> categorias</span><span><b>${total}</b> ${total === 1 ? "lead" : "leads"}</span>`
+    : "<span>Sem registros no filtro atual</span>";
 
   if (!ranking.length) {
     container.innerHTML = `
@@ -1227,15 +1632,15 @@ function renderAnalyticsCategoryCards(section, rows) {
   container.innerHTML = ranking
     .map((item, index) => {
       const score = getAnalyticsPerformanceScore(item);
-      const scoreWidth = score ? Math.max(score, 6) : 0;
+      const scoreWidth = score ? Math.max(score, 5) : 0;
       const scoreColor = getPerformanceColor(score);
       return `
         <article class="analytics-category-card">
           <div class="analytics-rank-number">${index + 1}</div>
           <div class="analytics-category-main">
             <strong>${escapeHtml(item.value)}</strong>
-            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · qualidade ${score}%</span>
-            <div class="analytics-category-track"><i style="width:${scoreWidth}%; --score-color:${scoreColor}"></i></div>
+            <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · performance comercial ${score}%</span>
+            <div class="analytics-category-track" aria-label="Performance comercial ${score}%"><i style="width:${scoreWidth}%; --score-color:${scoreColor}"></i></div>
           </div>
           <div class="analytics-category-meta">
             <span>${item.visited} visitas</span>
@@ -1254,6 +1659,34 @@ function renderAnalyticsCategoryCards(section, rows) {
       `;
     })
     .join("");
+}
+
+function renderCustomAnalyticsSections(rows) {
+  if (!analyticsCustomSections) return;
+
+  analyticsCustomSections.innerHTML = customCategories
+    .map((category) => `
+      <article class="analytics-section-card">
+        <div class="analytics-section-heading">
+          <div>
+            <span>${escapeHtml(category.name)}</span>
+            <strong data-custom-analytics-summary="${category.id}">Sem dados</strong>
+          </div>
+        </div>
+        <div class="analytics-category-list" data-custom-analytics-list="${category.id}"></div>
+      </article>
+    `)
+    .join("");
+
+  customCategories.forEach((category) => {
+    renderAnalyticsCategoryCards({
+      id: `custom:${category.id}`,
+      label: category.name,
+      key: `custom:${category.id}`,
+      container: `[data-custom-analytics-list="${category.id}"]`,
+      summary: `[data-custom-analytics-summary="${category.id}"]`,
+    }, rows);
+  });
 }
 
 function getAnalyticsPerformanceScore(item) {
@@ -1297,6 +1730,10 @@ function buildAnalyticsRanking(rows, key) {
 }
 
 function getAnalyticsGroupValue(lead, key) {
+  if (key.startsWith("custom:")) {
+    const categoryId = key.slice("custom:".length);
+    return lead.customValues[categoryId] || "Sem resposta";
+  }
   return lead[key] || "Sem resposta";
 }
 
@@ -1307,7 +1744,7 @@ function handleAnalyticsClick(event) {
 }
 
 function openAnalyticsInspector(sectionId, value) {
-  const section = analyticsSections.find((item) => item.id === sectionId);
+  const section = getAnalyticsSections().find((item) => item.id === sectionId);
   if (!section) return;
 
   const filtered = getAnalyticsLeads();
@@ -1352,16 +1789,29 @@ function renderAnalyticsLeadRow(lead) {
         <strong>${escapeHtml(lead.name)}</strong>
         <span>${escapeHtml(lead.storeName || "")} · ${formatDateTime(lead.createdAt)}</span>
       </div>
-      <div class="analytics-lead-tags">
-        ${renderTag(lead.channel)}
-        ${renderTag(lead.campaign)}
-        ${renderTag(lead.conclusion)}
-        ${renderTag(lead.visited ? `Visita: ${lead.visited}` : "Visita: sem resposta")}
-        ${renderTag(lead.bought ? `Compra: ${lead.bought}` : "Compra: sem resposta")}
+      <div class="analytics-lead-facts">
+        ${renderLeadFact("Canal", lead.channel)}
+        ${renderLeadFact("Campanha", lead.campaign)}
+        ${renderLeadFact("Início", lead.conversationStart)}
+        ${renderLeadFact("Conclusão", lead.conclusion)}
+        ${renderLeadFact("Visitou", lead.visited || "Sem resposta")}
+        ${renderLeadFact("Comprou", lead.bought || "Sem resposta")}
+        ${renderCustomLeadFacts(lead)}
       </div>
       <i class="fa-solid fa-chevron-right analytics-lead-chevron" aria-hidden="true"></i>
     </button>
   `;
+}
+
+function getAnalyticsSections() {
+  return [
+    ...analyticsSections,
+    ...customCategories.map((category) => ({
+      id: `custom:${category.id}`,
+      label: category.name,
+      key: `custom:${category.id}`,
+    })),
+  ];
 }
 
 function getFilteredLeads() {
@@ -1376,11 +1826,13 @@ function getFilteredLeads() {
       matchesFilter(lead.conclusion, conclusionFilter.value) &&
       matchesFilter(lead.visited || "sem-resposta", visitedFilter.value) &&
       matchesFilter(lead.bought || "sem-resposta", boughtFilter.value);
+    const matchesCustomFilters = getCustomFilterValues(customLeadFilters)
+      .every(({ categoryId, value }) => matchesFilter(lead.customValues[categoryId] || "sem-resposta", value));
     const createdDate = lead.createdAt.slice(0, 10);
     const matchesStart = !startDateFilter.value || createdDate >= startDateFilter.value;
     const matchesEnd = !endDateFilter.value || createdDate <= endDateFilter.value;
 
-    return matchesSearch && matchesSimpleFilters && matchesStart && matchesEnd;
+    return matchesSearch && matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
   });
 }
 
@@ -1410,6 +1862,10 @@ function getAnalyticsLeads() {
   if (analyticsBoughtFilter.value) {
     result = result.filter((lead) => (lead.bought || "sem-resposta") === analyticsBoughtFilter.value);
   }
+
+  getCustomFilterValues(analyticsCustomFilters).forEach(({ categoryId, value }) => {
+    result = result.filter((lead) => (lead.customValues[categoryId] || "sem-resposta") === value);
+  });
 
   const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
   if (mode === "single" && analyticsSingleDate.value) {
@@ -1467,6 +1923,9 @@ function toggleFilters() {
 
 function clearFilters() {
   [searchInput, channelFilter, campaignFilter, conversationStartFilter, conclusionFilter, visitedFilter, boughtFilter, startDateFilter, endDateFilter].forEach((element) => {
+    element.value = "";
+  });
+  customLeadFilters.querySelectorAll("[data-custom-filter]").forEach((element) => {
     element.value = "";
   });
   renderLeadList();
@@ -1549,6 +2008,7 @@ function mapStoreRow(row) {
 }
 
 function mapLeadRow(row) {
+  const customValueRows = normalizeCustomValueRows(row.custom_values);
   return {
     id: row.id,
     storeId: row.store_id,
@@ -1564,6 +2024,8 @@ function mapLeadRow(row) {
     purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
     serviceOrder: row.service_order || "",
     notes: row.notes || "",
+    customValueRows,
+    customValues: Object.fromEntries(customValueRows.map((item) => [item.categoryId, item.value])),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1592,6 +2054,47 @@ function applyOptionRows(rows) {
   );
   dirtyOptionKeys.clear();
   dirtyOptionValues.clear();
+}
+
+function applyCustomCategoryRows(rows) {
+  customCategories = (rows || [])
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sortOrder: row.sort_order,
+      options: normalizeCustomOptions(row.options),
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function normalizeCustomOptions(optionsValue) {
+  const rows = Array.isArray(optionsValue) ? optionsValue : [];
+  return rows
+    .map((option) => ({
+      id: option.id,
+      categoryId: option.category_id,
+      value: option.value,
+      sortOrder: option.sort_order,
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function normalizeCustomValueRows(value) {
+  const rows = Array.isArray(value) ? value : [];
+  return rows.map((item) => ({
+    categoryId: item.category_id,
+    categoryName: item.category_name,
+    value: item.value,
+  }));
+}
+
+function buildCustomValuesPayload() {
+  return customCategories
+    .map((category) => ({
+      category_id: category.id,
+      value: selectedCustomValues[category.id] || "",
+    }))
+    .filter((item) => item.value);
 }
 
 function createDefaultOptionRecords() {
@@ -1663,6 +2166,16 @@ function withNoAnswer(values) {
 
 function matchesFilter(value, filterValue) {
   return !filterValue || value === filterValue;
+}
+
+function getCustomFilterValues(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll("[data-custom-filter]"))
+    .map((select) => ({
+      categoryId: select.dataset.customFilter,
+      value: select.value,
+    }))
+    .filter((item) => item.value);
 }
 
 function countByValue(rows, key, value) {
@@ -1807,8 +2320,39 @@ function getOptionRecord(group, optionId) {
   return (optionRecords[group] || []).find((record) => record.id === optionId) || null;
 }
 
+function getCustomCategory(categoryId) {
+  return customCategories.find((category) => category.id === categoryId) || null;
+}
+
 function renderTag(value) {
   return value ? `<span>${escapeHtml(value)}</span>` : "";
+}
+
+function renderLeadFact(label, value) {
+  return `
+    <span class="lead-fact">
+      <small>${escapeHtml(label)}</small>
+      <b>${escapeHtml(value || "-")}</b>
+    </span>
+  `;
+}
+
+function renderCustomLeadFacts(lead) {
+  return lead.customValueRows
+    .map((item) => renderLeadFact(item.categoryName, item.value))
+    .join("");
+}
+
+function renderCustomLeadTags(lead) {
+  return lead.customValueRows
+    .map((item) => renderTag(`${item.categoryName}: ${item.value}`))
+    .join("");
+}
+
+function renderCustomLeadDetailItems(lead) {
+  return lead.customValueRows
+    .map((item) => renderLeadDetailItem(item.categoryName, item.value))
+    .join("");
 }
 
 function renderLeadNotes(notes) {
@@ -1862,6 +2406,11 @@ function setTheme(theme) {
 
 function readableError(error) {
   return error?.message || String(error || "Erro inesperado.");
+}
+
+function isMissingRpcError(error) {
+  const message = readableError(error).toLowerCase();
+  return message.includes("could not find the function") || message.includes("function") && message.includes("does not exist");
 }
 
 function showAppNotification(message, type = "success") {
