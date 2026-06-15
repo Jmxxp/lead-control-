@@ -3,8 +3,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const SESSION_STORAGE_KEY = "lead-control-session";
 const THEME_STORAGE_KEY = "lead-control-theme";
 const AI_SETTINGS_STORAGE_KEY = "lead-control-ai-settings";
+const AI_CHAT_STORAGE_KEY = "lead-control-ai-chats";
 
-const DEFAULT_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
+const LEGACY_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
+const DEFAULT_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
 
 const aiProviderOptions = {
   gemini: {
@@ -13,7 +15,7 @@ const aiProviderOptions = {
   },
   deepseek: {
     label: "DeepSeek",
-    models: ["deepseek-v4-flash", "deepseek-v4-pro"],
+    models: ["deepseek-chat", "deepseek-v4-flash", "deepseek-v4-pro"],
   },
 };
 
@@ -56,8 +58,13 @@ let newOptionCounter = 0;
 let selectedValues = createEmptySelection();
 let selectedCustomValues = {};
 let aiSettings = createDefaultAiSettings();
+let aiChats = [];
+let activeAiChatId = null;
 let aiMessages = [];
 let aiIsSending = false;
+let aiAbortController = null;
+let currentAiResponseMessage = null;
+let editingAiMessageIndex = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -136,12 +143,18 @@ const analyticsRangeDateFields = $$(".analytics-range-date");
 const analyticsQuickRangeField = $(".quick-range-field");
 const analyticsCustomFilters = $("#analyticsCustomFilters");
 const analyticsCustomSections = $("#analyticsCustomSections");
+const analyticsActions = $(".analytics-ai-row");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const exportLeadsButton = $("#exportLeadsButton");
 const aiInsightsButton = $("#aiInsightsButton");
 const aiChatModal = $("#aiChatModal");
 const aiChatClose = $("#aiChatClose");
+const aiNewChatButton = $("#aiNewChatButton");
+const aiHistoryToggle = $("#aiHistoryToggle");
+const aiHistoryPanel = $("#aiHistoryPanel");
+const aiHistoryNewChat = $("#aiHistoryNewChat");
+const aiChatHistoryList = $("#aiChatHistoryList");
 const aiSettingsToggle = $("#aiSettingsToggle");
 const aiSettingsPanel = $("#aiSettingsPanel");
 const aiLeadContextLabel = $("#aiLeadContextLabel");
@@ -153,6 +166,8 @@ const aiSettingsForm = $("#aiSettingsForm");
 const aiProvider = $("#aiProvider");
 const aiModel = $("#aiModel");
 const aiApiKey = $("#aiApiKey");
+const aiValidateKeyButton = $("#aiValidateKeyButton");
+const aiKeyStatus = $("#aiKeyStatus");
 const aiSystemPrompt = $("#aiSystemPrompt");
 const aiSettingsMessage = $("#aiSettingsMessage");
 const form = $("#leadForm");
@@ -212,13 +227,13 @@ let notificationTimer = null;
 let pendingConfirmAction = null;
 
 const analyticsSections = [
-  { id: "campaign", label: "Campanhas", key: "campaign", container: "#analyticsCampaignCards", summary: "#analyticsCampaignSummary" },
+  { id: "campaign", label: "Campanhas", key: "campaign", optionGroup: "campaign", container: "#analyticsCampaignCards", summary: "#analyticsCampaignSummary" },
   { id: "store", label: "Lojas", key: "storeName", container: "#analyticsStoreCards", summary: "#analyticsStoreSummary" },
-  { id: "channel", label: "Canais", key: "channel", container: "#analyticsChannelCards", summary: "#analyticsChannelSummary" },
-  { id: "start", label: "Início da conversa", key: "conversationStart", container: "#analyticsStartCards", summary: "#analyticsStartSummary" },
-  { id: "conclusion", label: "Resultado", key: "conclusion", container: "#analyticsConclusionCards", summary: "#analyticsConclusionSummary" },
-  { id: "visited", label: "Visitas", key: "visited", container: "#analyticsVisitedCards", summary: "#analyticsVisitedSummary" },
-  { id: "bought", label: "Compras", key: "bought", container: "#analyticsBoughtCards", summary: "#analyticsBoughtSummary" },
+  { id: "channel", label: "Canais", key: "channel", optionGroup: "channel", container: "#analyticsChannelCards", summary: "#analyticsChannelSummary" },
+  { id: "start", label: "Início da conversa", key: "conversationStart", optionGroup: "conversationStart", container: "#analyticsStartCards", summary: "#analyticsStartSummary" },
+  { id: "conclusion", label: "Resultado", key: "conclusion", optionGroup: "conclusion", container: "#analyticsConclusionCards", summary: "#analyticsConclusionSummary" },
+  { id: "visited", label: "Visitas", key: "visited", optionGroup: "visited", container: "#analyticsVisitedCards", summary: "#analyticsVisitedSummary" },
+  { id: "bought", label: "Compras", key: "bought", optionGroup: "bought", container: "#analyticsBoughtCards", summary: "#analyticsBoughtSummary" },
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -297,22 +312,32 @@ function bindEvents() {
     if (event.target === leadDetailsModal) closeLeadDetailsModal();
   });
   analyticsToggle.addEventListener("click", toggleAnalytics);
+  analyticsToggleLabel.addEventListener("click", toggleAnalytics);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
   aiInsightsButton.addEventListener("click", openAiChat);
   aiChatClose.addEventListener("click", closeAiChat);
+  aiNewChatButton.addEventListener("click", handleAiNewChat);
+  aiHistoryToggle.addEventListener("click", toggleAiHistoryPanel);
+  aiHistoryNewChat.addEventListener("click", handleAiNewChat);
+  aiChatHistoryList.addEventListener("click", handleAiHistoryClick);
   aiChatModal.addEventListener("click", (event) => {
     if (event.target === aiChatModal) closeAiChat();
   });
   aiSettingsToggle.addEventListener("click", toggleAiSettingsPanel);
   aiProvider.addEventListener("input", handleAiProviderChange);
+  aiModel.addEventListener("input", clearAiKeyStatus);
+  aiApiKey.addEventListener("input", clearAiKeyStatus);
+  aiValidateKeyButton.addEventListener("click", handleAiValidateKey);
   aiSettingsForm.addEventListener("submit", handleAiSettingsSubmit);
+  aiChatMessages.addEventListener("click", handleAiMessageClick);
   aiChatForm.addEventListener("submit", handleAiChatSubmit);
   aiChatInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       aiChatForm.requestSubmit();
     }
   });
+  aiChatInput.addEventListener("input", autoResizeAiInput);
   [
     analyticsStoreFilter,
     analyticsChannelFilter,
@@ -472,6 +497,7 @@ async function restoreSession() {
 async function openProfile(profile) {
   currentProfile = profile;
   saveStoredSession(profile);
+  loadAiChatSessions();
 
   authScreen.hidden = true;
   appView.hidden = false;
@@ -532,6 +558,8 @@ async function handleLogout() {
     stores = [];
     leads = [];
     technicians = [];
+    aiChats = [];
+    activeAiChatId = null;
     aiMessages = [];
     customCategories = [];
     options = cloneOptions(defaultOptions);
@@ -1980,7 +2008,7 @@ function renderAnalyticsCategoryCards(section, rows) {
   const summary = $(section.summary);
   if (!container || !summary) return;
 
-  const ranking = buildAnalyticsRanking(rows, section.key);
+  const ranking = buildAnalyticsRanking(rows, section);
   const total = rows.length;
 
   summary.innerHTML = ranking.length
@@ -2049,14 +2077,27 @@ function renderCustomAnalyticsSections(rows) {
       id: `custom:${category.id}`,
       label: category.name,
       key: `custom:${category.id}`,
+      customCategoryId: category.id,
       container: `[data-custom-analytics-list="${category.id}"]`,
       summary: `[data-custom-analytics-summary="${category.id}"]`,
     }, rows);
   });
 }
 
-function buildAnalyticsRanking(rows, key) {
+function buildAnalyticsRanking(rows, sectionOrKey) {
+  const section = typeof sectionOrKey === "string" ? { key: sectionOrKey } : sectionOrKey;
+  const key = section.key;
   const groups = new Map();
+
+  getAnalyticsKnownValues(section).forEach((value) => {
+    groups.set(value, {
+      value,
+      count: 0,
+      visited: 0,
+      bought: 0,
+      latestAt: "",
+    });
+  });
 
   rows.forEach((lead) => {
     const value = getAnalyticsGroupValue(lead, key);
@@ -2076,8 +2117,26 @@ function buildAnalyticsRanking(rows, key) {
 
   return Array.from(groups.values()).sort((a, b) => {
     if (b.count !== a.count) return b.count - a.count;
+    if (a.count === 0 && b.count === 0) return String(a.value).localeCompare(String(b.value), "pt-BR");
     return String(b.latestAt).localeCompare(String(a.latestAt));
   });
+}
+
+function getAnalyticsKnownValues(section) {
+  if (section.id === "store") {
+    return stores.map((store) => store.name).filter(Boolean);
+  }
+
+  if (section.customCategoryId) {
+    const category = getCustomCategory(section.customCategoryId);
+    return category?.options.map((option) => option.value).filter(Boolean) || [];
+  }
+
+  if (section.optionGroup) {
+    return (optionRecords[section.optionGroup] || []).map((item) => item.value).filter(Boolean);
+  }
+
+  return [];
 }
 
 function getAnalyticsGroupValue(lead, key) {
@@ -2239,17 +2298,31 @@ function formatExportFileDate(date) {
 function openAiChat() {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
 
+  ensureActiveAiChat();
   updateAiContextLabel();
   renderAiMessages();
+  renderAiHistoryList();
   aiChatDialogSettingsState();
   aiChatModal.hidden = false;
   syncModalLock();
-  requestAnimationFrame(() => aiChatInput.focus());
+  requestAnimationFrame(() => {
+    autoResizeAiInput();
+    aiChatInput.focus();
+  });
 }
 
 function closeAiChat() {
+  stopAiResponse({ silent: true });
+  editingAiMessageIndex = null;
+  aiChatForm.classList.remove("is-editing-message");
+  aiMessages.forEach((message) => {
+    message.isStreaming = false;
+    message.isThinking = false;
+  });
+  saveActiveAiChatMessages();
   aiChatModal.hidden = true;
   aiSettingsPanel.hidden = true;
+  aiHistoryPanel.hidden = true;
   aiChatDialogSettingsState();
   clearAiSettingsMessage();
   syncModalLock();
@@ -2257,6 +2330,9 @@ function closeAiChat() {
 
 function toggleAiSettingsPanel() {
   aiSettingsPanel.hidden = !aiSettingsPanel.hidden;
+  if (!aiSettingsPanel.hidden) {
+    aiHistoryPanel.hidden = true;
+  }
   aiChatDialogSettingsState();
   if (!aiSettingsPanel.hidden) {
     renderAiSettingsForm();
@@ -2265,8 +2341,245 @@ function toggleAiSettingsPanel() {
 
 function aiChatDialogSettingsState() {
   const isOpen = !aiSettingsPanel.hidden;
-  aiChatModal.querySelector(".ai-chat-dialog")?.classList.toggle("is-settings-open", isOpen);
+  const isHistoryOpen = !aiHistoryPanel.hidden;
+  const dialog = aiChatModal.querySelector(".ai-chat-dialog");
+  dialog?.classList.toggle("is-settings-open", isOpen);
+  dialog?.classList.toggle("is-history-open", isHistoryOpen);
+  dialog?.classList.toggle("is-side-open", isOpen || isHistoryOpen);
   aiSettingsToggle.setAttribute("aria-expanded", String(isOpen));
+  aiHistoryToggle.setAttribute("aria-expanded", String(isHistoryOpen));
+}
+
+function toggleAiHistoryPanel() {
+  aiHistoryPanel.hidden = !aiHistoryPanel.hidden;
+  if (!aiHistoryPanel.hidden) {
+    aiSettingsPanel.hidden = true;
+    renderAiHistoryList();
+  }
+  aiChatDialogSettingsState();
+}
+
+function handleAiNewChat() {
+  stopAiResponse({ silent: true });
+  editingAiMessageIndex = null;
+  aiChatForm.classList.remove("is-editing-message");
+  createAiChatSession();
+  aiHistoryPanel.hidden = true;
+  aiSettingsPanel.hidden = true;
+  aiChatDialogSettingsState();
+  renderAiMessages();
+  renderAiHistoryList();
+  requestAnimationFrame(() => aiChatInput.focus());
+}
+
+function handleAiHistoryClick(event) {
+  const deleteButton = event.target.closest("[data-ai-chat-delete]");
+  if (deleteButton) {
+    event.stopPropagation();
+    deleteAiChatSession(deleteButton.dataset.aiChatDelete);
+    return;
+  }
+
+  const button = event.target.closest("[data-ai-chat-id]");
+  if (!button) return;
+  stopAiResponse({ silent: true });
+  editingAiMessageIndex = null;
+  aiChatForm.classList.remove("is-editing-message");
+  activateAiChat(button.dataset.aiChatId);
+  aiHistoryPanel.hidden = true;
+  aiChatDialogSettingsState();
+  renderAiMessages();
+  renderAiHistoryList();
+  requestAnimationFrame(() => aiChatInput.focus());
+}
+
+function ensureActiveAiChat() {
+  if (!activeAiChatId || !getActiveAiChat()) {
+    createAiChatSession();
+    return;
+  }
+  aiMessages = getActiveAiChat().messages;
+}
+
+function createAiChatSession() {
+  const now = new Date().toISOString();
+  aiChats = aiChats.filter(hasAiChatMessages);
+  const chat = {
+    id: createLocalAiChatId(),
+    title: "Novo chat",
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+  };
+  aiChats = [chat, ...aiChats].slice(0, 40);
+  activeAiChatId = chat.id;
+  aiMessages = chat.messages;
+  return chat;
+}
+
+function activateAiChat(chatId) {
+  const chat = aiChats.find((item) => item.id === chatId);
+  if (!chat) return;
+  activeAiChatId = chat.id;
+  aiMessages = chat.messages;
+  saveAiChatSessions();
+}
+
+function getActiveAiChat() {
+  return aiChats.find((chat) => chat.id === activeAiChatId) || null;
+}
+
+function saveActiveAiChatMessages() {
+  const chat = getActiveAiChat();
+  if (!chat) return;
+
+  chat.messages = sanitizeAiMessages(aiMessages);
+  if (!chat.messages.length) {
+    aiChats = aiChats.filter((item) => item.id !== chat.id);
+    if (activeAiChatId === chat.id) {
+      activeAiChatId = aiChats.find(hasAiChatMessages)?.id || null;
+    }
+    saveAiChatSessions();
+    renderAiHistoryList();
+    return;
+  }
+
+  chat.updatedAt = new Date().toISOString();
+  chat.title = buildAiChatTitle(chat.messages);
+  aiMessages = chat.messages;
+  aiChats = [chat, ...aiChats.filter((item) => item.id !== chat.id)].slice(0, 40);
+  saveAiChatSessions();
+  renderAiHistoryList();
+}
+
+function renderAiHistoryList() {
+  if (!aiChatHistoryList) return;
+  const visibleChats = aiChats.filter(hasAiChatMessages);
+
+  if (!visibleChats.length) {
+    aiChatHistoryList.innerHTML = `
+      <div class="ai-history-empty">
+        <strong>Nenhum chat salvo.</strong>
+        <span>Comece uma conversa para criar histórico.</span>
+      </div>
+    `;
+    return;
+  }
+
+  aiChatHistoryList.innerHTML = visibleChats
+    .map((chat) => {
+      const totalMessages = chat.messages.filter((message) => ["user", "assistant"].includes(message.role)).length;
+      return `
+        <div class="ai-history-item${chat.id === activeAiChatId ? " is-active" : ""}">
+          <button class="ai-history-open" type="button" data-ai-chat-id="${escapeHtml(chat.id)}">
+            <span>${escapeHtml(chat.title || "Novo chat")}</span>
+            <small>${formatDateTime(chat.updatedAt)} · ${totalMessages} ${totalMessages === 1 ? "mensagem" : "mensagens"}</small>
+          </button>
+          <button class="ai-history-delete" type="button" data-ai-chat-delete="${escapeHtml(chat.id)}" aria-label="Excluir chat" title="Excluir chat">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+          </button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function deleteAiChatSession(chatId) {
+  const wasActive = activeAiChatId === chatId;
+  aiChats = aiChats.filter((chat) => chat.id !== chatId);
+
+  if (wasActive) {
+    const nextChat = aiChats.find(hasAiChatMessages) || null;
+    activeAiChatId = nextChat?.id || null;
+    aiMessages = nextChat?.messages || [];
+    if (!nextChat) createAiChatSession();
+  }
+
+  saveAiChatSessions();
+  renderAiMessages();
+  renderAiHistoryList();
+}
+
+function loadAiChatSessions() {
+  const ownerKey = getAiChatOwnerKey();
+  const storage = readAiChatStorage();
+  const saved = storage[ownerKey] || {};
+  aiChats = normalizeAiChats(saved.chats);
+  activeAiChatId = aiChats.some((chat) => chat.id === saved.activeId)
+    ? saved.activeId
+    : aiChats[0]?.id || null;
+  aiMessages = getActiveAiChat()?.messages || [];
+}
+
+function saveAiChatSessions() {
+  const ownerKey = getAiChatOwnerKey();
+  if (!ownerKey) return;
+  const storage = readAiChatStorage();
+  const persistableChats = aiChats.filter(hasAiChatMessages).slice(0, 40);
+  const activeId = persistableChats.some((chat) => chat.id === activeAiChatId) ? activeAiChatId : null;
+  storage[ownerKey] = {
+    activeId,
+    chats: persistableChats.map((chat) => ({
+      ...chat,
+      messages: sanitizeAiMessages(chat.messages),
+    })),
+  };
+  localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(storage));
+}
+
+function readAiChatStorage() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AI_CHAT_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeAiChats(chats) {
+  if (!Array.isArray(chats)) return [];
+  return chats
+    .map((chat) => ({
+      id: typeof chat.id === "string" && chat.id ? chat.id : createLocalAiChatId(),
+      title: typeof chat.title === "string" && chat.title.trim() ? chat.title.trim() : "Novo chat",
+      createdAt: chat.createdAt || new Date().toISOString(),
+      updatedAt: chat.updatedAt || chat.createdAt || new Date().toISOString(),
+      messages: sanitizeAiMessages(chat.messages),
+    }))
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 40);
+}
+
+function sanitizeAiMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .filter((message) => ["user", "assistant"].includes(message.role) && typeof message.content === "string")
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }))
+    .filter((message) => message.content.trim());
+}
+
+function hasAiChatMessages(chat) {
+  return sanitizeAiMessages(chat?.messages).length > 0;
+}
+
+function buildAiChatTitle(messages) {
+  const firstUserMessage = messages.find((message) => message.role === "user")?.content.trim();
+  if (!firstUserMessage) return "Novo chat";
+  return firstUserMessage.length > 42 ? `${firstUserMessage.slice(0, 42)}...` : firstUserMessage;
+}
+
+function createLocalAiChatId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `ai-chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getAiChatOwnerKey() {
+  if (!currentProfile) return "guest";
+  return `${currentProfile.role}:${currentProfile.id || currentProfile.username || "current"}`;
 }
 
 function handleAiProviderChange() {
@@ -2274,6 +2587,7 @@ function handleAiProviderChange() {
   renderAiModelOptions(provider);
   aiModel.value = aiSettings.models[provider] || aiProviderOptions[provider]?.models[0] || "";
   aiApiKey.value = aiSettings.apiKeys[provider] || "";
+  clearAiKeyStatus();
 }
 
 function handleAiSettingsSubmit(event) {
@@ -2287,10 +2601,97 @@ function handleAiSettingsSubmit(event) {
   showAiSettingsMessage("Configuração salva.", "success");
 }
 
+async function handleAiValidateKey() {
+  const provider = aiProvider.value;
+  const apiKey = aiApiKey.value.trim();
+  if (!apiKey) {
+    showAiKeyStatus("Informe uma chave para validar.", "error");
+    return;
+  }
+
+  aiValidateKeyButton.disabled = true;
+  showAiKeyStatus("Validando chave...", "pending");
+
+  try {
+    await validateAiApiKey(provider, apiKey);
+    showAiKeyStatus("Chave válida.", "success");
+  } catch (error) {
+    showAiKeyStatus(readableError(error), "error");
+  } finally {
+    aiValidateKeyButton.disabled = false;
+  }
+}
+
+async function validateAiApiKey(provider, apiKey) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    if (provider === "gemini") {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {
+        signal: controller.signal,
+      });
+      await readAiValidationResponse(response);
+      return;
+    }
+
+    if (provider === "deepseek") {
+      const response = await fetch("https://api.deepseek.com/models", {
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+      await readAiValidationResponse(response);
+      return;
+    }
+
+    throw new Error("Provedor inválido.");
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error("Tempo de validação esgotado.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readAiValidationResponse(response) {
+  let payload = null;
+  const text = await response.text();
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const message = payload?.error?.message || payload?.message || "Chave inválida ou sem permissão.";
+    throw new Error(message);
+  }
+}
+
+function showAiKeyStatus(message, type = "") {
+  aiKeyStatus.textContent = message;
+  aiKeyStatus.classList.toggle("is-success", type === "success");
+  aiKeyStatus.classList.toggle("is-error", type === "error");
+  aiKeyStatus.classList.toggle("is-pending", type === "pending");
+}
+
+function clearAiKeyStatus() {
+  showAiKeyStatus("");
+}
+
 async function handleAiChatSubmit(event) {
   event.preventDefault();
+  if (aiIsSending) {
+    stopAiResponse();
+    return;
+  }
+
   const content = aiChatInput.value.trim();
-  if (!content || aiIsSending) return;
+  if (!content) return;
 
   const provider = aiSettings.provider;
   const apiKey = aiSettings.apiKeys[provider];
@@ -2302,44 +2703,70 @@ async function handleAiChatSubmit(event) {
     return;
   }
 
+  ensureActiveAiChat();
+  if (editingAiMessageIndex !== null) {
+    aiMessages = aiMessages.slice(0, editingAiMessageIndex);
+    editingAiMessageIndex = null;
+    aiChatForm.classList.remove("is-editing-message");
+  }
   aiMessages.push({ role: "user", content });
+  saveActiveAiChatMessages();
   aiChatInput.value = "";
+  autoResizeAiInput();
   renderAiMessages();
   setAiSending(true);
+  aiAbortController = new AbortController();
+  const assistantMessage = beginAiAssistantStream();
+  currentAiResponseMessage = assistantMessage;
+  let wasInterrupted = false;
 
   try {
-    const answer = await requestAiAnalysis();
-    aiMessages.push({ role: "assistant", content: answer });
+    await requestAiAnalysis({
+      onChunk: (chunk) => appendAiStreamChunk(assistantMessage, chunk),
+      signal: aiAbortController.signal,
+    });
   } catch (error) {
-    aiMessages.push({ role: "assistant", content: readableError(error) });
+    wasInterrupted = isAbortError(error);
+    if (!wasInterrupted) {
+      assistantMessage.isThinking = false;
+      assistantMessage.isStreaming = false;
+      assistantMessage.content = readableError(error);
+      renderAiMessages();
+    }
   } finally {
+    await finishAiAssistantStream(assistantMessage, { interrupted: wasInterrupted });
+    if (currentAiResponseMessage === assistantMessage) currentAiResponseMessage = null;
+    aiAbortController = null;
     setAiSending(false);
+    saveActiveAiChatMessages();
     renderAiMessages();
   }
 }
 
-async function requestAiAnalysis() {
+async function requestAiAnalysis({ onChunk, signal } = {}) {
   const provider = aiSettings.provider;
   const model = aiSettings.models[provider] || aiProviderOptions[provider]?.models[0];
   const context = buildAiLeadContext(getAnalyticsLeads());
   const systemPrompt = `${aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT}\n\nContexto atual dos leads filtrados:\n${context}`;
+  const conversationMessages = aiMessages.filter((message) => !message.isThinking && !message.isStreaming);
 
   if (provider === "gemini") {
-    return requestGeminiAnalysis({ model, systemPrompt, messages: aiMessages, apiKey: aiSettings.apiKeys.gemini });
+    return requestGeminiAnalysis({ model, systemPrompt, messages: conversationMessages, apiKey: aiSettings.apiKeys.gemini, onChunk, signal });
   }
 
   if (provider === "deepseek") {
-    return requestDeepSeekAnalysis({ model, systemPrompt, messages: aiMessages, apiKey: aiSettings.apiKeys.deepseek });
+    return requestDeepSeekAnalysis({ model, systemPrompt, messages: conversationMessages, apiKey: aiSettings.apiKeys.deepseek, onChunk, signal });
   }
 
   throw new Error("Provedor de IA inválido.");
 }
 
-async function requestGeminiAnalysis({ model, systemPrompt, messages, apiKey }) {
+async function requestGeminiAnalysis({ model, systemPrompt, messages, apiKey, onChunk, signal }) {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: {
@@ -2356,19 +2783,21 @@ async function requestGeminiAnalysis({ model, systemPrompt, messages, apiKey }) 
     },
   );
 
-  const data = await readAiResponse(response);
-  const text = data?.candidates?.[0]?.content?.parts
-    ?.map((part) => part.text || "")
-    .join("")
-    .trim();
-
+  const text = await readAiStream(response, (data) => {
+    const chunk = data?.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text || "")
+      .join("") || "";
+    if (chunk) onChunk?.(chunk);
+    return chunk;
+  });
   if (!text) throw new Error("A IA não retornou texto.");
   return text;
 }
 
-async function requestDeepSeekAnalysis({ model, systemPrompt, messages, apiKey }) {
+async function requestDeepSeekAnalysis({ model, systemPrompt, messages, apiKey, onChunk, signal }) {
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -2382,13 +2811,16 @@ async function requestDeepSeekAnalysis({ model, systemPrompt, messages, apiKey }
           content: message.content,
         })),
       ],
-      stream: false,
+      stream: true,
       temperature: 0.35,
     }),
   });
 
-  const data = await readAiResponse(response);
-  const text = data?.choices?.[0]?.message?.content?.trim();
+  const text = await readAiStream(response, (data) => {
+    const chunk = data?.choices?.[0]?.delta?.content || "";
+    if (chunk) onChunk?.(chunk);
+    return chunk;
+  });
   if (!text) throw new Error("A IA não retornou texto.");
   return text;
 }
@@ -2408,6 +2840,64 @@ async function readAiResponse(response) {
   }
 
   return data;
+}
+
+async function readAiStream(response, extractChunk) {
+  if (!response.ok) {
+    await readAiResponse(response);
+  }
+
+  if (!response.body) {
+    const data = await readAiResponse(response);
+    return extractChunk(data) || "";
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  let eventDataLines = [];
+
+  const flushEvent = () => {
+    if (!eventDataLines.length) return;
+    const payload = eventDataLines.join("\n").trim();
+    eventDataLines = [];
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const chunk = extractChunk(JSON.parse(payload)) || "";
+      fullText += chunk;
+    } catch {
+      // Ignore malformed keep-alive chunks.
+    }
+  };
+
+  const consumeLine = (line) => {
+    const normalizedLine = line.endsWith("\r") ? line.slice(0, -1) : line;
+    if (!normalizedLine) {
+      flushEvent();
+      return;
+    }
+    if (normalizedLine.startsWith(":")) return;
+    if (normalizedLine.startsWith("data:")) {
+      eventDataLines.push(normalizedLine.slice(5).trimStart());
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    lines.forEach(consumeLine);
+  }
+
+  buffer += decoder.decode();
+  if (buffer) consumeLine(buffer);
+  flushEvent();
+
+  return fullText.trim();
 }
 
 function buildAiLeadContext(filteredLeads) {
@@ -2478,38 +2968,253 @@ function renderAiMessages() {
   if (!aiMessages.length) {
     aiChatMessages.innerHTML = `
       <div class="ai-empty-state">
-        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-        <strong>Pronta para analisar.</strong>
-        <span>O recorte atual de métricas será usado como contexto.</span>
+        <strong>Como posso ajudar?</strong>
+        <span>Use o recorte atual de métricas para pedir padrões, gargalos, ranking de oportunidades ou ações para melhorar conversão.</span>
       </div>
     `;
     return;
   }
 
   aiChatMessages.innerHTML = aiMessages
-    .map((message) => `
-      <article class="ai-message ${message.role === "assistant" ? "assistant" : "user"}">
-        <span>${message.role === "assistant" ? "IA" : "Você"}</span>
-        <p>${escapeHtml(message.content)}</p>
-      </article>
+    .map((message, index) => `
+      <div class="ai-message-row ${message.role === "assistant" ? "assistant" : "user"}">
+        <article class="ai-message ${message.role === "assistant" ? "assistant" : "user"}${message.isThinking ? " is-thinking" : ""}">
+          <span>${message.role === "assistant" ? "IA" : "Você"}</span>
+          ${message.isThinking
+            ? `<div class="ai-thinking"><strong>Pensando</strong><span><i></i><i></i><i></i></span></div>`
+            : `<div class="ai-message-content">${renderAiFormattedContent(message.content)}${message.isStreaming ? '<i class="ai-typing-caret" aria-hidden="true"></i>' : ""}</div>`}
+        </article>
+        ${renderAiMessageActions(message, index)}
+      </div>
     `)
     .join("");
   scrollAiChatToBottom();
 }
 
+function renderAiMessageActions(message, index) {
+  if (message.isThinking || message.isStreaming || !message.content.trim()) return "";
+
+  if (message.role === "assistant") {
+    return `
+      <div class="ai-message-actions">
+              <button class="ai-copy-message" type="button" data-ai-copy-index="${index}">
+                <i class="fa-solid fa-copy" aria-hidden="true"></i>
+                Copiar
+              </button>
+            </div>
+    `;
+  }
+
+  if (message.role === "user") {
+    return `
+      <div class="ai-message-actions">
+        <button class="ai-edit-message" type="button" data-ai-edit-index="${index}">
+          <i class="fa-solid fa-pen" aria-hidden="true"></i>
+          Editar
+        </button>
+      </div>
+    `;
+  }
+
+  return "";
+}
+
+async function handleAiMessageClick(event) {
+  const editButton = event.target.closest("[data-ai-edit-index]");
+  if (editButton) {
+    startAiMessageEdit(Number(editButton.dataset.aiEditIndex));
+    return;
+  }
+
+  const copyButton = event.target.closest("[data-ai-copy-index]");
+  if (!copyButton) return;
+
+  const message = aiMessages[Number(copyButton.dataset.aiCopyIndex)];
+  if (!message?.content) return;
+
+  try {
+    await copyTextToClipboard(message.content);
+    copyButton.classList.add("is-copied");
+    copyButton.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Copiado';
+    setTimeout(() => {
+      copyButton.classList.remove("is-copied");
+      copyButton.innerHTML = '<i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar';
+    }, 1500);
+  } catch (error) {
+    showAppNotification(readableError(error), "error");
+  }
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Não foi possível copiar.");
+}
+
+function startAiMessageEdit(index) {
+  const message = aiMessages[index];
+  if (!message || message.role !== "user" || aiIsSending) return;
+
+  editingAiMessageIndex = index;
+  aiChatInput.disabled = false;
+  aiChatInput.value = message.content;
+  autoResizeAiInput();
+  aiChatInput.focus();
+  aiChatForm.classList.add("is-editing-message");
+}
+
 function setAiSending(isSending) {
   aiIsSending = isSending;
-  aiChatSend.disabled = isSending;
+  aiChatSend.disabled = false;
   aiChatInput.disabled = isSending;
+  aiChatForm.classList.toggle("is-busy", isSending);
+  aiChatSend.setAttribute("aria-label", isSending ? "Parar resposta" : "Enviar");
+  aiChatSend.title = isSending ? "Parar resposta" : "Enviar";
   aiChatSend.innerHTML = isSending
-    ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Analisando'
-    : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Enviar';
+    ? '<i class="fa-solid fa-stop" aria-hidden="true"></i>'
+    : '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i>';
+}
+
+function stopAiResponse({ silent = false } = {}) {
+  if (!aiIsSending && !currentAiResponseMessage) return;
+
+  if (aiAbortController) {
+    aiAbortController.abort();
+  }
+
+  if (currentAiResponseMessage) {
+    currentAiResponseMessage.isThinking = false;
+    currentAiResponseMessage.isStreaming = false;
+    if (silent && !currentAiResponseMessage.content) {
+      aiMessages = aiMessages.filter((message) => message !== currentAiResponseMessage);
+    }
+    if (!currentAiResponseMessage.content && !silent) {
+      currentAiResponseMessage.content = "Resposta interrompida.";
+    }
+    currentAiResponseMessage = null;
+  }
+
+  aiAbortController = null;
+  setAiSending(false);
+  renderAiMessages();
 }
 
 function scrollAiChatToBottom() {
   requestAnimationFrame(() => {
     aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
   });
+}
+
+function beginAiAssistantStream() {
+  const message = { role: "assistant", content: "", isThinking: true, isStreaming: true };
+  aiMessages.push(message);
+  renderAiMessages();
+  return message;
+}
+
+function appendAiStreamChunk(message, chunk) {
+  if (!message || !chunk) return;
+  message.isThinking = false;
+  message.isStreaming = true;
+  message.content += chunk;
+  renderAiMessages();
+}
+
+async function finishAiAssistantStream(message, { interrupted = false } = {}) {
+  if (!message) return;
+  if (!interrupted && !message.content.trim()) {
+    message.content = "A IA não retornou texto.";
+  }
+  message.isThinking = false;
+  message.isStreaming = false;
+}
+
+function autoResizeAiInput() {
+  const minHeight = 62;
+  const maxHeight = 132;
+  aiChatInput.style.height = `${minHeight}px`;
+  const nextHeight = Math.min(Math.max(aiChatInput.scrollHeight, minHeight), maxHeight);
+  aiChatInput.style.height = `${nextHeight}px`;
+  aiChatInput.style.overflowY = aiChatInput.scrollHeight > maxHeight ? "auto" : "hidden";
+  aiChatForm.classList.toggle("is-expanded", nextHeight > minHeight + 10);
+}
+
+function renderAiFormattedContent(content) {
+  const lines = String(content || "").split(/\r?\n/);
+  const html = [];
+  let listType = "";
+
+  const closeList = () => {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = "";
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      return;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(heading[1].length + 2, 4);
+      html.push(`<h${level}>${formatInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+
+    const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      if (listType !== "ul") {
+        closeList();
+        html.push("<ul>");
+        listType = "ul";
+      }
+      html.push(`<li>${formatInlineMarkdown(unordered[1])}</li>`);
+      return;
+    }
+
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      if (listType !== "ol") {
+        closeList();
+        html.push("<ol>");
+        listType = "ol";
+      }
+      html.push(`<li>${formatInlineMarkdown(ordered[1])}</li>`);
+      return;
+    }
+
+    closeList();
+    html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
+  });
+
+  closeList();
+  return html.join("");
+}
+
+function formatInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_]+)_/g, "<em>$1</em>");
 }
 
 function updateAiContextLabel(rows = getAnalyticsLeads()) {
@@ -2535,18 +3240,24 @@ function normalizeAiSettings(saved) {
   if (!saved || typeof saved !== "object") return defaults;
 
   const provider = aiProviderOptions[saved.provider] ? saved.provider : defaults.provider;
+  const savedModels = saved.models || {};
+  const deepseekModel = savedModels.deepseek === "deepseek-v4-flash"
+    ? "deepseek-chat"
+    : savedModels.deepseek;
+  const savedPrompt = typeof saved.systemPrompt === "string" ? saved.systemPrompt.trim() : "";
   return {
     provider,
     models: {
       ...defaults.models,
-      ...(saved.models || {}),
+      ...savedModels,
+      deepseek: deepseekModel || defaults.models.deepseek,
     },
     apiKeys: {
       ...defaults.apiKeys,
       ...(saved.apiKeys || {}),
     },
-    systemPrompt: typeof saved.systemPrompt === "string" && saved.systemPrompt.trim()
-      ? saved.systemPrompt
+    systemPrompt: savedPrompt && savedPrompt !== LEGACY_AI_SYSTEM_PROMPT
+      ? savedPrompt
       : defaults.systemPrompt,
   };
 }
@@ -2572,6 +3283,7 @@ function renderAiSettingsForm() {
   aiModel.value = aiSettings.models[aiSettings.provider] || aiProviderOptions[aiSettings.provider].models[0];
   aiApiKey.value = aiSettings.apiKeys[aiSettings.provider] || "";
   aiSystemPrompt.value = aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
+  clearAiKeyStatus();
 }
 
 function renderAiModelOptions(provider) {
@@ -2739,7 +3451,9 @@ function getActiveStore() {
 
 function toggleAnalytics() {
   analyticsContent.hidden = !analyticsContent.hidden;
+  analyticsActions.hidden = analyticsContent.hidden;
   analyticsToggle.setAttribute("aria-expanded", String(!analyticsContent.hidden));
+  analyticsToggleLabel.setAttribute("aria-expanded", String(!analyticsContent.hidden));
   analyticsToggleLabel.textContent = analyticsContent.hidden ? "Mostrar análise" : "Ocultar análise";
 }
 
@@ -3263,6 +3977,10 @@ function readableError(error) {
 function isMissingRpcError(error) {
   const message = readableError(error).toLowerCase();
   return message.includes("could not find the function") || message.includes("function") && message.includes("does not exist");
+}
+
+function isAbortError(error) {
+  return error?.name === "AbortError" || readableError(error).toLowerCase().includes("abort");
 }
 
 function showAppNotification(message, type = "success") {

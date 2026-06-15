@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=20260615-ai-export" />
+    <link rel="stylesheet" href="styles.css?v=20260615-ai-premium-8" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260615-ai-export" defer></script>
+    <script src="app.js?v=20260615-ai-premium-8" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -123,22 +123,21 @@
           </section>
 
           <section class="analytics-panel" aria-label="Análise das campanhas">
-            <button
-              class="analytics-toggle"
-              type="button"
-              id="analyticsToggle"
-              aria-expanded="false"
-              aria-controls="analyticsContent"
-            >
-              <span>
-                <small>Inteligência comercial</small>
-                <strong>Métricas e rankings das campanhas</strong>
-              </span>
-              <span id="analyticsToggleLabel">Mostrar análise</span>
-            </button>
+            <div class="analytics-toolbar">
+              <button
+                class="analytics-toggle"
+                type="button"
+                id="analyticsToggle"
+                aria-expanded="false"
+                aria-controls="analyticsContent"
+              >
+                <span>
+                  <small>Inteligência comercial</small>
+                  <strong>Métricas e rankings das campanhas</strong>
+                </span>
+              </button>
 
-            <div id="analyticsContent" class="analytics-content" hidden>
-              <div class="analytics-ai-row">
+              <div class="analytics-ai-row" hidden>
                 <button class="excel-export-button" type="button" id="exportLeadsButton">
                   <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
                   <span>Exportar Excel</span>
@@ -148,7 +147,18 @@
                   <span>Analisar com IA</span>
                 </button>
               </div>
+              <button
+                class="analytics-toggle-label"
+                type="button"
+                id="analyticsToggleLabel"
+                aria-expanded="false"
+                aria-controls="analyticsContent"
+              >
+                Mostrar análise
+              </button>
+            </div>
 
+            <div id="analyticsContent" class="analytics-content" hidden>
               <div class="analytics-controls">
                 <label class="field">
                   <span>Loja</span>
@@ -678,12 +688,20 @@
     <div id="aiChatModal" class="modal-backdrop ai-chat-backdrop" hidden>
       <section class="modal-dialog ai-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="aiChatTitle">
         <div class="ai-chat-header">
-          <div>
-            <p class="eyebrow">Inteligência artificial</p>
-            <h2 id="aiChatTitle">Análise dos leads</h2>
-            <span id="aiLeadContextLabel">0 leads no filtro atual</span>
+          <div class="ai-chat-brand">
+            <div>
+              <p class="eyebrow">Inteligência artificial</p>
+              <h2 id="aiChatTitle">Análise dos leads</h2>
+              <span><i aria-hidden="true"></i><b>Online</b> · <em id="aiLeadContextLabel">0 leads no filtro atual</em></span>
+            </div>
           </div>
           <div class="ai-chat-actions">
+            <button class="ghost-button topbar-icon-button" type="button" id="aiNewChatButton" aria-label="Novo chat" title="Novo chat">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            </button>
+            <button class="ghost-button topbar-icon-button" type="button" id="aiHistoryToggle" aria-label="Histórico de chats" title="Histórico de chats">
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+            </button>
             <button class="ghost-button topbar-icon-button" type="button" id="aiSettingsToggle" aria-label="Configurar IA" title="Configurar IA">
               <i class="fa-solid fa-sliders" aria-hidden="true"></i>
             </button>
@@ -697,13 +715,23 @@
           <section class="ai-chat-main" aria-label="Chat de IA">
             <div id="aiChatMessages" class="ai-chat-messages"></div>
             <form id="aiChatForm" class="ai-chat-form">
-              <textarea id="aiChatInput" rows="3" placeholder="Pergunte sobre os leads filtrados"></textarea>
-              <button class="primary-button compact-primary" type="submit" id="aiChatSend">
+              <textarea id="aiChatInput" rows="1" placeholder="Pergunte sobre os leads filtrados"></textarea>
+              <button class="primary-button compact-primary" type="submit" id="aiChatSend" aria-label="Enviar" title="Enviar">
                 <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                Enviar
               </button>
             </form>
           </section>
+
+          <aside id="aiHistoryPanel" class="ai-history-panel" aria-label="Histórico de chats" hidden>
+            <div class="ai-side-heading">
+              <span>Conversas</span>
+              <button class="ghost-button" type="button" id="aiHistoryNewChat">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                Novo chat
+              </button>
+            </div>
+            <div id="aiChatHistoryList" class="ai-chat-history-list"></div>
+          </aside>
 
           <aside id="aiSettingsPanel" class="ai-settings-panel" aria-label="Configuração da IA" hidden>
             <form id="aiSettingsForm" class="ai-settings-form">
@@ -722,6 +750,13 @@
 
               <label class="field">
                 <span>Chave de API</span>
+                <div class="ai-key-validator">
+                  <button class="ghost-button" type="button" id="aiValidateKeyButton">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Validar chave
+                  </button>
+                  <small id="aiKeyStatus" aria-live="polite"></small>
+                </div>
                 <div class="password-field">
                   <input id="aiApiKey" type="password" placeholder="API key" />
                   <button class="password-toggle" type="button" data-toggle-password="aiApiKey" aria-label="Mostrar chave" title="Mostrar chave">
