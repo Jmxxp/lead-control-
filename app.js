@@ -24,12 +24,13 @@ const labels = {
   campaign: "Campanha",
   conversationStart: "Início da conversa",
   conclusion: "Conclusão",
+  scheduled: "Agendou visita",
   visited: "Visitou a loja",
   bought: "Comprou",
 };
 
 const optionGroups = Object.keys(labels);
-const fixedOptionGroups = new Set(["visited", "bought"]);
+const fixedOptionGroups = new Set(["scheduled", "visited", "bought"]);
 const fixedChannelOptions = new Set(["Instagram", "Facebook"]);
 const nativeYesNoOptions = ["Sim", "Não"];
 const defaultOptions = {
@@ -37,6 +38,7 @@ const defaultOptions = {
   campaign: ["Orgânico", "Anúncio", "Indicação"],
   conversationStart: ["Preço", "Consulta", "Armação", "Lente"],
   conclusion: ["Aguardando", "Retornar", "Finalizado"],
+  scheduled: nativeYesNoOptions,
   visited: nativeYesNoOptions,
   bought: nativeYesNoOptions,
 };
@@ -135,6 +137,7 @@ const analyticsChannelFilter = $("#analyticsChannelFilter");
 const analyticsCampaignFilter = $("#analyticsCampaignFilter");
 const analyticsConclusionFilter = $("#analyticsConclusionFilter");
 const analyticsVisitedFilter = $("#analyticsVisitedFilter");
+const analyticsScheduledFilter = $("#analyticsScheduledFilter");
 const analyticsBoughtFilter = $("#analyticsBoughtFilter");
 const analyticsSingleDate = $("#analyticsSingleDate");
 const analyticsStartDate = $("#analyticsStartDate");
@@ -189,6 +192,7 @@ const campaignFilter = $("#campaignFilter");
 const conversationStartFilter = $("#conversationStartFilter");
 const conclusionFilter = $("#conclusionFilter");
 const visitedFilter = $("#visitedFilter");
+const scheduledFilter = $("#scheduledFilter");
 const boughtFilter = $("#boughtFilter");
 const startDateFilter = $("#startDateFilter");
 const endDateFilter = $("#endDateFilter");
@@ -197,6 +201,16 @@ const emptyState = $("#emptyState");
 const leadList = $("#leadList");
 const customLeadFields = $("#customLeadFields");
 const customLeadFilters = $("#customLeadFilters");
+const appointmentDetails = $("#appointmentDetails");
+const appointmentSummary = $("#appointmentSummary");
+const appointmentEdit = $("#appointmentEdit");
+const appointmentModal = $("#appointmentModal");
+const appointmentClose = $("#appointmentClose");
+const appointmentCancel = $("#appointmentCancel");
+const appointmentForm = $("#appointmentForm");
+const appointmentDateInput = $("#appointmentDate");
+const appointmentTimeInput = $("#appointmentTime");
+const appointmentMessage = $("#appointmentMessage");
 const purchaseDetails = $("#purchaseDetails");
 const purchaseAmountInput = $("#purchaseAmount");
 const serviceOrderInput = $("#serviceOrder");
@@ -234,6 +248,7 @@ const analyticsSections = [
   { id: "start", label: "Início da conversa", key: "conversationStart", optionGroup: "conversationStart", container: "#analyticsStartCards", summary: "#analyticsStartSummary" },
   { id: "conclusion", label: "Resultado", key: "conclusion", optionGroup: "conclusion", container: "#analyticsConclusionCards", summary: "#analyticsConclusionSummary" },
   { id: "visited", label: "Visitas", key: "visited", optionGroup: "visited", container: "#analyticsVisitedCards", summary: "#analyticsVisitedSummary" },
+  { id: "scheduled", label: "Agendamentos", key: "scheduled", optionGroup: "scheduled", container: "#analyticsScheduledCards", summary: "#analyticsScheduledSummary" },
   { id: "bought", label: "Compras", key: "bought", optionGroup: "bought", container: "#analyticsBoughtCards", summary: "#analyticsBoughtSummary" },
 ];
 
@@ -303,6 +318,19 @@ function bindEvents() {
   confirmModal.addEventListener("click", (event) => {
     if (event.target === confirmModal) closeConfirmModal();
   });
+  appointmentEdit.addEventListener("click", openAppointmentModal);
+  appointmentClose.addEventListener("click", () => closeAppointmentModal());
+  appointmentCancel.addEventListener("click", () => closeAppointmentModal());
+  appointmentModal.addEventListener("click", (event) => {
+    if (event.target === appointmentModal) closeAppointmentModal();
+  });
+  appointmentForm.addEventListener("submit", handleAppointmentSubmit);
+  [appointmentDateInput, appointmentTimeInput].forEach((element) => {
+    element.addEventListener("input", () => {
+      clearAppointmentMessage();
+      updateAppointmentDetailsVisibility();
+    });
+  });
   analyticsInspectorClose.addEventListener("click", closeAnalyticsInspector);
   analyticsInspectorModal.addEventListener("click", (event) => {
     if (event.target === analyticsInspectorModal) closeAnalyticsInspector();
@@ -345,6 +373,7 @@ function bindEvents() {
     analyticsCampaignFilter,
     analyticsConclusionFilter,
     analyticsVisitedFilter,
+    analyticsScheduledFilter,
     analyticsBoughtFilter,
   ].forEach((element) => {
     element.addEventListener("input", renderAdminAnalytics);
@@ -385,6 +414,7 @@ function bindEvents() {
     conversationStartFilter,
     conclusionFilter,
     visitedFilter,
+    scheduledFilter,
     boughtFilter,
     startDateFilter,
     endDateFilter,
@@ -876,6 +906,9 @@ async function handleLeadSubmit(event) {
     p_campaign: selectedValues.campaign,
     p_conversation_start: selectedValues.conversationStart,
     p_conclusion: selectedValues.conclusion,
+    p_scheduled: selectedValues.scheduled,
+    p_scheduled_visit_date: selectedValues.scheduled === "Sim" ? appointmentDateInput.value : null,
+    p_scheduled_visit_time: selectedValues.scheduled === "Sim" ? appointmentTimeInput.value || null : null,
     p_visited: selectedValues.visited,
     p_bought: selectedValues.bought,
     p_purchase_amount: selectedValues.bought === "Sim" ? parseCurrencyInput(purchaseAmountInput.value) : null,
@@ -889,6 +922,17 @@ async function handleLeadSubmit(event) {
 
   if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
+    return;
+  }
+
+  if (!payload.p_scheduled) {
+    showFormMessage("Informe se o lead agendou visita ou não.");
+    return;
+  }
+
+  if (payload.p_scheduled === "Sim" && !payload.p_scheduled_visit_date) {
+    showFormMessage("Informe a data da visita agendada.");
+    openAppointmentModal();
     return;
   }
 
@@ -943,16 +987,20 @@ function editLead(id) {
     campaign: lead.campaign || "",
     conversationStart: lead.conversationStart || "",
     conclusion: lead.conclusion || "",
+    scheduled: lead.scheduled || "",
     visited: lead.visited || "",
     bought: lead.bought || "",
   };
   selectedCustomValues = { ...lead.customValues };
+  appointmentDateInput.value = lead.scheduledVisitDate || "";
+  appointmentTimeInput.value = lead.scheduledVisitTime || "";
   purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
   serviceOrderInput.value = lead.serviceOrder || "";
   leadNotesInput.value = lead.notes || "";
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
+  updateAppointmentDetailsVisibility();
   updatePurchaseDetailsVisibility();
   renderChoiceButtons();
 }
@@ -1019,11 +1067,59 @@ async function runConfirmedAction() {
   if (action) await action();
 }
 
+function openAppointmentModal() {
+  selectedValues.scheduled = "Sim";
+  clearAppointmentMessage();
+  appointmentModal.hidden = false;
+  renderChoiceButtons();
+  updateAppointmentDetailsVisibility();
+  syncModalLock();
+  requestAnimationFrame(() => appointmentDateInput.focus());
+}
+
+function closeAppointmentModal() {
+  appointmentModal.hidden = true;
+  clearAppointmentMessage();
+  if (selectedValues.scheduled === "Sim" && !appointmentDateInput.value) {
+    selectedValues.scheduled = "";
+    renderChoiceButtons();
+  }
+  updateAppointmentDetailsVisibility();
+  syncModalLock();
+}
+
+function handleAppointmentSubmit(event) {
+  event.preventDefault();
+
+  if (!appointmentDateInput.value) {
+    showAppointmentMessage("Informe a data da visita.");
+    appointmentDateInput.focus();
+    return;
+  }
+
+  selectedValues.scheduled = "Sim";
+  appointmentModal.hidden = true;
+  clearAppointmentMessage();
+  renderChoiceButtons();
+  updateAppointmentDetailsVisibility();
+  syncModalLock();
+}
+
+function showAppointmentMessage(message) {
+  appointmentMessage.textContent = message;
+}
+
+function clearAppointmentMessage() {
+  appointmentMessage.textContent = "";
+}
+
 function resetLeadForm() {
   form.reset();
   editingIdInput.value = "";
   selectedValues = createEmptySelection();
   selectedCustomValues = {};
+  appointmentDateInput.value = "";
+  appointmentTimeInput.value = "";
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
   leadNotesInput.value = "";
@@ -1031,7 +1127,9 @@ function resetLeadForm() {
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
   if (!storeOptionsPanel.hidden) toggleStoreOptionsMode(false);
+  closeAppointmentModal();
   updatePurchaseDetailsVisibility();
+  updateAppointmentDetailsVisibility();
   renderChoiceButtons();
 }
 
@@ -1093,6 +1191,7 @@ function renderAdminDashboard() {
   storeListPanel.hidden = isTechnicianView;
   $("#totalStores").textContent = stores.length;
   $("#adminTotalLeads").textContent = leads.length;
+  $("#adminScheduledCount").textContent = countByValue(leads, "scheduled", "Sim");
   $("#adminSalesCount").textContent = countByValue(leads, "bought", "Sim");
   $("#adminConversionRate").textContent = formatPercent(countByValue(leads, "bought", "Sim"), leads.length);
   renderStoreList();
@@ -1167,6 +1266,8 @@ function renderLeadList() {
             ${renderTag(lead.channel)}
             ${renderTag(lead.campaign)}
             ${renderTag(lead.conclusion)}
+            ${renderTag(lead.scheduled ? `Agendou: ${lead.scheduled}` : "")}
+            ${renderTag(getScheduledVisitLabel(lead) ? `Visita: ${getScheduledVisitLabel(lead)}` : "")}
             ${renderTag(lead.visited ? `Visitou: ${lead.visited}` : "")}
             ${renderTag(lead.bought ? `Comprou: ${lead.bought}` : "")}
             ${renderTag(lead.purchaseAmount ? `Valor: ${formatCurrency(lead.purchaseAmount)}` : "")}
@@ -1191,6 +1292,7 @@ function renderLeadList() {
   const storeLeads = getVisibleStoreLeads();
   $("#totalLeads").textContent = storeLeads.length;
   $("#storeVisits").textContent = countByValue(storeLeads, "visited", "Sim");
+  $("#storeScheduled").textContent = countByValue(storeLeads, "scheduled", "Sim");
   $("#salesCount").textContent = countByValue(storeLeads, "bought", "Sim");
   $("#conversionRate").textContent = formatPercent(countByValue(storeLeads, "bought", "Sim"), storeLeads.length);
 }
@@ -1219,6 +1321,8 @@ function openLeadDetailsModal(id) {
         ${renderLeadDetailItem("Campanha", lead.campaign)}
         ${renderLeadDetailItem("Início da conversa", lead.conversationStart)}
         ${renderLeadDetailItem("Conclusão", lead.conclusion)}
+        ${renderLeadDetailItem("Agendou visita", lead.scheduled)}
+        ${renderLeadDetailItem("Data da visita agendada", getScheduledVisitLabel(lead))}
         ${renderCustomLeadDetailItems(lead)}
       </div>
     </div>
@@ -1263,7 +1367,12 @@ function closeLeadDetailsModal() {
 function syncModalLock() {
   document.body.classList.toggle(
     "is-modal-open",
-    !leadDetailsModal.hidden || !analyticsInspectorModal.hidden || !settingsModal.hidden || !managedAccountModal.hidden || !aiChatModal.hidden,
+    !leadDetailsModal.hidden ||
+      !analyticsInspectorModal.hidden ||
+      !settingsModal.hidden ||
+      !managedAccountModal.hidden ||
+      !appointmentModal.hidden ||
+      !aiChatModal.hidden,
   );
 }
 
@@ -1286,7 +1395,7 @@ function renderChoiceButtons() {
             "choice-button",
             isActive ? "is-active" : "",
             group === "channel" && selectedValues.channel && !isActive ? "is-dimmed" : "",
-            (group === "visited" || group === "bought") && selectedValues[group] && !isActive ? "is-dimmed" : "",
+            fixedOptionGroups.has(group) && selectedValues[group] && !isActive ? "is-dimmed" : "",
             getChoiceClass(group, value),
           ].filter(Boolean).join(" ");
           return `<button class="${className}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${getChoiceLabel(group, value)}</button>`;
@@ -1295,6 +1404,19 @@ function renderChoiceButtons() {
 
       container.querySelectorAll("[data-choice]").forEach((button) => {
         button.addEventListener("click", () => {
+          if (group === "scheduled") {
+            selectedValues.scheduled = button.dataset.value;
+            if (selectedValues.scheduled === "Sim") {
+              openAppointmentModal();
+            } else {
+              appointmentDateInput.value = "";
+              appointmentTimeInput.value = "";
+              renderChoiceButtons();
+              updateAppointmentDetailsVisibility();
+            }
+            return;
+          }
+
           selectedValues[group] =
             fixedOptionGroups.has(group) && selectedValues[group] === button.dataset.value
               ? ""
@@ -1353,6 +1475,7 @@ function renderFilters() {
   fillSelect(conversationStartFilter, options.conversationStart, "Todos");
   fillSelect(conclusionFilter, options.conclusion, "Todos");
   fillSelectWithEntries(visitedFilter, withNoAnswer(options.visited), "Todos");
+  fillSelectWithEntries(scheduledFilter, withNoAnswer(options.scheduled), "Todos");
   fillSelectWithEntries(boughtFilter, withNoAnswer(options.bought), "Todos");
 }
 
@@ -1370,6 +1493,7 @@ function renderAnalyticsFilters() {
   fillSelect(analyticsCampaignFilter, options.campaign, "Todas");
   fillSelect(analyticsConclusionFilter, options.conclusion, "Todos");
   fillSelectWithEntries(analyticsVisitedFilter, withNoAnswer(options.visited), "Todas");
+  fillSelectWithEntries(analyticsScheduledFilter, withNoAnswer(options.scheduled), "Todos");
   fillSelectWithEntries(analyticsBoughtFilter, withNoAnswer(options.bought), "Todas");
   renderCustomFilters(analyticsCustomFilters, "Todas");
 }
@@ -1963,10 +2087,12 @@ function renderAdminAnalytics() {
   const filtered = getAnalyticsLeads();
   const total = filtered.length;
   const visited = countByValue(filtered, "visited", "Sim");
+  const scheduled = countByValue(filtered, "scheduled", "Sim");
   const bought = countByValue(filtered, "bought", "Sim");
 
   $("#analyticsTotalLeads").textContent = total;
   $("#analyticsVisitedLeads").textContent = visited;
+  $("#analyticsScheduledLeads").textContent = scheduled;
   $("#analyticsBoughtLeads").textContent = bought;
   $("#analyticsConversionRate").textContent = formatPercent(bought, total);
 
@@ -2052,6 +2178,7 @@ function renderAnalyticsCategoryCards(section, rows) {
           </div>
           <div class="analytics-category-meta">
             <span>${item.visited} visitas</span>
+            <span>${item.scheduled} agend.</span>
             <span>${item.bought} compras</span>
           </div>
           <button
@@ -2119,6 +2246,7 @@ function buildAnalyticsRanking(rows, sectionOrKey) {
       value,
       count: 0,
       visited: 0,
+      scheduled: 0,
       bought: 0,
       latestAt: "",
     });
@@ -2130,11 +2258,13 @@ function buildAnalyticsRanking(rows, sectionOrKey) {
       value,
       count: 0,
       visited: 0,
+      scheduled: 0,
       bought: 0,
       latestAt: "",
     };
     current.count += 1;
     if (lead.visited === "Sim") current.visited += 1;
+    if (lead.scheduled === "Sim") current.scheduled += 1;
     if (lead.bought === "Sim") current.bought += 1;
     if (!current.latestAt || lead.createdAt > current.latestAt) current.latestAt = lead.createdAt;
     groups.set(value, current);
@@ -2242,6 +2372,7 @@ function exportLeadsToExcel() {
 
 function buildLeadsExcelWorkbook(exportRows) {
   const visited = countByValue(exportRows, "visited", "Sim");
+  const scheduled = countByValue(exportRows, "scheduled", "Sim");
   const bought = countByValue(exportRows, "bought", "Sim");
   const totalRevenue = exportRows.reduce((sum, lead) => sum + Number(lead.purchaseAmount || 0), 0);
   const columns = buildLeadExportColumns();
@@ -2249,6 +2380,7 @@ function buildLeadsExcelWorkbook(exportRows) {
     ["Gerado em", formatDateTime(new Date().toISOString())],
     ["Escopo", "Todos os leads carregados para este acesso"],
     ["Total de leads", exportRows.length],
+    ["Agendaram visita", scheduled],
     ["Visitaram a loja", visited],
     ["Compraram", bought],
     ["Conversão", formatPercent(bought, exportRows.length)],
@@ -2308,6 +2440,8 @@ function buildLeadExportColumns() {
     { header: "Campanha", value: (lead) => lead.campaign || "Sem resposta" },
     { header: "Início da conversa", value: (lead) => lead.conversationStart || "Sem resposta" },
     { header: "Conclusão", value: (lead) => lead.conclusion || "Sem resposta" },
+    { header: "Agendou visita", value: (lead) => lead.scheduled || "Sem resposta" },
+    { header: "Data da visita agendada", className: "date", value: (lead) => getScheduledVisitLabel(lead) || "" },
     { header: "Visitou a loja", value: (lead) => lead.visited || "Sem resposta" },
     { header: "Comprou", value: (lead) => lead.bought || "Sem resposta" },
     { header: "Valor da compra", className: "currency", value: (lead) => lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "" },
@@ -2941,12 +3075,14 @@ function buildAiLeadContext(filteredLeads) {
   const total = filteredLeads.length;
   const bought = countByValue(filteredLeads, "bought", "Sim");
   const visited = countByValue(filteredLeads, "visited", "Sim");
+  const scheduled = countByValue(filteredLeads, "scheduled", "Sim");
 
   return JSON.stringify({
     gerado_em: new Date().toISOString(),
     filtros: buildAnalyticsFilterSnapshot(),
     resumo: {
       leads: total,
+      agendaram: scheduled,
       visitaram: visited,
       compraram: bought,
       conversao: formatPercent(bought, total),
@@ -2963,6 +3099,7 @@ function buildAnalyticsFilterSnapshot() {
     campanha: getSelectedOptionText(analyticsCampaignFilter),
     resultado: getSelectedOptionText(analyticsConclusionFilter),
     visita: getSelectedOptionText(analyticsVisitedFilter),
+    agendamento: getSelectedOptionText(analyticsScheduledFilter),
     compra: getSelectedOptionText(analyticsBoughtFilter),
     data: mode === "single"
       ? { modo: "data_especifica", dia: analyticsSingleDate.value || null }
@@ -2984,6 +3121,10 @@ function leadToAiRecord(lead) {
     campanha: lead.campaign || null,
     inicio_da_conversa: lead.conversationStart || null,
     conclusao: lead.conclusion || null,
+    agendou_visita: lead.scheduled || null,
+    visita_agendada: getScheduledVisitLabel(lead) || null,
+    data_visita_agendada: lead.scheduledVisitDate || null,
+    hora_visita_agendada: lead.scheduledVisitTime || null,
     visitou_a_loja: lead.visited || null,
     comprou: lead.bought || null,
     valor_da_compra: lead.purchaseAmount,
@@ -3437,6 +3578,7 @@ function getFilteredLeads() {
       matchesFilter(lead.conversationStart, conversationStartFilter.value) &&
       matchesFilter(lead.conclusion, conclusionFilter.value) &&
       matchesFilter(lead.visited || "sem-resposta", visitedFilter.value) &&
+      matchesFilter(lead.scheduled || "sem-resposta", scheduledFilter.value) &&
       matchesFilter(lead.bought || "sem-resposta", boughtFilter.value);
     const matchesCustomFilters = getCustomFilterValues(customLeadFilters)
       .every(({ categoryId, value }) => matchesFilter(lead.customValues[categoryId] || "sem-resposta", value));
@@ -3470,6 +3612,9 @@ function getAnalyticsLeads() {
   }
   if (analyticsVisitedFilter.value) {
     result = result.filter((lead) => (lead.visited || "sem-resposta") === analyticsVisitedFilter.value);
+  }
+  if (analyticsScheduledFilter.value) {
+    result = result.filter((lead) => (lead.scheduled || "sem-resposta") === analyticsScheduledFilter.value);
   }
   if (analyticsBoughtFilter.value) {
     result = result.filter((lead) => (lead.bought || "sem-resposta") === analyticsBoughtFilter.value);
@@ -3536,7 +3681,7 @@ function toggleFilters() {
 }
 
 function clearFilters() {
-  [searchInput, channelFilter, campaignFilter, conversationStartFilter, conclusionFilter, visitedFilter, boughtFilter, startDateFilter, endDateFilter].forEach((element) => {
+  [searchInput, channelFilter, campaignFilter, conversationStartFilter, conclusionFilter, visitedFilter, scheduledFilter, boughtFilter, startDateFilter, endDateFilter].forEach((element) => {
     element.value = "";
   });
   customLeadFilters.querySelectorAll("[data-custom-filter]").forEach((element) => {
@@ -3643,6 +3788,9 @@ function mapLeadRow(row) {
     campaign: row.campaign || "",
     conversationStart: row.conversation_start || "",
     conclusion: row.conclusion || "",
+    scheduled: row.scheduled || "",
+    scheduledVisitDate: row.scheduled_visit_date || "",
+    scheduledVisitTime: normalizeTimeValue(row.scheduled_visit_time),
     visited: row.visited || "",
     bought: row.bought || "",
     purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
@@ -3671,6 +3819,15 @@ function applyOptionRows(rows) {
   });
 
   optionGroups.forEach((group) => {
+    if (!optionRecords[group].length && defaultOptions[group]) {
+      optionRecords[group] = defaultOptions[group].map((value, index) => ({
+        id: `default-${group}-${index}`,
+        groupKey: group,
+        value,
+        sortOrder: (index + 1) * 10,
+        fixed: fixedOptionGroups.has(group) || fixedChannelOptions.has(value),
+      }));
+    }
     optionRecords[group].sort((a, b) => a.sortOrder - b.sortOrder);
   });
 
@@ -3848,6 +4005,36 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function normalizeTimeValue(value) {
+  if (!value) return "";
+  return String(value).slice(0, 5);
+}
+
+function formatDateInputValue(value) {
+  if (!value) return "";
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  if (!year || !month || !day) return "";
+  return `${day}/${month}/${year}`;
+}
+
+function getScheduledVisitLabel(lead) {
+  const date = formatDateInputValue(lead?.scheduledVisitDate);
+  if (!date) return "";
+  return lead.scheduledVisitTime ? `${date} ${lead.scheduledVisitTime}` : date;
+}
+
+function getCurrentAppointmentLabel() {
+  const date = formatDateInputValue(appointmentDateInput.value);
+  if (!date) return "";
+  return appointmentTimeInput.value ? `${date} ${appointmentTimeInput.value}` : date;
+}
+
+function updateAppointmentDetailsVisibility() {
+  const isScheduled = selectedValues.scheduled === "Sim";
+  appointmentDetails.hidden = !isScheduled;
+  appointmentSummary.textContent = getCurrentAppointmentLabel() || "Escolha a data";
+}
+
 function updatePurchaseDetailsVisibility() {
   purchaseDetails.hidden = selectedValues.bought !== "Sim";
 }
@@ -3878,8 +4065,8 @@ function formatCurrencyInput(value) {
 function getChoiceClass(group, value) {
   const channelBrand = group === "channel" ? getChannelBrand(value) : "";
   if (channelBrand) return `choice-${channelBrand}`;
-  if ((group === "visited" || group === "bought") && value === "Sim") return "choice-yes";
-  if ((group === "visited" || group === "bought") && value === "Não") return "choice-no";
+  if (fixedOptionGroups.has(group) && value === "Sim") return "choice-yes";
+  if (fixedOptionGroups.has(group) && value === "Não") return "choice-no";
   return "";
 }
 

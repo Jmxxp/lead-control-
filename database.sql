@@ -20,6 +20,7 @@ begin
       'campaign',
       'conversationStart',
       'conclusion',
+      'scheduled',
       'visited',
       'bought'
     );
@@ -128,7 +129,7 @@ create table if not exists public.lead_options (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint lead_options_yes_no_check check (
-    group_key not in ('visited', 'bought') or value in ('Sim', 'Não')
+    group_key not in ('scheduled', 'visited', 'bought') or value in ('Sim', 'Não')
   ),
   constraint lead_options_unique_value unique (admin_user_id, group_key, value)
 );
@@ -143,6 +144,9 @@ create table if not exists public.leads (
   campaign text,
   conversation_start text,
   conclusion text,
+  scheduled text check (scheduled is null or scheduled in ('Sim', 'Não')),
+  scheduled_visit_date date,
+  scheduled_visit_time time,
   visited text check (visited is null or visited in ('Sim', 'Não')),
   bought text check (bought is null or bought in ('Sim', 'Não')),
   purchase_amount numeric(12,2) check (purchase_amount is null or purchase_amount > 0),
@@ -167,6 +171,15 @@ alter table public.leads
 alter table public.leads
   add column if not exists notes text;
 
+alter table public.leads
+  add column if not exists scheduled text check (scheduled is null or scheduled in ('Sim', 'Não'));
+
+alter table public.leads
+  add column if not exists scheduled_visit_date date;
+
+alter table public.leads
+  add column if not exists scheduled_visit_time time;
+
 create unique index if not exists app_users_one_store_user_idx
   on public.app_users (store_id)
   where role = 'store' and is_active;
@@ -183,6 +196,7 @@ create index if not exists leads_campaign_idx on public.leads(campaign);
 create index if not exists leads_conversation_start_idx on public.leads(conversation_start);
 create index if not exists leads_conclusion_idx on public.leads(conclusion);
 create index if not exists leads_visited_idx on public.leads(visited);
+create index if not exists leads_scheduled_idx on public.leads(scheduled);
 create index if not exists leads_bought_idx on public.leads(bought);
 
 drop trigger if exists app_users_set_nick_key on public.app_users;
@@ -243,6 +257,8 @@ as $$
     (p_admin_user_id, 'conclusion', 'Aguardando', 10, false),
     (p_admin_user_id, 'conclusion', 'Retornar', 20, false),
     (p_admin_user_id, 'conclusion', 'Finalizado', 30, false),
+    (p_admin_user_id, 'scheduled', 'Sim', 10, true),
+    (p_admin_user_id, 'scheduled', 'Não', 20, true),
     (p_admin_user_id, 'visited', 'Sim', 10, true),
     (p_admin_user_id, 'visited', 'Não', 20, true),
     (p_admin_user_id, 'bought', 'Sim', 10, true),
@@ -688,7 +704,7 @@ begin
     raise exception 'Apenas admin, tecnico ou loja pode alterar opcoes.';
   end if;
 
-  if p_group_key in ('visited', 'bought') then
+  if p_group_key in ('scheduled', 'visited', 'bought') then
     raise exception 'Este grupo de opcoes e fixo.';
   end if;
 
@@ -866,6 +882,9 @@ returns table (
   campaign text,
   conversation_start text,
   conclusion text,
+  scheduled text,
+  scheduled_visit_date date,
+  scheduled_visit_time time,
   visited text,
   bought text,
   purchase_amount numeric,
@@ -894,6 +913,9 @@ begin
     l.campaign,
     l.conversation_start,
     l.conclusion,
+    l.scheduled,
+    l.scheduled_visit_date,
+    l.scheduled_visit_time,
     l.visited,
     l.bought,
     l.purchase_amount,
@@ -921,6 +943,9 @@ create or replace function app_private.rpc_upsert_lead(
   p_campaign text default null,
   p_conversation_start text default null,
   p_conclusion text default null,
+  p_scheduled text default null,
+  p_scheduled_visit_date date default null,
+  p_scheduled_visit_time time default null,
   p_visited text default null,
   p_bought text default null,
   p_purchase_amount numeric default null,
@@ -947,6 +972,19 @@ begin
   if nullif(btrim(coalesce(p_visited, '')), '') = 'Sim'
      and nullif(btrim(coalesce(p_bought, '')), '') is null then
     raise exception 'Informe se o lead comprou ou nao.';
+  end if;
+
+  if nullif(btrim(coalesce(p_scheduled, '')), '') is null then
+    raise exception 'Informe se o lead agendou visita ou nao.';
+  end if;
+
+  if nullif(btrim(coalesce(p_scheduled, '')), '') not in ('Sim', 'Não') then
+    raise exception 'Agendamento invalido.';
+  end if;
+
+  if nullif(btrim(coalesce(p_scheduled, '')), '') = 'Sim'
+     and p_scheduled_visit_date is null then
+    raise exception 'Informe a data da visita agendada.';
   end if;
 
   if nullif(btrim(coalesce(p_bought, '')), '') = 'Sim'
@@ -992,6 +1030,9 @@ begin
       campaign,
       conversation_start,
       conclusion,
+      scheduled,
+      scheduled_visit_date,
+      scheduled_visit_time,
       visited,
       bought,
       purchase_amount,
@@ -1009,6 +1050,9 @@ begin
       nullif(btrim(coalesce(p_campaign, '')), ''),
       nullif(btrim(coalesce(p_conversation_start, '')), ''),
       nullif(btrim(coalesce(p_conclusion, '')), ''),
+      nullif(btrim(coalesce(p_scheduled, '')), ''),
+      case when nullif(btrim(coalesce(p_scheduled, '')), '') = 'Sim' then p_scheduled_visit_date else null end,
+      case when nullif(btrim(coalesce(p_scheduled, '')), '') = 'Sim' then p_scheduled_visit_time else null end,
       nullif(btrim(coalesce(p_visited, '')), ''),
       nullif(btrim(coalesce(p_bought, '')), ''),
       case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then p_purchase_amount else null end,
@@ -1028,6 +1072,9 @@ begin
       campaign = nullif(btrim(coalesce(p_campaign, '')), ''),
       conversation_start = nullif(btrim(coalesce(p_conversation_start, '')), ''),
       conclusion = nullif(btrim(coalesce(p_conclusion, '')), ''),
+      scheduled = nullif(btrim(coalesce(p_scheduled, '')), ''),
+      scheduled_visit_date = case when nullif(btrim(coalesce(p_scheduled, '')), '') = 'Sim' then p_scheduled_visit_date else null end,
+      scheduled_visit_time = case when nullif(btrim(coalesce(p_scheduled, '')), '') = 'Sim' then p_scheduled_visit_time else null end,
       visited = nullif(btrim(coalesce(p_visited, '')), ''),
       bought = nullif(btrim(coalesce(p_bought, '')), ''),
       purchase_amount = case when nullif(btrim(coalesce(p_bought, '')), '') = 'Sim' then p_purchase_amount else null end,
@@ -1239,6 +1286,9 @@ returns table (
   campaign text,
   conversation_start text,
   conclusion text,
+  scheduled text,
+  scheduled_visit_date date,
+  scheduled_visit_time time,
   visited text,
   bought text,
   purchase_amount numeric,
@@ -1262,6 +1312,9 @@ create or replace function public.lc_upsert_lead(
   p_campaign text default null,
   p_conversation_start text default null,
   p_conclusion text default null,
+  p_scheduled text default null,
+  p_scheduled_visit_date date default null,
+  p_scheduled_visit_time time default null,
   p_visited text default null,
   p_bought text default null,
   p_purchase_amount numeric default null,
@@ -1282,6 +1335,9 @@ as $$
     p_campaign,
     p_conversation_start,
     p_conclusion,
+    p_scheduled,
+    p_scheduled_visit_date,
+    p_scheduled_visit_time,
     p_visited,
     p_bought,
     p_purchase_amount,
@@ -1334,7 +1390,7 @@ grant execute on function app_private.rpc_add_option(text, public.lead_option_gr
 grant execute on function app_private.rpc_update_option(text, uuid, text) to anon, authenticated;
 grant execute on function app_private.rpc_delete_option(text, uuid) to anon, authenticated;
 grant execute on function app_private.rpc_list_leads(text) to anon, authenticated;
-grant execute on function app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid) to anon, authenticated;
+grant execute on function app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, uuid) to anon, authenticated;
 grant execute on function app_private.rpc_delete_lead(text, uuid) to anon, authenticated;
 
 grant execute on function public.lc_create_admin(text, text, text) to anon, authenticated;
@@ -1348,5 +1404,5 @@ grant execute on function public.lc_add_option(text, public.lead_option_group, t
 grant execute on function public.lc_update_option(text, uuid, text) to anon, authenticated;
 grant execute on function public.lc_delete_option(text, uuid) to anon, authenticated;
 grant execute on function public.lc_list_leads(text) to anon, authenticated;
-grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, uuid) to anon, authenticated;
+grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, uuid) to anon, authenticated;
 grant execute on function public.lc_delete_lead(text, uuid) to anon, authenticated;

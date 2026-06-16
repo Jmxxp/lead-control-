@@ -24,7 +24,7 @@ begin
     raise exception 'Apenas admin, tecnico ou loja pode alterar opcoes.';
   end if;
 
-  if p_group_key in ('visited', 'bought') then
+  if p_group_key in ('scheduled', 'visited', 'bought') then
     raise exception 'Este grupo de opcoes e fixo.';
   end if;
 

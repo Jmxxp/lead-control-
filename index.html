@@ -20,10 +20,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260616-logo-1" />
     <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260616-logo-1" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260616-logo-1" />
-    <link rel="stylesheet" href="styles.css?v=20260615-confirm-top-1" />
+    <link rel="stylesheet" href="styles.css?v=20260616-scheduling-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260615-confirm-top-1" defer></script>
+    <script src="app.js?v=20260616-scheduling-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -128,6 +128,10 @@
               <strong id="adminTotalLeads">0</strong>
             </article>
             <article class="metric">
+              <span>Agendamentos</span>
+              <strong id="adminScheduledCount">0</strong>
+            </article>
+            <article class="metric">
               <span>Compras</span>
               <strong id="adminSalesCount">0</strong>
             </article>
@@ -211,6 +215,13 @@
                 </label>
 
                 <label class="field">
+                  <span>Agendamento</span>
+                  <select id="analyticsScheduledFilter">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+
+                <label class="field">
                   <span>Compra</span>
                   <select id="analyticsBoughtFilter">
                     <option value="">Todas</option>
@@ -264,6 +275,10 @@
                 <article class="insight-card">
                   <span>Vieram à loja</span>
                   <strong id="analyticsVisitedLeads">0</strong>
+                </article>
+                <article class="insight-card">
+                  <span>Agendaram</span>
+                  <strong id="analyticsScheduledLeads">0</strong>
                 </article>
                 <article class="insight-card">
                   <span>Compraram</span>
@@ -334,6 +349,16 @@
                     </div>
                   </div>
                   <div id="analyticsVisitedCards" class="analytics-category-list"></div>
+                </article>
+
+                <article class="analytics-section-card">
+                  <div class="analytics-section-heading">
+                    <div>
+                      <span>Agendamentos</span>
+                      <strong id="analyticsScheduledSummary">Sem dados</strong>
+                    </div>
+                  </div>
+                  <div id="analyticsScheduledCards" class="analytics-category-list"></div>
                 </article>
 
                 <article class="analytics-section-card">
@@ -477,6 +502,10 @@
             <strong id="storeVisits">0</strong>
           </article>
           <article class="metric">
+            <span>Agendaram</span>
+            <strong id="storeScheduled">0</strong>
+          </article>
+          <article class="metric">
             <span>Compraram</span>
             <strong id="salesCount">0</strong>
           </article>
@@ -567,6 +596,14 @@
             <div class="double-choice lead-entry">
               <div class="choice-section">
                 <div class="section-title">
+                  <h3>Agendou visita?</h3>
+                  <span>Obrigatório</span>
+                </div>
+                <div class="choice-grid two" data-choice-group="scheduled"></div>
+              </div>
+
+              <div class="choice-section">
+                <div class="section-title">
                   <h3>Visitou a loja?</h3>
                   <span>Opcional</span>
                 </div>
@@ -580,6 +617,17 @@
                 </div>
                 <div class="choice-grid two" data-choice-group="bought"></div>
               </div>
+            </div>
+
+            <div id="appointmentDetails" class="appointment-details lead-entry" hidden>
+              <div>
+                <span>Visita agendada</span>
+                <strong id="appointmentSummary">Escolha a data</strong>
+              </div>
+              <button class="mini-button" type="button" id="appointmentEdit">
+                <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+                Editar
+              </button>
             </div>
 
             <div id="purchaseDetails" class="purchase-details lead-entry" hidden>
@@ -659,6 +707,14 @@
                 <span>Visitou</span>
                 <select id="visitedFilter">
                   <option value="">Todos</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Agendou</span>
+                <select id="scheduledFilter">
+                  <option value="">Todos</option>
+                  <option value="sem-resposta">Sem resposta</option>
                 </select>
               </label>
 
@@ -911,6 +967,38 @@
           <button class="ghost-button" type="button" id="confirmCancel">Cancelar</button>
           <button class="mini-button danger" type="button" id="confirmAccept">Confirmar</button>
         </div>
+      </section>
+    </div>
+
+    <div id="appointmentModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog appointment-dialog" role="dialog" aria-modal="true" aria-labelledby="appointmentTitle">
+        <div class="lead-details-header">
+          <div>
+            <p class="eyebrow">Agendamento</p>
+            <h2 id="appointmentTitle">Data da visita</h2>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="appointmentClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form id="appointmentForm" class="account-form" autocomplete="off">
+          <label class="field">
+            <span>Data</span>
+            <input id="appointmentDate" type="date" required />
+          </label>
+
+          <label class="field">
+            <span>Hora</span>
+            <input id="appointmentTime" type="time" />
+          </label>
+
+          <p id="appointmentMessage" class="form-message" role="status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button class="ghost-button" type="button" id="appointmentCancel">Cancelar</button>
+            <button class="primary-button compact-primary" type="submit">Salvar data</button>
+          </div>
+        </form>
       </section>
     </div>
 

@@ -364,7 +364,7 @@ h3 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -744,7 +744,7 @@ body.is-dark .quick-range-buttons .mini-button {
 
 .analytics-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -1319,14 +1319,40 @@ body.is-dark .bar-track {
   grid-template-columns: 1fr 0.9fr;
 }
 
+.appointment-details,
 .purchase-details {
   display: grid;
-  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
   border: 1px solid rgba(40, 92, 143, 0.18);
   border-radius: var(--radius);
   background: rgba(40, 92, 143, 0.06);
+}
+
+.appointment-details {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.appointment-details div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.appointment-details span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.appointment-details strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.purchase-details {
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
 }
 
 .double-choice {
@@ -3358,7 +3384,7 @@ body.is-dark .analytics-lead-delete {
   .analytics-category-meta {
     grid-column: 2;
     grid-row: 2;
-    grid-template-columns: repeat(2, max-content);
+    grid-template-columns: repeat(3, max-content);
     min-width: 0;
     text-align: left;
   }
@@ -3464,6 +3490,7 @@ body.is-dark .analytics-lead-delete {
   .choice-grid,
   .choice-grid.compact,
   .double-choice,
+  .appointment-details,
   .purchase-details,
   .management-card,
   .technician-card,
