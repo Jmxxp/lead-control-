@@ -1,9 +1,24 @@
--- Rode este arquivo no SQL Editor do Supabase para adicionar
+-- PASSO 2/2
+-- Rode appointment_scheduling_enum_update.sql primeiro.
+-- Depois rode este arquivo no SQL Editor do Supabase para adicionar
 -- "Agendou visita?", data e hora opcional do agendamento aos leads.
 
 set search_path = public, extensions;
 
-alter type public.lead_option_group add value if not exists 'scheduled' before 'visited';
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'lead_option_group'
+      and e.enumlabel = 'scheduled'
+  ) then
+    raise exception 'Rode primeiro o arquivo appointment_scheduling_enum_update.sql e depois rode este arquivo novamente.';
+  end if;
+end $$;
 
 alter table public.leads
   add column if not exists scheduled text;
@@ -33,7 +48,7 @@ alter table public.lead_options
 
 alter table public.lead_options
   add constraint lead_options_yes_no_check
-  check (group_key not in ('scheduled', 'visited', 'bought') or value in ('Sim', 'Não'));
+  check (group_key::text not in ('scheduled', 'visited', 'bought') or value in ('Sim', 'Não'));
 
 create index if not exists leads_scheduled_idx on public.leads(scheduled);
 create index if not exists leads_admin_scheduled_created_idx
@@ -181,6 +196,7 @@ drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text
 drop function if exists app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, uuid);
 drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, jsonb, uuid);
 drop function if exists app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, jsonb, uuid);
+drop function if exists public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, uuid);
 
 create or replace function app_private.rpc_upsert_lead(
   p_session_token text,
@@ -432,3 +448,5 @@ grant execute on function app_private.rpc_list_leads(text) to anon, authenticate
 grant execute on function public.lc_list_leads(text) to anon, authenticated;
 grant execute on function app_private.rpc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, jsonb, uuid) to anon, authenticated;
 grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, date, time, text, text, numeric, text, text, jsonb, uuid) to anon, authenticated;
+
+notify pgrst, 'reload schema';

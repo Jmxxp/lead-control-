@@ -914,11 +914,9 @@ async function handleLeadSubmit(event) {
     p_purchase_amount: selectedValues.bought === "Sim" ? parseCurrencyInput(purchaseAmountInput.value) : null,
     p_service_order: selectedValues.bought === "Sim" ? serviceOrderInput.value.trim() : null,
     p_notes: leadNotesInput.value.trim(),
+    p_custom_values: buildCustomValuesPayload(),
     p_store_id: store.id,
   };
-  if (customCategories.length) {
-    payload.p_custom_values = buildCustomValuesPayload();
-  }
 
   if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
