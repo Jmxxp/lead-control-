@@ -683,8 +683,8 @@ declare
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
-  if v_session.user_role <> 'admin' then
-    raise exception 'Apenas admin pode alterar opcoes.';
+  if v_session.user_role::text not in ('admin', 'technician', 'store') then
+    raise exception 'Apenas admin, tecnico ou loja pode alterar opcoes.';
   end if;
 
   if p_group_key in ('visited', 'bought') then
@@ -725,8 +725,8 @@ declare
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
-  if v_session.user_role <> 'admin' then
-    raise exception 'Apenas admin pode alterar opcoes.';
+  if v_session.user_role::text not in ('admin', 'technician', 'store') then
+    raise exception 'Apenas admin, tecnico ou loja pode alterar opcoes.';
   end if;
 
   update public.lead_options
@@ -759,8 +759,8 @@ declare
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
-  if v_session.user_role <> 'admin' then
-    raise exception 'Apenas admin pode alterar opcoes.';
+  if v_session.user_role::text not in ('admin', 'technician', 'store') then
+    raise exception 'Apenas admin, tecnico ou loja pode alterar opcoes.';
   end if;
 
   update public.lead_options
