@@ -537,7 +537,7 @@ function showStoreDashboard() {
   sessionRole.textContent = `Loja · ${activeStoreContext?.name || currentProfile.username}`;
   backAdminButton.hidden = true;
   settingsButton.hidden = true;
-  toggleOptionsEditButton.hidden = true;
+  toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
   storeOptionsPanel.hidden = true;
   adminView.hidden = true;
