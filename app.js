@@ -3567,9 +3567,13 @@ function getAnalyticsSections() {
 
 function getFilteredLeads() {
   const visible = getVisibleStoreLeads();
-  const search = searchInput.value.trim().toLowerCase();
+  const search = normalizeSearchText(searchInput.value.trim());
+
+  if (search) {
+    return visible.filter((lead) => matchesLeadSearch(lead, search));
+  }
+
   return visible.filter((lead) => {
-    const matchesSearch = !search || [lead.name, lead.phone, lead.storeName].some((value) => String(value || "").toLowerCase().includes(search));
     const matchesSimpleFilters =
       matchesFilter(lead.channel, channelFilter.value) &&
       matchesFilter(lead.campaign, campaignFilter.value) &&
@@ -3584,8 +3588,34 @@ function getFilteredLeads() {
     const matchesStart = !startDateFilter.value || createdDate >= startDateFilter.value;
     const matchesEnd = !endDateFilter.value || createdDate <= endDateFilter.value;
 
-    return matchesSearch && matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
+    return matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
   });
+}
+
+function matchesLeadSearch(lead, search) {
+  const customValues = lead.customValueRows.flatMap((item) => [item.categoryName, item.value]);
+  const searchableValues = [
+    lead.id,
+    lead.name,
+    lead.phone,
+    onlyDigits(lead.phone),
+    lead.storeName,
+    lead.channel,
+    lead.campaign,
+    lead.conversationStart,
+    lead.conclusion,
+    lead.scheduled,
+    getScheduledVisitLabel(lead),
+    lead.visited,
+    lead.bought,
+    lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "",
+    lead.serviceOrder,
+    lead.notes,
+    formatDateTime(lead.createdAt),
+    ...customValues,
+  ];
+
+  return searchableValues.some((value) => normalizeSearchText(value).includes(search));
 }
 
 function getVisibleStoreLeads() {
@@ -3951,6 +3981,17 @@ function withNoAnswer(values) {
 
 function matchesFilter(value, filterValue) {
   return !filterValue || value === filterValue;
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
 }
 
 function getCustomFilterValues(container) {
