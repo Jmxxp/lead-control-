@@ -1271,6 +1271,8 @@ body.is-dark .bar-track {
 
 .form-panel {
   display: grid;
+  align-content: start;
+  align-self: start;
   gap: 20px;
   padding: 24px;
 }
