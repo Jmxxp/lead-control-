@@ -51,6 +51,7 @@ as $$
 declare
   v_session record;
   v_value text;
+  v_sort_order integer;
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
@@ -63,18 +64,44 @@ begin
   end if;
 
   v_value := coalesce(nullif(btrim(coalesce(p_value, '')), ''), app_private.next_option_label(v_session.admin_user_id, p_group_key));
+  v_sort_order := coalesce((
+    select max(sort_order) + 10
+    from public.lead_options
+    where admin_user_id = v_session.admin_user_id
+      and group_key = p_group_key
+      and is_active = true
+  ), 10);
+
+  if exists (
+    select 1
+    from public.lead_options
+    where admin_user_id = v_session.admin_user_id
+      and group_key = p_group_key
+      and value = v_value
+      and is_active = true
+  ) then
+    raise exception 'Essa opcao ja existe.';
+  end if;
+
+  update public.lead_options
+  set
+    is_active = true,
+    sort_order = v_sort_order
+  where admin_user_id = v_session.admin_user_id
+    and group_key = p_group_key
+    and value = v_value
+    and is_active = false;
+
+  if found then
+    return true;
+  end if;
 
   insert into public.lead_options (admin_user_id, group_key, value, sort_order)
   values (
     v_session.admin_user_id,
     p_group_key,
     v_value,
-    coalesce((
-      select max(sort_order) + 10
-      from public.lead_options
-      where admin_user_id = v_session.admin_user_id
-        and group_key = p_group_key
-    ), 10)
+    v_sort_order
   );
 
   return true;
