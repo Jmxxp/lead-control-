@@ -67,6 +67,8 @@ let aiIsSending = false;
 let aiAbortController = null;
 let currentAiResponseMessage = null;
 let editingAiMessageIndex = null;
+let appointmentModalMode = "lead-form";
+let appointmentMonitorLeadId = null;
 const expandedAnalyticsSections = new Set();
 
 const $ = (selector) => document.querySelector(selector);
@@ -185,6 +187,12 @@ const editingIdInput = $("#editingId");
 const nameInput = $("#name");
 const phoneInput = $("#phone");
 const searchInput = $("#search");
+const appointmentMonitorToggle = $("#appointmentMonitorToggle");
+const appointmentMonitorBadge = $("#appointmentMonitorBadge");
+const appointmentMonitorPanel = $("#appointmentMonitorPanel");
+const appointmentMonitorEmpty = $("#appointmentMonitorEmpty");
+const appointmentMonitorList = $("#appointmentMonitorList");
+const appointmentMonitorMessage = $("#appointmentMonitorMessage");
 const filtersPanel = $("#filtersPanel");
 const toggleFiltersButton = $("#toggleFilters");
 const channelFilter = $("#channelFilter");
@@ -208,9 +216,11 @@ const appointmentModal = $("#appointmentModal");
 const appointmentClose = $("#appointmentClose");
 const appointmentCancel = $("#appointmentCancel");
 const appointmentForm = $("#appointmentForm");
+const appointmentTitle = $("#appointmentTitle");
 const appointmentDateInput = $("#appointmentDate");
 const appointmentTimeInput = $("#appointmentTime");
 const appointmentMessage = $("#appointmentMessage");
+const appointmentSubmit = $("#appointmentSubmit");
 const purchaseDetails = $("#purchaseDetails");
 const purchaseAmountInput = $("#purchaseAmount");
 const serviceOrderInput = $("#serviceOrder");
@@ -340,6 +350,8 @@ function bindEvents() {
   leadDetailsModal.addEventListener("click", (event) => {
     if (event.target === leadDetailsModal) closeLeadDetailsModal();
   });
+  appointmentMonitorToggle.addEventListener("click", toggleAppointmentMonitorPanel);
+  appointmentMonitorList.addEventListener("click", handleAppointmentMonitorClick);
   analyticsToggle.addEventListener("click", toggleAnalytics);
   analyticsToggleLabel.addEventListener("click", toggleAnalytics);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
@@ -551,6 +563,8 @@ function showAdminDashboard() {
   technicianForm.hidden = isTechnician;
   technicianListPanel.hidden = isTechnician;
   settingsButton.hidden = isTechnician;
+  appointmentMonitorToggle.hidden = true;
+  appointmentMonitorPanel.hidden = true;
   closeSettingsModal();
   backAdminButton.hidden = true;
   adminView.hidden = false;
@@ -567,6 +581,7 @@ function showStoreDashboard() {
   sessionRole.textContent = `Loja · ${activeStoreContext?.name || currentProfile.username}`;
   backAdminButton.hidden = true;
   settingsButton.hidden = true;
+  appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
   storeOptionsPanel.hidden = true;
@@ -861,6 +876,7 @@ function openStoreAsAdmin(storeId) {
   activeTechnicianContext = null;
   sessionRole.textContent = `Admin · ${store.name}`;
   backAdminButton.hidden = false;
+  appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
   adminView.hidden = true;
@@ -1066,6 +1082,10 @@ async function runConfirmedAction() {
 }
 
 function openAppointmentModal() {
+  appointmentModalMode = "lead-form";
+  appointmentMonitorLeadId = null;
+  appointmentTitle.textContent = "Data da visita";
+  appointmentSubmit.textContent = "Salvar data";
   selectedValues.scheduled = "Sim";
   clearAppointmentMessage();
   appointmentModal.hidden = false;
@@ -1076,22 +1096,49 @@ function openAppointmentModal() {
 }
 
 function closeAppointmentModal() {
+  const wasMonitorMode = appointmentModalMode === "monitor";
   appointmentModal.hidden = true;
   clearAppointmentMessage();
-  if (selectedValues.scheduled === "Sim" && !appointmentDateInput.value) {
+  if (appointmentModalMode === "lead-form" && selectedValues.scheduled === "Sim" && !appointmentDateInput.value) {
     selectedValues.scheduled = "";
     renderChoiceButtons();
   }
+  if (wasMonitorMode) {
+    appointmentDateInput.value = "";
+    appointmentTimeInput.value = "";
+  }
+  appointmentModalMode = "lead-form";
+  appointmentMonitorLeadId = null;
+  appointmentTitle.textContent = "Data da visita";
+  appointmentSubmit.textContent = "Salvar data";
   updateAppointmentDetailsVisibility();
   syncModalLock();
 }
 
-function handleAppointmentSubmit(event) {
+function openAppointmentMonitorModal(lead) {
+  appointmentModalMode = "monitor";
+  appointmentMonitorLeadId = lead.id;
+  appointmentTitle.textContent = "Reagendar visita";
+  appointmentSubmit.textContent = "Reagendar";
+  appointmentDateInput.value = "";
+  appointmentTimeInput.value = "";
+  clearAppointmentMessage();
+  appointmentModal.hidden = false;
+  syncModalLock();
+  requestAnimationFrame(() => appointmentDateInput.focus());
+}
+
+async function handleAppointmentSubmit(event) {
   event.preventDefault();
 
   if (!appointmentDateInput.value) {
     showAppointmentMessage("Informe a data da visita.");
     appointmentDateInput.focus();
+    return;
+  }
+
+  if (appointmentModalMode === "monitor") {
+    await rescheduleAppointmentMonitorLead();
     return;
   }
 
@@ -1101,6 +1148,36 @@ function handleAppointmentSubmit(event) {
   renderChoiceButtons();
   updateAppointmentDetailsVisibility();
   syncModalLock();
+}
+
+async function rescheduleAppointmentMonitorLead() {
+  const lead = leads.find((item) => item.id === appointmentMonitorLeadId);
+  if (!lead) return;
+
+  try {
+    setFormBusy(appointmentForm, true);
+    await authenticatedRpc("lc_upsert_lead", buildLeadUpsertPayload(lead, {
+      p_scheduled: "Sim",
+      p_scheduled_visit_date: appointmentDateInput.value,
+      p_scheduled_visit_time: appointmentTimeInput.value || null,
+      p_visited: "Não",
+    }));
+    appointmentModal.hidden = true;
+    appointmentModalMode = "lead-form";
+    appointmentMonitorLeadId = null;
+    appointmentDateInput.value = "";
+    appointmentTimeInput.value = "";
+    clearAppointmentMessage();
+    await refreshRemoteState();
+    renderAll();
+    showAppointmentMonitorMessage("Visita reagendada.", "success");
+    showAppNotification("Visita reagendada.");
+    syncModalLock();
+  } catch (error) {
+    showAppointmentMessage(readableError(error));
+  } finally {
+    setFormBusy(appointmentForm, false);
+  }
 }
 
 function showAppointmentMessage(message) {
@@ -1175,6 +1252,7 @@ function renderAll() {
   renderCustomLeadFilters();
   renderOptionsEditors();
   renderAdminDashboard();
+  renderAppointmentMonitor();
   renderLeadList();
   renderTodayCount();
 }
@@ -1293,6 +1371,121 @@ function renderLeadList() {
   $("#storeScheduled").textContent = countByValue(storeLeads, "scheduled", "Sim");
   $("#salesCount").textContent = countByValue(storeLeads, "bought", "Sim");
   $("#conversionRate").textContent = formatPercent(countByValue(storeLeads, "bought", "Sim"), storeLeads.length);
+}
+
+function renderAppointmentMonitor() {
+  if (!appointmentMonitorToggle || storeView.hidden) return;
+
+  const dueLeads = getDueAppointmentLeads();
+  const count = dueLeads.length;
+  appointmentMonitorBadge.textContent = count;
+  appointmentMonitorBadge.hidden = count === 0;
+  appointmentMonitorToggle.classList.toggle("has-notifications", count > 0);
+  appointmentMonitorToggle.setAttribute("aria-expanded", String(!appointmentMonitorPanel.hidden));
+  appointmentMonitorEmpty.hidden = count > 0;
+  appointmentMonitorList.innerHTML = dueLeads.map(renderAppointmentMonitorCard).join("");
+
+  if (count === 0 && !appointmentMonitorPanel.hidden) {
+    appointmentMonitorPanel.hidden = true;
+    appointmentMonitorToggle.setAttribute("aria-expanded", "false");
+  }
+}
+
+function renderAppointmentMonitorCard(lead) {
+  const scheduledLabel = getScheduledVisitLabel(lead) || formatDateInputValue(lead.scheduledVisitDate);
+  return `
+    <article class="appointment-monitor-card">
+      <div class="appointment-monitor-main">
+        <strong>${escapeHtml(lead.name)}</strong>
+        <span>${escapeHtml(lead.phone || "Telefone não informado")}</span>
+        <small>Agendado para ${escapeHtml(scheduledLabel || "-")}</small>
+      </div>
+      <div class="appointment-monitor-actions">
+        <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer">
+          <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+          WhatsApp
+        </a>
+        <button class="mini-button choice-yes" type="button" data-appointment-monitor-action="visited" data-lead-id="${lead.id}">
+          Veio
+        </button>
+        <button class="mini-button" type="button" data-appointment-monitor-action="reschedule" data-lead-id="${lead.id}">
+          Não veio / reagendar
+        </button>
+        <button class="mini-button view-button" type="button" data-appointment-monitor-action="edit" data-lead-id="${lead.id}">
+          Editar
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function getDueAppointmentLeads() {
+  const today = toLocalDateInput(new Date());
+  return getVisibleStoreLeads()
+    .filter((lead) =>
+      lead.scheduled === "Sim" &&
+      lead.scheduledVisitDate &&
+      lead.scheduledVisitDate < today &&
+      lead.visited !== "Sim"
+    )
+    .sort((a, b) => {
+      if (a.scheduledVisitDate !== b.scheduledVisitDate) {
+        return String(a.scheduledVisitDate).localeCompare(String(b.scheduledVisitDate));
+      }
+      return String(a.name).localeCompare(String(b.name), "pt-BR");
+    });
+}
+
+function toggleAppointmentMonitorPanel() {
+  appointmentMonitorPanel.hidden = !appointmentMonitorPanel.hidden;
+  appointmentMonitorToggle.setAttribute("aria-expanded", String(!appointmentMonitorPanel.hidden));
+  clearAppointmentMonitorMessage();
+}
+
+async function handleAppointmentMonitorClick(event) {
+  const button = event.target.closest("[data-appointment-monitor-action]");
+  if (!button) return;
+
+  const lead = leads.find((item) => item.id === button.dataset.leadId);
+  if (!lead) return;
+
+  const action = button.dataset.appointmentMonitorAction;
+  if (action === "visited") {
+    await markAppointmentLeadVisited(lead, button);
+  }
+  if (action === "reschedule") {
+    openAppointmentMonitorModal(lead);
+  }
+  if (action === "edit") {
+    guardUnsavedOptions(() => editLead(lead.id));
+  }
+}
+
+async function markAppointmentLeadVisited(lead, button) {
+  try {
+    button.disabled = true;
+    await authenticatedRpc("lc_upsert_lead", buildLeadUpsertPayload(lead, {
+      p_visited: "Sim",
+      p_bought: lead.bought || "Não",
+    }));
+    await refreshRemoteState();
+    renderAll();
+    showAppointmentMonitorMessage("Visita confirmada.", "success");
+    showAppNotification("Visita confirmada.");
+  } catch (error) {
+    showAppointmentMonitorMessage(readableError(error));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function showAppointmentMonitorMessage(message, type = "error") {
+  appointmentMonitorMessage.textContent = message;
+  appointmentMonitorMessage.classList.toggle("success", type === "success");
+}
+
+function clearAppointmentMonitorMessage() {
+  showAppointmentMonitorMessage("");
 }
 
 function openLeadDetailsModal(id) {
@@ -3907,6 +4100,44 @@ function buildCustomValuesPayload() {
     .filter((item) => item.value);
 }
 
+function buildLeadCustomValuesPayload(lead) {
+  return customCategories
+    .map((category) => ({
+      category_id: category.id,
+      value: lead.customValues[category.id] || "",
+    }))
+    .filter((item) => item.value);
+}
+
+function buildLeadUpsertPayload(lead, overrides = {}) {
+  const scheduled = overrides.p_scheduled ?? lead.scheduled;
+  const bought = overrides.p_bought ?? lead.bought;
+  return {
+    p_lead_id: lead.id,
+    p_name: lead.name,
+    p_phone: lead.phone,
+    p_channel: lead.channel,
+    p_campaign: lead.campaign,
+    p_conversation_start: lead.conversationStart,
+    p_conclusion: lead.conclusion,
+    p_scheduled: scheduled,
+    p_scheduled_visit_date: scheduled === "Sim"
+      ? (overrides.p_scheduled_visit_date ?? lead.scheduledVisitDate) || null
+      : null,
+    p_scheduled_visit_time: scheduled === "Sim"
+      ? (overrides.p_scheduled_visit_time ?? lead.scheduledVisitTime) || null
+      : null,
+    p_visited: overrides.p_visited ?? lead.visited,
+    p_bought: bought,
+    p_purchase_amount: bought === "Sim" ? lead.purchaseAmount : null,
+    p_service_order: bought === "Sim" ? lead.serviceOrder : null,
+    p_notes: lead.notes,
+    p_custom_values: buildLeadCustomValuesPayload(lead),
+    p_store_id: lead.storeId,
+    ...overrides,
+  };
+}
+
 function createDefaultOptionRecords() {
   return Object.fromEntries(
     optionGroups.map((group) => [
@@ -4034,6 +4265,13 @@ function formatPhone(value) {
 
 function toDateInput(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function toLocalDateInput(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatDateTime(value) {

@@ -1217,6 +1217,99 @@ body.is-dark .bar-track {
   align-items: stretch;
 }
 
+.appointment-monitor-toggle {
+  position: relative;
+}
+
+.appointment-monitor-toggle.has-notifications {
+  border-color: rgba(53, 216, 111, 0.7);
+  color: #ffffff;
+  background: linear-gradient(135deg, #35d86f, #16855f);
+  box-shadow:
+    0 0 0 4px rgba(53, 216, 111, 0.14),
+    0 0 28px rgba(53, 216, 111, 0.42),
+    0 14px 30px rgba(22, 133, 95, 0.28);
+  animation: appointment-glow 1.8s ease-in-out infinite;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--rose);
+  color: #ffffff;
+  padding: 0 7px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+@keyframes appointment-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+    transform: translateY(0);
+  }
+
+  50% {
+    filter: brightness(1.18);
+    transform: translateY(-1px);
+  }
+}
+
+.appointment-monitor-panel {
+  min-height: 0;
+  margin-bottom: 18px;
+}
+
+.appointment-monitor-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.appointment-monitor-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.appointment-monitor-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.appointment-monitor-main strong,
+.appointment-monitor-main span,
+.appointment-monitor-main small {
+  overflow-wrap: anywhere;
+}
+
+.appointment-monitor-main span,
+.appointment-monitor-main small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.appointment-monitor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .admin-view {
   display: block;
 }
@@ -3536,6 +3629,18 @@ body.is-dark .analytics-lead-delete {
 
   .analytics-lead-item {
     grid-template-columns: 1fr;
+  }
+
+  .appointment-monitor-card {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-monitor-actions {
+    justify-content: stretch;
+  }
+
+  .appointment-monitor-actions .mini-button {
+    flex: 1 1 150px;
   }
 
   .analytics-inspected-toggle,
