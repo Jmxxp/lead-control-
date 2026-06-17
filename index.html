@@ -20,10 +20,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260616-logo-1" />
     <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260616-logo-1" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260616-logo-1" />
-    <link rel="stylesheet" href="styles.css?v=20260616-appointment-monitor-2" />
+    <link rel="stylesheet" href="styles.css?v=20260617-contact-date-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260616-appointment-monitor-2" defer></script>
+    <script src="app.js?v=20260617-contact-date-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -235,7 +235,7 @@
                 <div id="analyticsCustomFilters" class="analytics-custom-filters"></div>
 
                 <div class="field analytics-mode-field">
-                  <span>Data</span>
+                  <span>Data do contato</span>
                   <div class="segmented-control" role="group" aria-label="Tipo de data">
                     <button class="segment-button is-active" type="button" data-analytics-date-mode="single">
                       Data específica
@@ -565,20 +565,25 @@
                 <label class="field">
                   <span>Nome</span>
                   <input id="name" name="name" type="text" placeholder="Nome do lead" required />
-              </label>
+                </label>
 
-              <label class="field">
-                <span>Telefone</span>
-                <input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  inputmode="tel"
-                  placeholder="(00) 00000-0000"
-                  required
-                />
-              </label>
-            </div>
+                <label class="field">
+                  <span>Telefone</span>
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    inputmode="tel"
+                    placeholder="(00) 00000-0000"
+                    required
+                  />
+                </label>
+
+                <label class="field">
+                  <span>Data do contato</span>
+                  <input id="contactDate" name="contactDate" type="date" />
+                </label>
+              </div>
 
             <div class="choice-section lead-entry">
               <div class="section-title">
@@ -750,12 +755,12 @@
               <div id="customLeadFilters" class="custom-lead-filters"></div>
 
               <label class="field">
-                <span>Data inicial</span>
+                <span>Contato inicial</span>
                 <input id="startDateFilter" type="date" />
               </label>
 
               <label class="field">
-                <span>Data final</span>
+                <span>Contato final</span>
                 <input id="endDateFilter" type="date" />
               </label>
 

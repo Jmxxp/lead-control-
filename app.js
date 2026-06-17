@@ -186,6 +186,7 @@ const toggleOptionsEditButton = $("#toggleOptionsEdit");
 const editingIdInput = $("#editingId");
 const nameInput = $("#name");
 const phoneInput = $("#phone");
+const contactDateInput = $("#contactDate");
 const searchInput = $("#search");
 const appointmentMonitorToggle = $("#appointmentMonitorToggle");
 const appointmentMonitorBadge = $("#appointmentMonitorBadge");
@@ -918,6 +919,7 @@ async function handleLeadSubmit(event) {
     p_lead_id: editingIdInput.value || null,
     p_name: nameInput.value.trim(),
     p_phone: phoneInput.value.trim(),
+    p_contact_date: contactDateInput.value || null,
     p_channel: selectedValues.channel,
     p_campaign: selectedValues.campaign,
     p_conversation_start: selectedValues.conversationStart,
@@ -996,6 +998,7 @@ function editLead(id) {
   editingIdInput.value = lead.id;
   nameInput.value = lead.name;
   phoneInput.value = lead.phone;
+  contactDateInput.value = lead.contactDate || "";
   selectedValues = {
     channel: lead.channel || "",
     campaign: lead.campaign || "",
@@ -1195,6 +1198,7 @@ function resetLeadForm() {
   selectedCustomValues = {};
   appointmentDateInput.value = "";
   appointmentTimeInput.value = "";
+  contactDateInput.value = "";
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
   leadNotesInput.value = "";
@@ -1340,6 +1344,7 @@ function renderLeadList() {
           </div>
           <div class="lead-tags">
             ${renderTag(lead.channel)}
+            ${renderTag(formatLeadContactDate(lead) ? `Contato: ${formatLeadContactDate(lead)}` : "")}
             ${renderTag(lead.campaign)}
             ${renderTag(lead.conclusion)}
             ${renderTag(lead.scheduled ? `Agendou: ${lead.scheduled}` : "")}
@@ -1502,6 +1507,7 @@ function openLeadDetailsModal(id) {
       <h3>Contato</h3>
       <div class="lead-details-grid">
         ${renderLeadDetailItem("Telefone", lead.phone)}
+        ${renderLeadDetailItem("Data do contato", formatLeadContactDate(lead))}
         ${renderLeadDetailItem("Registrado em", formatDateTime(lead.createdAt))}
       </div>
     </div>
@@ -2457,7 +2463,8 @@ function buildAnalyticsRanking(rows, sectionOrKey) {
     if (lead.visited === "Sim") current.visited += 1;
     if (lead.scheduled === "Sim") current.scheduled += 1;
     if (lead.bought === "Sim") current.bought += 1;
-    if (!current.latestAt || lead.createdAt > current.latestAt) current.latestAt = lead.createdAt;
+    const leadDate = getLeadSortDate(lead);
+    if (!current.latestAt || leadDate > current.latestAt) current.latestAt = leadDate;
     groups.set(value, current);
   });
 
@@ -2518,7 +2525,7 @@ function openAnalyticsInspector(sectionId, value) {
   const filtered = getAnalyticsLeads();
   const categoryLeads = filtered
     .filter((lead) => getAnalyticsGroupValue(lead, section.key) === value)
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    .sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
 
   analyticsInspectorEyebrow.textContent = section.label;
   analyticsInspectorTitle.textContent = value;
@@ -2542,7 +2549,7 @@ function closeAnalyticsInspector() {
 function exportLeadsToExcel() {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
 
-  const exportRows = [...leads].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const exportRows = [...leads].sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
   if (!exportRows.length) {
     showAppNotification("Nenhum lead para exportar.", "error");
     return;
@@ -2623,6 +2630,7 @@ function buildLeadsExcelWorkbook(exportRows) {
 function buildLeadExportColumns() {
   return [
     { header: "#", value: (_lead, index) => index + 1 },
+    { header: "Data do contato", className: "date", value: (lead) => formatLeadContactDate(lead) },
     { header: "Registrado em", className: "date", value: (lead) => formatDateTime(lead.createdAt) },
     { header: "Loja", value: (lead) => lead.storeName },
     { header: "Nome do lead", value: (lead) => lead.name },
@@ -3292,6 +3300,7 @@ function buildAnalyticsFilterSnapshot() {
     visita: getSelectedOptionText(analyticsVisitedFilter),
     agendamento: getSelectedOptionText(analyticsScheduledFilter),
     compra: getSelectedOptionText(analyticsBoughtFilter),
+    campo_data: "data_do_contato",
     data: mode === "single"
       ? { modo: "data_especifica", dia: analyticsSingleDate.value || null }
       : { modo: "periodo", inicio: analyticsStartDate.value || null, fim: analyticsEndDate.value || null },
@@ -3308,6 +3317,8 @@ function leadToAiRecord(lead) {
     nome: lead.name,
     telefone: lead.phone,
     loja: lead.storeName,
+    data_do_contato: lead.contactDate || null,
+    data_do_contato_formatada: formatLeadContactDate(lead) || null,
     canal: lead.channel || null,
     campanha: lead.campaign || null,
     inicio_da_conversa: lead.conversationStart || null,
@@ -3695,6 +3706,8 @@ async function handleAnalyticsInspectorClick(event) {
 
 function renderAnalyticsLeadRow(lead) {
   const createdAt = formatDateTime(lead.createdAt);
+  const contactDate = formatLeadContactDate(lead);
+  const dateTimeValue = getLeadDateValue(lead) || lead.createdAt;
   return `
     <article class="analytics-lead-item${lead.inspected ? " is-inspected" : ""}">
       <button class="analytics-lead-open" type="button" data-inspector-lead-id="${lead.id}">
@@ -3704,7 +3717,7 @@ function renderAnalyticsLeadRow(lead) {
         <span class="analytics-lead-identity">
           <strong>${escapeHtml(lead.name)}</strong>
           <span>${escapeHtml(lead.storeName || "Loja não informada")}</span>
-          <time datetime="${escapeHtml(lead.createdAt)}">${createdAt}</time>
+          <time datetime="${escapeHtml(dateTimeValue)}">${escapeHtml(contactDate ? `Contato: ${contactDate}` : createdAt)}</time>
         </span>
       </button>
       <label class="analytics-inspected-toggle">
@@ -3777,9 +3790,9 @@ function getFilteredLeads() {
       matchesFilter(lead.bought || "sem-resposta", boughtFilter.value);
     const matchesCustomFilters = getCustomFilterValues(customLeadFilters)
       .every(({ categoryId, value }) => matchesFilter(lead.customValues[categoryId] || "sem-resposta", value));
-    const createdDate = lead.createdAt.slice(0, 10);
-    const matchesStart = !startDateFilter.value || createdDate >= startDateFilter.value;
-    const matchesEnd = !endDateFilter.value || createdDate <= endDateFilter.value;
+    const contactDate = getLeadDateValue(lead);
+    const matchesStart = !startDateFilter.value || contactDate >= startDateFilter.value;
+    const matchesEnd = !endDateFilter.value || contactDate <= endDateFilter.value;
 
     return matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
   });
@@ -3804,6 +3817,7 @@ function matchesLeadSearch(lead, search) {
     lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "",
     lead.serviceOrder,
     lead.notes,
+    formatLeadContactDate(lead),
     formatDateTime(lead.createdAt),
     ...customValues,
   ];
@@ -3847,11 +3861,11 @@ function getAnalyticsLeads() {
 
   const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
   if (mode === "single" && analyticsSingleDate.value) {
-    result = result.filter((lead) => lead.createdAt.slice(0, 10) === analyticsSingleDate.value);
+    result = result.filter((lead) => getLeadDateValue(lead) === analyticsSingleDate.value);
   }
   if (mode === "range") {
-    if (analyticsStartDate.value) result = result.filter((lead) => lead.createdAt.slice(0, 10) >= analyticsStartDate.value);
-    if (analyticsEndDate.value) result = result.filter((lead) => lead.createdAt.slice(0, 10) <= analyticsEndDate.value);
+    if (analyticsStartDate.value) result = result.filter((lead) => getLeadDateValue(lead) >= analyticsStartDate.value);
+    if (analyticsEndDate.value) result = result.filter((lead) => getLeadDateValue(lead) <= analyticsEndDate.value);
   }
 
   return result;
@@ -4012,6 +4026,7 @@ function mapLeadRow(row) {
     scheduled: row.scheduled || "",
     scheduledVisitDate: row.scheduled_visit_date || "",
     scheduledVisitTime: normalizeTimeValue(row.scheduled_visit_time),
+    contactDate: row.contact_date || row.created_at?.slice(0, 10) || "",
     visited: row.visited || "",
     bought: row.bought || "",
     purchaseAmount: row.purchase_amount === null || row.purchase_amount === undefined ? null : Number(row.purchase_amount),
@@ -4116,6 +4131,7 @@ function buildLeadUpsertPayload(lead, overrides = {}) {
     p_lead_id: lead.id,
     p_name: lead.name,
     p_phone: lead.phone,
+    p_contact_date: (overrides.p_contact_date ?? lead.contactDate) || null,
     p_channel: lead.channel,
     p_campaign: lead.campaign,
     p_conversation_start: lead.conversationStart,
@@ -4292,6 +4308,20 @@ function formatDateInputValue(value) {
   const [year, month, day] = String(value).slice(0, 10).split("-");
   if (!year || !month || !day) return "";
   return `${day}/${month}/${year}`;
+}
+
+function getLeadDateValue(lead) {
+  return lead?.contactDate || lead?.createdAt?.slice(0, 10) || "";
+}
+
+function getLeadSortDate(lead) {
+  const date = getLeadDateValue(lead);
+  const createdAt = lead?.createdAt || "";
+  return date && createdAt ? `${date}T${createdAt.slice(11)}` : date || createdAt;
+}
+
+function formatLeadContactDate(lead) {
+  return formatDateInputValue(getLeadDateValue(lead));
 }
 
 function getScheduledVisitLabel(lead) {

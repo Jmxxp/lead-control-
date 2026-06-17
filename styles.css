@@ -1409,7 +1409,7 @@ body.is-dark .bar-track {
 }
 
 .field-grid {
-  grid-template-columns: 1fr 0.9fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(180px, 0.62fr);
 }
 
 .appointment-details,
