@@ -70,6 +70,19 @@ let editingAiMessageIndex = null;
 let appointmentModalMode = "lead-form";
 let appointmentMonitorLeadId = null;
 const expandedAnalyticsSections = new Set();
+const visibleAnalyticsRankingSections = new Set();
+const analyticsPiePalette = [
+  "#00d084",
+  "#2f8cff",
+  "#ff9f0a",
+  "#ff3b6b",
+  "#8b5cf6",
+  "#12d6d6",
+  "#ff6b35",
+  "#a3e635",
+  "#facc15",
+  "#38bdf8",
+];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -1709,7 +1722,7 @@ function renderCustomFilters(container, firstLabel) {
         .join("");
       return `
         <label class="field">
-          <span>${escapeHtml(category.name)}</span>
+          <span><i class="fa-solid fa-tags" aria-hidden="true"></i>${escapeHtml(category.name)}</span>
           <select data-custom-filter="${category.id}">
             <option value="">${firstLabel}</option>
             ${optionsHtml}
@@ -2343,13 +2356,11 @@ function renderAnalyticsCategoryCards(section, rows) {
 
   const ranking = buildAnalyticsRanking(rows, section);
   const total = rows.length;
-  const isExpanded = expandedAnalyticsSections.has(section.id);
-  const visibleLimit = 4;
-  const visibleRanking = isExpanded ? ranking : ranking.slice(0, visibleLimit);
-  const hasHiddenItems = ranking.length > visibleLimit;
+  const activeRanking = ranking.filter((item) => item.count > 0);
+  const isRankingVisible = visibleAnalyticsRankingSections.has(section.id);
 
-  summary.innerHTML = ranking.length
-    ? `<span><b>${ranking.length}</b> categorias</span><span><b>${total}</b> ${total === 1 ? "lead" : "leads"}</span>`
+  summary.innerHTML = total
+    ? `<span><b>${activeRanking.length}</b> categorias</span><span><b>${total}</b> ${total === 1 ? "lead" : "leads"}</span>`
     : "<span>Sem registros no filtro atual</span>";
 
   if (!ranking.length) {
@@ -2362,46 +2373,170 @@ function renderAnalyticsCategoryCards(section, rows) {
     return;
   }
 
-  container.innerHTML = visibleRanking
-    .map((item) => {
-      return `
-        <article class="analytics-category-card">
-          <div class="analytics-lead-count-badge">
-            <b>${item.count}</b>
-            <span>${item.count === 1 ? "lead" : "leads"}</span>
+  container.innerHTML = `
+    ${renderAnalyticsPie(section, activeRanking, total, isRankingVisible)}
+    ${isRankingVisible ? renderAnalyticsRankingPanel(section, ranking) : ""}
+  `;
+}
+
+function renderAnalyticsPie(section, ranking, total, isRankingVisible) {
+  const topItem = ranking[0];
+  const gradient = buildAnalyticsPieGradient(ranking, total);
+  const hasData = total > 0 && ranking.length > 0;
+  const topLabel = topItem
+    ? `${topItem.value} lidera com ${formatPercent(topItem.count, total)}`
+    : "Sem dados para comparar";
+
+  return `
+    <div class="analytics-pie-layout${hasData ? "" : " is-empty"}">
+      <div class="analytics-chart-top">
+        <div>
+          <span>Participação por leads</span>
+          <strong>${escapeHtml(topLabel)}</strong>
+        </div>
+      </div>
+      ${hasData
+        ? `
+          <div class="analytics-pie-body">
+            <div class="analytics-pie-visual">
+              <div class="analytics-pie-wrap">
+                <div
+                  class="analytics-pie"
+                  style="--analytics-pie:${gradient}"
+                  role="img"
+                  aria-label="${escapeHtml(`Gráfico de ${section.label} com ${total} ${total === 1 ? "lead" : "leads"}`)}"
+                ></div>
+              </div>
+              <button
+                class="analytics-ranking-toggle${isRankingVisible ? " is-active" : ""}"
+                type="button"
+                data-analytics-ranking-section="${escapeHtml(section.id)}"
+                aria-expanded="${isRankingVisible}"
+              >
+                <i class="fa-solid fa-ranking-star" aria-hidden="true"></i>
+                <span>Ranking</span>
+              </button>
+            </div>
+            <div class="analytics-pie-legend">
+              ${ranking.map((item, index) => renderAnalyticsLegendRow(section, item, index, total)).join("")}
+            </div>
           </div>
-          <div class="analytics-category-main">
-            <strong>${escapeHtml(item.value)}</strong>
+        `
+        : `
+          <div class="analytics-pie-empty">
+            <strong>Sem registros</strong>
+            <span>Ajuste os filtros acima para carregar o gráfico.</span>
           </div>
-          <div class="analytics-category-meta">
-            <span>${item.visited} visitas</span>
-            <span>${item.scheduled} agend.</span>
-            <span>${item.bought} compras</span>
-          </div>
+        `}
+    </div>
+  `;
+}
+
+function renderAnalyticsLegendRow(section, item, index, total) {
+  const color = getAnalyticsPieColor(index);
+  return `
+    <div class="analytics-legend-row">
+      <i style="--legend-color:${color}" aria-hidden="true"></i>
+      <div>
+        <strong>${escapeHtml(item.value)}</strong>
+        <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · ${formatPercent(item.count, total)}</span>
+      </div>
+      <button
+        class="analytics-legend-list-button"
+        type="button"
+        data-analytics-inspect
+        data-analytics-section="${escapeHtml(section.id)}"
+        data-analytics-value="${escapeHtml(item.value)}"
+        aria-label="${escapeHtml(`Listar leads de ${item.value}`)}"
+        title="Listar"
+      >
+        <i class="fa-solid fa-list-ul" aria-hidden="true"></i>
+      </button>
+    </div>
+  `;
+}
+
+function renderAnalyticsRankingPanel(section, ranking) {
+  const isExpanded = expandedAnalyticsSections.has(section.id);
+  const visibleLimit = 4;
+  const visibleRanking = isExpanded ? ranking : ranking.slice(0, visibleLimit);
+  const hasHiddenItems = ranking.length > visibleLimit;
+
+  return `
+    <div class="analytics-ranking-panel">
+      <div class="analytics-ranking-heading">
+        <span>Ranking detalhado</span>
+        <strong>${ranking.length} ${ranking.length === 1 ? "item" : "itens"}</strong>
+      </div>
+      ${visibleRanking.map((item) => renderAnalyticsRankingCard(section, item)).join("")}
+      ${hasHiddenItems
+        ? `
           <button
-            class="mini-button analytics-inspect-button"
+            class="analytics-expand-button"
             type="button"
-            data-analytics-inspect
-            data-analytics-section="${section.id}"
-            data-analytics-value="${escapeHtml(item.value)}"
+            data-analytics-expand-section="${escapeHtml(section.id)}"
           >
-            Listar
+            <i class="fa-solid ${isExpanded ? "fa-chevron-up" : "fa-chevron-down"}" aria-hidden="true"></i>
+            ${isExpanded ? "Recolher ranking" : `Ver todos (${ranking.length})`}
           </button>
-        </article>
-      `;
-    })
-    .join("") + (hasHiddenItems
-      ? `
-        <button
-          class="analytics-expand-button"
-          type="button"
-          data-analytics-expand-section="${escapeHtml(section.id)}"
-        >
-          <i class="fa-solid ${isExpanded ? "fa-chevron-up" : "fa-chevron-down"}" aria-hidden="true"></i>
-          ${isExpanded ? "Recolher ranking" : `Ver todos (${ranking.length})`}
-        </button>
-      `
-      : "");
+        `
+        : ""}
+    </div>
+  `;
+}
+
+function renderAnalyticsRankingCard(section, item) {
+  return `
+    <article class="analytics-category-card">
+      <div class="analytics-lead-count-badge">
+        <b>${item.count}</b>
+        <span>${item.count === 1 ? "lead" : "leads"}</span>
+      </div>
+      <div class="analytics-category-main">
+        <strong>${escapeHtml(item.value)}</strong>
+      </div>
+      <div class="analytics-category-meta">
+        <span>${item.visited} visitas</span>
+        <span>${item.scheduled} agend.</span>
+        <span>${item.bought} compras</span>
+      </div>
+      <button
+        class="mini-button analytics-inspect-button"
+        type="button"
+        data-analytics-inspect
+        data-analytics-section="${escapeHtml(section.id)}"
+        data-analytics-value="${escapeHtml(item.value)}"
+      >
+        Listar
+      </button>
+    </article>
+  `;
+}
+
+function buildAnalyticsPieGradient(ranking, total) {
+  if (!ranking.length || total <= 0) {
+    return "conic-gradient(from -90deg, #d7d7d7 0% 100%)";
+  }
+
+  let cursor = 0;
+  const stops = ranking.map((item, index) => {
+    const start = cursor;
+    const end = index === ranking.length - 1
+      ? 100
+      : cursor + (item.count / total) * 100;
+    cursor = end;
+    return `${getAnalyticsPieColor(index)} ${formatCssPercent(start)}% ${formatCssPercent(end)}%`;
+  });
+
+  return `conic-gradient(from -90deg, ${stops.join(", ")})`;
+}
+
+function getAnalyticsPieColor(index) {
+  return analyticsPiePalette[index % analyticsPiePalette.length];
+}
+
+function formatCssPercent(value) {
+  return Math.max(0, Math.min(100, value)).toFixed(3).replace(/\.?0+$/, "");
 }
 
 function renderCustomAnalyticsSections(rows) {
@@ -2501,6 +2636,18 @@ function getAnalyticsGroupValue(lead, key) {
 }
 
 function handleAnalyticsClick(event) {
+  const rankingButton = event.target.closest("[data-analytics-ranking-section]");
+  if (rankingButton) {
+    const sectionId = rankingButton.dataset.analyticsRankingSection;
+    if (visibleAnalyticsRankingSections.has(sectionId)) {
+      visibleAnalyticsRankingSections.delete(sectionId);
+    } else {
+      visibleAnalyticsRankingSections.add(sectionId);
+    }
+    renderAdminAnalytics();
+    return;
+  }
+
   const expandButton = event.target.closest("[data-analytics-expand-section]");
   if (expandButton) {
     const sectionId = expandButton.dataset.analyticsExpandSection;

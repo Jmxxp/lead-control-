@@ -8,7 +8,11 @@ alter table public.leads
   add column if not exists contact_date date;
 
 update public.leads
-set contact_date = coalesce(contact_date, (timezone('America/Sao_Paulo', created_at))::date, (timezone('America/Sao_Paulo', now()))::date)
+set contact_date = coalesce(
+  contact_date,
+  (timezone('America/Sao_Paulo', created_at))::date,
+  (timezone('America/Sao_Paulo', now()))::date
+)x
 where contact_date is null;
 
 alter table public.leads
