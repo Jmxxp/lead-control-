@@ -148,8 +148,6 @@ const storeEmptyState = $("#storeEmptyState");
 const storeList = $("#storeList");
 const adminOptionsList = $("#adminOptionsList");
 const adminOptionsMessage = $("#adminOptionsMessage");
-const analyticsToggle = $("#analyticsToggle");
-const analyticsToggleLabel = $("#analyticsToggleLabel");
 const analyticsContent = $("#analyticsContent");
 const analyticsStoreFilter = $("#analyticsStoreFilter");
 const analyticsChannelFilter = $("#analyticsChannelFilter");
@@ -374,8 +372,6 @@ function bindEvents() {
   });
   appointmentMonitorToggle.addEventListener("click", toggleAppointmentMonitorPanel);
   appointmentMonitorList.addEventListener("click", handleAppointmentMonitorClick);
-  analyticsToggle.addEventListener("click", toggleAnalytics);
-  analyticsToggleLabel.addEventListener("click", toggleAnalytics);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
   aiInsightsButton.addEventListener("click", openAiChat);
   analyticsChartsButton.addEventListener("click", toggleAnalyticsChartsMode);
@@ -2763,7 +2759,8 @@ function renderAnalyticsLineChart(section, values, currentRows, previousRows, cu
   const bottom = 238;
   const width = right - left;
   const height = bottom - top;
-  const tickEvery = Math.max(1, Math.ceil(buckets.length / 6));
+  const chartMinWidth = Math.max(760, buckets.length * 54);
+  const xLabelSize = buckets.length > 24 ? 8 : buckets.length > 16 ? 9 : 10;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
     const value = Math.round(max * ratio);
     const y = bottom - ratio * height;
@@ -2784,15 +2781,14 @@ function renderAnalyticsLineChart(section, values, currentRows, previousRows, cu
       </div>
 
       <div class="analytics-line-chart-wrap">
-        <svg class="analytics-line-chart" viewBox="0 0 850 280" role="img" aria-label="${escapeHtml(`Gráfico de linhas de ${section.label}`)}">
+        <svg class="analytics-line-chart" style="min-width:${chartMinWidth}px" viewBox="0 0 850 280" role="img" aria-label="${escapeHtml(`Gráfico de linhas de ${section.label}`)}">
           ${yTicks.map((tick) => `
             <line x1="${left}" y1="${tick.y}" x2="${right}" y2="${tick.y}" class="analytics-chart-grid-line"></line>
             <text x="12" y="${tick.y + 4}" class="analytics-chart-axis-label">${tick.value}</text>
           `).join("")}
           ${buckets.map((bucket, index) => {
-            if (index % tickEvery !== 0 && index !== buckets.length - 1) return "";
             const x = buckets.length === 1 ? left + width / 2 : left + (index / (buckets.length - 1)) * width;
-            return `<text x="${x}" y="270" class="analytics-chart-axis-label is-x">${escapeHtml(bucket.label)}</text>`;
+            return `<text x="${x}" y="270" style="font-size:${xLabelSize}px" class="analytics-chart-axis-label is-x">${escapeHtml(bucket.label)}</text>`;
           }).join("")}
           ${series.map((item) => {
             const points = getAnalyticsLinePoints(item.counts, max, left, width, top, height);
@@ -3067,6 +3063,9 @@ function syncAnalyticsViewMode() {
   analyticsChartsPanel.hidden = !analyticsChartsVisible;
   analyticsChartsButton.classList.toggle("is-active", analyticsChartsVisible);
   analyticsChartsButton.setAttribute("aria-pressed", String(analyticsChartsVisible));
+  analyticsChartsButton.innerHTML = analyticsChartsVisible
+    ? '<i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Geral</span>'
+    : '<i class="fa-solid fa-chart-simple" aria-hidden="true"></i><span>Gráficos</span>';
 }
 
 function handleAnalyticsChartInput(event) {
@@ -4482,14 +4481,6 @@ function getActiveStore() {
     return activeStoreContext || stores.find((store) => store.id === currentProfile.storeId) || null;
   }
   return activeStoreContext;
-}
-
-function toggleAnalytics() {
-  analyticsContent.hidden = !analyticsContent.hidden;
-  analyticsActions.hidden = analyticsContent.hidden;
-  analyticsToggle.setAttribute("aria-expanded", String(!analyticsContent.hidden));
-  analyticsToggleLabel.setAttribute("aria-expanded", String(!analyticsContent.hidden));
-  analyticsToggleLabel.textContent = analyticsContent.hidden ? "Mostrar análise" : "Ocultar análise";
 }
 
 function setAnalyticsDateMode(mode) {

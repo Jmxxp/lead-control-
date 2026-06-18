@@ -419,7 +419,7 @@ body.is-dark .analytics-panel {
 
 .analytics-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
   align-items: start;
   padding-right: 24px;
@@ -456,39 +456,6 @@ body.is-dark .analytics-panel {
 .analytics-toggle strong {
   font-size: 1.25rem;
   line-height: 1.18;
-}
-
-#analyticsToggleLabel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  align-self: start;
-  min-width: 132px;
-  min-height: 46px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--green-dark);
-  margin-top: 22px;
-  padding: 0 14px;
-  font-size: 0.9rem;
-  font-weight: 900;
-  line-height: 1.15;
-  text-align: center;
-  cursor: pointer;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease;
-}
-
-#analyticsToggleLabel:hover,
-#analyticsToggleLabel:focus-visible {
-  transform: translateY(-1px);
-  border-color: rgba(40, 194, 143, 0.34);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.14);
 }
 
 .analytics-ai-row {
@@ -4370,11 +4337,6 @@ body.is-dark .analytics-lead-delete {
   .analytics-ai-row {
     justify-content: stretch;
     padding: 0 18px 18px;
-  }
-
-  #analyticsToggleLabel {
-    width: calc(100% - 36px);
-    margin: 0 18px 18px;
   }
 
   .ai-insights-button,

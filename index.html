@@ -20,10 +20,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260616-logo-1" />
     <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260616-logo-1" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260616-logo-1" />
-    <link rel="stylesheet" href="styles.css?v=20260618-charts-mode-2" />
+    <link rel="stylesheet" href="styles.css?v=20260618-always-open-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260618-charts-mode-2" defer></script>
+    <script src="app.js?v=20260618-always-open-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -147,20 +147,14 @@
 
           <section class="analytics-panel" aria-label="Análise das campanhas">
             <div class="analytics-toolbar">
-              <button
-                class="analytics-toggle"
-                type="button"
-                id="analyticsToggle"
-                aria-expanded="false"
-                aria-controls="analyticsContent"
-              >
+              <div class="analytics-toggle" id="analyticsToggle">
                 <span>
                   <small>Inteligência comercial</small>
                   <strong>Métricas e rankings das campanhas</strong>
                 </span>
-              </button>
+              </div>
 
-              <div class="analytics-ai-row" hidden>
+              <div class="analytics-ai-row">
                 <button class="excel-export-button" type="button" id="exportLeadsButton">
                   <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
                   <span>Exportar Excel</span>
@@ -174,18 +168,9 @@
                   <span>Gráficos</span>
                 </button>
               </div>
-              <button
-                class="analytics-toggle-label"
-                type="button"
-                id="analyticsToggleLabel"
-                aria-expanded="false"
-                aria-controls="analyticsContent"
-              >
-                Mostrar análise
-              </button>
             </div>
 
-            <div id="analyticsContent" class="analytics-content" hidden>
+            <div id="analyticsContent" class="analytics-content">
               <div class="analytics-controls">
                 <label class="field">
                   <span><i class="fa-solid fa-store" aria-hidden="true"></i>Loja</span>
