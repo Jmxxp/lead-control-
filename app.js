@@ -71,7 +71,7 @@ let appointmentModalMode = "lead-form";
 let appointmentMonitorLeadId = null;
 const expandedAnalyticsSections = new Set();
 let analyticsChartsVisible = false;
-let analyticsChartType = "bar";
+let analyticsChartType = "line";
 let analyticsChartSectionId = "campaign";
 let analyticsChartValue = "";
 let analyticsComparePrevious = false;
@@ -2609,9 +2609,9 @@ function renderAnalyticsChartsPanel() {
     : [];
   const values = getAnalyticsChartValues(section, currentRows, previousRows);
 
-  if (analyticsChartType !== "line" && analyticsChartType !== "bar") analyticsChartType = "bar";
-  if (analyticsChartType === "bar" && (!analyticsChartValue || !values.some((item) => item.value === analyticsChartValue))) {
-    analyticsChartValue = values[0]?.value || "";
+  if (analyticsChartType !== "line" && analyticsChartType !== "bar") analyticsChartType = "line";
+  if (analyticsChartType === "bar" && analyticsChartValue && !values.some((item) => item.value === analyticsChartValue)) {
+    analyticsChartValue = "";
   }
 
   const chartHtml = analyticsChartType === "line"
@@ -2640,13 +2640,13 @@ function renderAnalyticsChartsPanel() {
         </label>
 
         <div class="field analytics-chart-type-field">
-          <span><i class="fa-solid fa-chart-column" aria-hidden="true"></i>Modelo</span>
+          <span><i class="fa-solid fa-chart-line" aria-hidden="true"></i>Modelo</span>
           <div class="segmented-control analytics-chart-type-toggle" role="group" aria-label="Modelo do gráfico">
-            <button class="segment-button${analyticsChartType === "bar" ? " is-active" : ""}" type="button" data-analytics-chart-type="bar">
-              Barras
-            </button>
             <button class="segment-button${analyticsChartType === "line" ? " is-active" : ""}" type="button" data-analytics-chart-type="line">
               Linhas
+            </button>
+            <button class="segment-button${analyticsChartType === "bar" ? " is-active" : ""}" type="button" data-analytics-chart-type="bar">
+              Barras
             </button>
           </div>
         </div>
@@ -2655,7 +2655,7 @@ function renderAnalyticsChartsPanel() {
           <span><i class="fa-solid fa-tag" aria-hidden="true"></i>Subcategoria</span>
           <select data-analytics-chart-value ${values.length ? "" : "disabled"}>
             ${values.length
-              ? values.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === analyticsChartValue ? "selected" : ""}>${escapeHtml(item.value)}</option>`).join("")
+              ? `<option value="">Escolha uma subcategoria</option>` + values.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === analyticsChartValue ? "selected" : ""}>${escapeHtml(item.value)}</option>`).join("")
               : '<option value="">Sem dados</option>'}
           </select>
         </label>
@@ -2693,8 +2693,8 @@ function renderAnalyticsBarChart(section, value, currentRows, previousRows, curr
   if (!value) {
     return `
       <div class="analytics-chart-empty">
-        <strong>Sem subcategoria</strong>
-        <span>Escolha outra categoria ou ajuste o período para montar o gráfico.</span>
+        <strong>Escolha uma subcategoria</strong>
+        <span>No gráfico de barras, selecione exatamente uma subcategoria para analisar por período.</span>
       </div>
     `;
   }
@@ -3055,7 +3055,7 @@ function getAnalyticsGroupValue(lead, key) {
 
 function toggleAnalyticsChartsMode() {
   analyticsChartsVisible = !analyticsChartsVisible;
-  if (analyticsChartsVisible) analyticsChartType = analyticsChartType || "bar";
+  if (analyticsChartsVisible) analyticsChartType = analyticsChartType || "line";
   renderAnalyticsChartsPanel();
   syncAnalyticsViewMode();
 }
@@ -3089,6 +3089,7 @@ function handleAnalyticsChartClick(event) {
   const typeButton = event.target.closest("[data-analytics-chart-type]");
   if (typeButton) {
     analyticsChartType = typeButton.dataset.analyticsChartType;
+    if (analyticsChartType === "bar") analyticsChartValue = "";
     renderAnalyticsChartsPanel();
     return;
   }

@@ -508,60 +508,68 @@ body.is-dark .analytics-panel {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 46px;
+  min-height: 48px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--radius);
   background:
-    linear-gradient(135deg, #7c3aed 0%, #2563eb 46%, #06b6d4 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.045)),
+    #202020;
   color: #ffffff;
-  padding: 0 18px;
+  padding: 0 16px;
   font-weight: 900;
+  letter-spacing: 0;
   transition:
     transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
     box-shadow 160ms ease,
     filter 160ms ease;
 }
 
 .ai-insights-button {
-  border-color: rgba(255, 255, 255, 0.34);
+  border-color: rgba(34, 211, 164, 0.32);
   background:
-    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.3), transparent 30%),
-    linear-gradient(135deg, #0c0c0c 0%, #115f48 42%, #22d3a4 100%);
+    linear-gradient(180deg, rgba(34, 211, 164, 0.18), rgba(34, 211, 164, 0.07)),
+    #171717;
+  color: #f6fffb;
   box-shadow:
-    0 18px 42px rgba(22, 133, 95, 0.32),
-    0 0 30px rgba(34, 211, 164, 0.14),
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+    0 14px 30px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(34, 211, 164, 0.1) inset;
 }
 
-.ai-insights-button i {
+.ai-insights-button i,
+.analytics-charts-button i {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .analytics-charts-button {
-  border-color: rgba(47, 140, 255, 0.44);
+  border-color: rgba(56, 189, 248, 0.32);
   background:
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.26), transparent 30%),
-    linear-gradient(135deg, #172554 0%, #2563eb 52%, #38bdf8 100%);
+    linear-gradient(180deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.06)),
+    #171717;
+  color: #f7fbff;
   box-shadow:
-    0 16px 36px rgba(47, 140, 255, 0.26),
-    0 0 0 1px rgba(255, 255, 255, 0.16) inset;
+    0 14px 30px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(56, 189, 248, 0.1) inset;
 }
 
 .analytics-charts-button.is-active {
-  border-color: rgba(250, 204, 21, 0.54);
+  border-color: rgba(56, 189, 248, 0.62);
   background:
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.3), transparent 30%),
-    linear-gradient(135deg, #2c1d02 0%, #b46d12 48%, #facc15 100%);
+    linear-gradient(180deg, rgba(56, 189, 248, 0.24), rgba(56, 189, 248, 0.09)),
+    #111827;
   box-shadow:
-    0 16px 36px rgba(250, 204, 21, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+    0 16px 34px rgba(56, 189, 248, 0.18),
+    0 0 0 1px rgba(56, 189, 248, 0.18) inset;
 }
 
 .excel-export-button {
@@ -577,12 +585,15 @@ body.is-dark .analytics-panel {
 .analytics-charts-button::before {
   content: "";
   position: absolute;
-  inset: -80% auto -80% -45%;
+  inset: 0;
   z-index: -1;
-  width: 42%;
-  transform: rotate(18deg);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
-  animation: ai-shine 3.4s ease-in-out infinite;
+  width: auto;
+  transform: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  animation: none;
 }
 
 .ai-insights-button:hover,
@@ -596,19 +607,27 @@ body.is-dark .analytics-panel {
 
 .ai-insights-button:hover,
 .ai-insights-button:focus-visible {
-  filter: saturate(1.18) brightness(1.03);
+  border-color: rgba(34, 211, 164, 0.58);
+  filter: none;
   box-shadow:
-    0 22px 54px rgba(34, 211, 164, 0.34),
-    0 0 34px rgba(34, 211, 164, 0.18),
-    0 0 0 1px rgba(255, 255, 255, 0.24) inset;
+    0 18px 38px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(34, 211, 164, 0.18) inset;
 }
 
 .analytics-charts-button:hover,
 .analytics-charts-button:focus-visible {
-  filter: saturate(1.12);
+  border-color: rgba(56, 189, 248, 0.58);
+  filter: none;
   box-shadow:
-    0 20px 48px rgba(47, 140, 255, 0.34),
-    0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+    0 18px 38px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(56, 189, 248, 0.18) inset;
+}
+
+.ai-insights-button:hover::before,
+.ai-insights-button:focus-visible::before,
+.analytics-charts-button:hover::before,
+.analytics-charts-button:focus-visible::before {
+  opacity: 1;
 }
 
 .excel-export-button:hover,
@@ -631,6 +650,17 @@ body.is-dark .analytics-charts-button {
     0 18px 44px rgba(0, 0, 0, 0.48),
     0 0 24px rgba(40, 194, 143, 0.16),
     0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+body.is-dark .analytics-charts-button {
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.48),
+    0 0 24px rgba(56, 189, 248, 0.14),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+body.is-dark .analytics-charts-button.is-active {
+  border-color: rgba(56, 189, 248, 0.54);
 }
 
 body.is-dark .excel-export-button {
@@ -1488,8 +1518,8 @@ body.is-dark .analytics-pie-empty {
 
 .analytics-chart-periods .is-compare,
 .analytics-chart-legend .is-compare {
-  border-color: rgba(180, 109, 18, 0.32);
-  color: var(--amber);
+  border-color: rgba(56, 189, 248, 0.28);
+  color: var(--blue);
 }
 
 .analytics-chart-legend i {
@@ -1500,7 +1530,7 @@ body.is-dark .analytics-pie-empty {
 }
 
 .analytics-chart-legend i.is-previous {
-  background: #facc15;
+  background: #94a3b8;
 }
 
 .analytics-chart-controls {
@@ -1528,7 +1558,7 @@ body.is-dark .analytics-pie-empty {
   border: 1px solid #c8c8c8;
   border-radius: var(--radius);
   background:
-    linear-gradient(135deg, #ffffff, #ededed);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.56));
   color: var(--ink);
   padding: 0 14px;
   font-weight: 900;
@@ -1543,18 +1573,19 @@ body.is-dark .analytics-pie-empty {
 .analytics-compare-button:hover,
 .analytics-compare-button:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(180, 109, 18, 0.42);
+  border-color: rgba(47, 140, 255, 0.42);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.12);
 }
 
 .analytics-compare-button.is-active {
-  border-color: rgba(250, 204, 21, 0.48);
+  border-color: rgba(56, 189, 248, 0.5);
   background:
-    linear-gradient(135deg, #7c4a09, #facc15);
-  color: #111111;
+    linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.08)),
+    #1e293b;
+  color: #f8fafc;
   box-shadow:
-    0 14px 30px rgba(250, 204, 21, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+    0 14px 30px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .analytics-chart-card,
@@ -1626,9 +1657,9 @@ body.is-dark .analytics-pie-empty {
 
 .analytics-bar.is-previous {
   background:
-    linear-gradient(180deg, #fde68a, #facc15);
+    linear-gradient(180deg, #cbd5e1, #64748b);
   box-shadow:
-    0 12px 24px rgba(250, 204, 21, 0.24),
+    0 10px 22px rgba(100, 116, 139, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.42);
 }
 
@@ -1684,14 +1715,24 @@ body.is-dark .analytics-pie-empty {
   stroke: var(--series-color);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 4;
-  filter: drop-shadow(0 8px 14px color-mix(in srgb, var(--series-color) 24%, transparent));
+  stroke-width: 3.2;
+  opacity: 0.58;
+  filter: drop-shadow(0 7px 12px color-mix(in srgb, var(--series-color) 18%, transparent));
+}
+
+.analytics-line-chart circle {
+  opacity: 0.72;
 }
 
 .analytics-line-path.is-previous,
 .analytics-line-chart circle.is-previous {
-  opacity: 0.42;
+  opacity: 0.28;
+  stroke: #94a3b8;
   stroke-dasharray: 9 8;
+}
+
+.analytics-line-chart circle.is-previous {
+  fill: #94a3b8;
 }
 
 .analytics-line-series-list {
@@ -1749,7 +1790,14 @@ body.is-dark .analytics-compare-button {
 }
 
 body.is-dark .analytics-compare-button.is-active {
-  color: #111111;
+  border-color: rgba(56, 189, 248, 0.46);
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.07)),
+    #151f2e;
+  color: #f8fafc;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 body.is-dark .analytics-line-chart-wrap {
