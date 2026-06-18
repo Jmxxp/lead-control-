@@ -70,7 +70,11 @@ let editingAiMessageIndex = null;
 let appointmentModalMode = "lead-form";
 let appointmentMonitorLeadId = null;
 const expandedAnalyticsSections = new Set();
-const visibleAnalyticsRankingSections = new Set();
+let analyticsChartsVisible = false;
+let analyticsChartType = "bar";
+let analyticsChartSectionId = "campaign";
+let analyticsChartValue = "";
+let analyticsComparePrevious = false;
 const analyticsPiePalette = [
   "#00d084",
   "#2f8cff",
@@ -163,10 +167,14 @@ const analyticsQuickRangeField = $(".quick-range-field");
 const analyticsCustomFilters = $("#analyticsCustomFilters");
 const analyticsCustomSections = $("#analyticsCustomSections");
 const analyticsActions = $(".analytics-ai-row");
+const analyticsKpis = $("#analyticsKpis");
+const analyticsBoard = $("#analyticsBoard");
+const analyticsChartsPanel = $("#analyticsChartsPanel");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const exportLeadsButton = $("#exportLeadsButton");
 const aiInsightsButton = $("#aiInsightsButton");
+const analyticsChartsButton = $("#analyticsChartsButton");
 const aiChatModal = $("#aiChatModal");
 const aiChatClose = $("#aiChatClose");
 const aiNewChatButton = $("#aiNewChatButton");
@@ -370,6 +378,9 @@ function bindEvents() {
   analyticsToggleLabel.addEventListener("click", toggleAnalytics);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
   aiInsightsButton.addEventListener("click", openAiChat);
+  analyticsChartsButton.addEventListener("click", toggleAnalyticsChartsMode);
+  analyticsChartsPanel.addEventListener("input", handleAnalyticsChartInput);
+  analyticsChartsPanel.addEventListener("click", handleAnalyticsChartClick);
   aiChatClose.addEventListener("click", closeAiChat);
   aiNewChatButton.addEventListener("click", handleAiNewChat);
   aiHistoryToggle.addEventListener("click", toggleAiHistoryPanel);
@@ -2310,6 +2321,8 @@ function renderAdminAnalytics() {
     renderAnalyticsCategoryCards(section, filtered);
   });
   renderCustomAnalyticsSections(filtered);
+  renderAnalyticsChartsPanel();
+  syncAnalyticsViewMode();
   updateAiContextLabel(filtered);
 }
 
@@ -2357,7 +2370,6 @@ function renderAnalyticsCategoryCards(section, rows) {
   const ranking = buildAnalyticsRanking(rows, section);
   const total = rows.length;
   const activeRanking = ranking.filter((item) => item.count > 0);
-  const isRankingVisible = visibleAnalyticsRankingSections.has(section.id);
 
   summary.innerHTML = total
     ? `<span><b>${activeRanking.length}</b> categorias</span><span><b>${total}</b> ${total === 1 ? "lead" : "leads"}</span>`
@@ -2374,12 +2386,11 @@ function renderAnalyticsCategoryCards(section, rows) {
   }
 
   container.innerHTML = `
-    ${renderAnalyticsPie(section, activeRanking, total, isRankingVisible)}
-    ${isRankingVisible ? renderAnalyticsRankingPanel(section, ranking) : ""}
+    ${renderAnalyticsPie(section, activeRanking, total)}
   `;
 }
 
-function renderAnalyticsPie(section, ranking, total, isRankingVisible) {
+function renderAnalyticsPie(section, ranking, total) {
   const topItem = ranking[0];
   const gradient = buildAnalyticsPieGradient(ranking, total);
   const hasData = total > 0 && ranking.length > 0;
@@ -2407,15 +2418,6 @@ function renderAnalyticsPie(section, ranking, total, isRankingVisible) {
                   aria-label="${escapeHtml(`Gráfico de ${section.label} com ${total} ${total === 1 ? "lead" : "leads"}`)}"
                 ></div>
               </div>
-              <button
-                class="analytics-ranking-toggle${isRankingVisible ? " is-active" : ""}"
-                type="button"
-                data-analytics-ranking-section="${escapeHtml(section.id)}"
-                aria-expanded="${isRankingVisible}"
-              >
-                <i class="fa-solid fa-ranking-star" aria-hidden="true"></i>
-                <span>Ranking</span>
-              </button>
             </div>
             <div class="analytics-pie-legend">
               ${ranking.map((item, index) => renderAnalyticsLegendRow(section, item, index, total)).join("")}
@@ -2434,12 +2436,17 @@ function renderAnalyticsPie(section, ranking, total, isRankingVisible) {
 
 function renderAnalyticsLegendRow(section, item, index, total) {
   const color = getAnalyticsPieColor(index);
+  const textColor = getAnalyticsPieTextColor(color);
   return `
     <div class="analytics-legend-row">
-      <i style="--legend-color:${color}" aria-hidden="true"></i>
+      <b
+        class="analytics-legend-count"
+        style="--legend-color:${color}; --legend-ink:${textColor}"
+        aria-label="${item.count} ${item.count === 1 ? "lead" : "leads"}"
+      >${item.count}</b>
       <div>
         <strong>${escapeHtml(item.value)}</strong>
-        <span>${item.count} ${item.count === 1 ? "lead" : "leads"} · ${formatPercent(item.count, total)}</span>
+        <span>${formatPercent(item.count, total)} dos leads</span>
       </div>
       <button
         class="analytics-legend-list-button"
@@ -2535,6 +2542,16 @@ function getAnalyticsPieColor(index) {
   return analyticsPiePalette[index % analyticsPiePalette.length];
 }
 
+function getAnalyticsPieTextColor(color) {
+  const hex = String(color || "").replace("#", "");
+  if (hex.length !== 6) return "#ffffff";
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+  return brightness > 150 ? "#111111" : "#ffffff";
+}
+
 function formatCssPercent(value) {
   return Math.max(0, Math.min(100, value)).toFixed(3).replace(/\.?0+$/, "");
 }
@@ -2566,6 +2583,407 @@ function renderCustomAnalyticsSections(rows) {
       summary: `[data-custom-analytics-summary="${category.id}"]`,
     }, rows);
   });
+}
+
+function renderAnalyticsChartsPanel() {
+  if (!analyticsChartsPanel) return;
+
+  const sections = getAnalyticsChartSections();
+  if (!sections.length) {
+    analyticsChartsPanel.innerHTML = "";
+    return;
+  }
+
+  if (!sections.some((section) => section.id === analyticsChartSectionId)) {
+    analyticsChartSectionId = sections[0].id;
+    analyticsChartValue = "";
+  }
+
+  const section = sections.find((item) => item.id === analyticsChartSectionId) || sections[0];
+  const baseRows = getAnalyticsBaseLeads();
+  const currentRange = getAnalyticsSelectedDateRange(baseRows);
+  const previousRange = getPreviousDateRange(currentRange);
+  const currentRows = filterLeadsByDateRange(baseRows, currentRange.start, currentRange.end);
+  const previousRows = analyticsComparePrevious
+    ? filterLeadsByDateRange(baseRows, previousRange.start, previousRange.end)
+    : [];
+  const values = getAnalyticsChartValues(section, currentRows, previousRows);
+
+  if (analyticsChartType !== "line" && analyticsChartType !== "bar") analyticsChartType = "bar";
+  if (analyticsChartType === "bar" && (!analyticsChartValue || !values.some((item) => item.value === analyticsChartValue))) {
+    analyticsChartValue = values[0]?.value || "";
+  }
+
+  const chartHtml = analyticsChartType === "line"
+    ? renderAnalyticsLineChart(section, values, currentRows, previousRows, currentRange, previousRange)
+    : renderAnalyticsBarChart(section, analyticsChartValue, currentRows, previousRows, currentRange, previousRange);
+
+  analyticsChartsPanel.innerHTML = `
+    <div class="analytics-chart-studio">
+      <div class="analytics-chart-studio-heading">
+        <div>
+          <span>Laboratório de gráficos</span>
+          <strong>${escapeHtml(section.label)}</strong>
+        </div>
+        <div class="analytics-chart-periods">
+          <span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>${escapeHtml(formatChartRangeLabel(currentRange))}</span>
+          ${analyticsComparePrevious ? `<span class="is-compare"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>${escapeHtml(formatChartRangeLabel(previousRange))}</span>` : ""}
+        </div>
+      </div>
+
+      <div class="analytics-chart-controls">
+        <label class="field">
+          <span><i class="fa-solid fa-layer-group" aria-hidden="true"></i>Categoria</span>
+          <select data-analytics-chart-section>
+            ${sections.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === section.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+          </select>
+        </label>
+
+        <div class="field analytics-chart-type-field">
+          <span><i class="fa-solid fa-chart-column" aria-hidden="true"></i>Modelo</span>
+          <div class="segmented-control analytics-chart-type-toggle" role="group" aria-label="Modelo do gráfico">
+            <button class="segment-button${analyticsChartType === "bar" ? " is-active" : ""}" type="button" data-analytics-chart-type="bar">
+              Barras
+            </button>
+            <button class="segment-button${analyticsChartType === "line" ? " is-active" : ""}" type="button" data-analytics-chart-type="line">
+              Linhas
+            </button>
+          </div>
+        </div>
+
+        <label class="field analytics-chart-value-field" ${analyticsChartType === "line" ? "hidden" : ""}>
+          <span><i class="fa-solid fa-tag" aria-hidden="true"></i>Subcategoria</span>
+          <select data-analytics-chart-value ${values.length ? "" : "disabled"}>
+            ${values.length
+              ? values.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === analyticsChartValue ? "selected" : ""}>${escapeHtml(item.value)}</option>`).join("")
+              : '<option value="">Sem dados</option>'}
+          </select>
+        </label>
+
+        <button
+          class="analytics-compare-button${analyticsComparePrevious ? " is-active" : ""}"
+          type="button"
+          data-analytics-chart-compare
+          aria-pressed="${analyticsComparePrevious}"
+        >
+          <i class="fa-solid fa-code-compare" aria-hidden="true"></i>
+          <span>Comparar período anterior</span>
+        </button>
+      </div>
+
+      ${chartHtml}
+    </div>
+  `;
+}
+
+function renderAnalyticsBarChart(section, value, currentRows, previousRows, currentRange, previousRange) {
+  const buckets = buildAnalyticsDateBuckets(currentRange);
+  const color = getAnalyticsPieColor(getAnalyticsChartValueIndex(section, value));
+  const currentCounts = buckets.map((bucket) => countAnalyticsBucket(currentRows, section, value, bucket.start, bucket.end));
+  const previousCounts = analyticsComparePrevious
+    ? buckets.map((bucket) => {
+        const shifted = shiftBucketToRange(bucket, currentRange, previousRange);
+        return countAnalyticsBucket(previousRows, section, value, shifted.start, shifted.end);
+      })
+    : [];
+  const max = Math.max(...currentCounts, ...previousCounts, 1);
+  const total = currentCounts.reduce((sum, count) => sum + count, 0);
+  const previousTotal = previousCounts.reduce((sum, count) => sum + count, 0);
+
+  if (!value) {
+    return `
+      <div class="analytics-chart-empty">
+        <strong>Sem subcategoria</strong>
+        <span>Escolha outra categoria ou ajuste o período para montar o gráfico.</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="analytics-chart-card">
+      <div class="analytics-chart-card-heading">
+        <div>
+          <span>Barras por período</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+        <div class="analytics-chart-legend">
+          <span><i style="--legend-color:${color}" aria-hidden="true"></i>${total} ${total === 1 ? "lead" : "leads"}</span>
+          ${analyticsComparePrevious ? `<span><i class="is-previous" aria-hidden="true"></i>${previousTotal} anterior</span>` : ""}
+        </div>
+      </div>
+
+      <div class="analytics-bar-chart" style="--bar-color:${color}">
+        ${buckets.map((bucket, index) => {
+          const current = currentCounts[index] || 0;
+          const previous = previousCounts[index] || 0;
+          return `
+            <div class="analytics-bar-group">
+              <div class="analytics-bar-stack${analyticsComparePrevious ? " has-compare" : ""}">
+                ${analyticsComparePrevious ? `<i class="analytics-bar is-previous" style="height:${Math.max((previous / max) * 100, previous ? 5 : 0)}%" title="Anterior: ${previous}"></i>` : ""}
+                <i class="analytics-bar is-current" style="height:${Math.max((current / max) * 100, current ? 5 : 0)}%" title="Atual: ${current}"></i>
+              </div>
+              <strong>${current}</strong>
+              <span>${escapeHtml(bucket.label)}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAnalyticsLineChart(section, values, currentRows, previousRows, currentRange, previousRange) {
+  const buckets = buildAnalyticsDateBuckets(currentRange);
+  const visibleValues = values.map((item) => item.value);
+  const series = visibleValues.map((value, index) => ({
+    value,
+    color: getAnalyticsPieColor(index),
+    counts: buckets.map((bucket) => countAnalyticsBucket(currentRows, section, value, bucket.start, bucket.end)),
+    previousCounts: analyticsComparePrevious
+      ? buckets.map((bucket) => {
+          const shifted = shiftBucketToRange(bucket, currentRange, previousRange);
+          return countAnalyticsBucket(previousRows, section, value, shifted.start, shifted.end);
+        })
+      : [],
+  }));
+  const max = Math.max(...series.flatMap((item) => [...item.counts, ...item.previousCounts]), 1);
+
+  if (!series.length) {
+    return `
+      <div class="analytics-chart-empty">
+        <strong>Sem dados para linhas</strong>
+        <span>Ajuste filtros ou período para comparar as subcategorias.</span>
+      </div>
+    `;
+  }
+
+  const left = 42;
+  const right = 810;
+  const top = 26;
+  const bottom = 238;
+  const width = right - left;
+  const height = bottom - top;
+  const tickEvery = Math.max(1, Math.ceil(buckets.length / 6));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const value = Math.round(max * ratio);
+    const y = bottom - ratio * height;
+    return { value, y };
+  });
+
+  return `
+    <div class="analytics-chart-card">
+      <div class="analytics-chart-card-heading">
+        <div>
+          <span>Linhas no mesmo gráfico</span>
+          <strong>${series.length} ${series.length === 1 ? "subcategoria" : "subcategorias"}</strong>
+        </div>
+        <div class="analytics-chart-legend">
+          <span><i aria-hidden="true"></i>Atual</span>
+          ${analyticsComparePrevious ? '<span><i class="is-previous" aria-hidden="true"></i>Anterior tracejado</span>' : ""}
+        </div>
+      </div>
+
+      <div class="analytics-line-chart-wrap">
+        <svg class="analytics-line-chart" viewBox="0 0 850 280" role="img" aria-label="${escapeHtml(`Gráfico de linhas de ${section.label}`)}">
+          ${yTicks.map((tick) => `
+            <line x1="${left}" y1="${tick.y}" x2="${right}" y2="${tick.y}" class="analytics-chart-grid-line"></line>
+            <text x="12" y="${tick.y + 4}" class="analytics-chart-axis-label">${tick.value}</text>
+          `).join("")}
+          ${buckets.map((bucket, index) => {
+            if (index % tickEvery !== 0 && index !== buckets.length - 1) return "";
+            const x = buckets.length === 1 ? left + width / 2 : left + (index / (buckets.length - 1)) * width;
+            return `<text x="${x}" y="270" class="analytics-chart-axis-label is-x">${escapeHtml(bucket.label)}</text>`;
+          }).join("")}
+          ${series.map((item) => {
+            const points = getAnalyticsLinePoints(item.counts, max, left, width, top, height);
+            const previousPoints = analyticsComparePrevious
+              ? getAnalyticsLinePoints(item.previousCounts, max, left, width, top, height)
+              : [];
+            return `
+              ${analyticsComparePrevious ? renderAnalyticsSvgPath(previousPoints, item.color, true) : ""}
+              ${renderAnalyticsSvgPath(points, item.color, false)}
+            `;
+          }).join("")}
+        </svg>
+      </div>
+
+      <div class="analytics-line-series-list">
+        ${series.map((item) => `
+          <span><i style="--legend-color:${item.color}" aria-hidden="true"></i>${escapeHtml(item.value)}</span>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAnalyticsSvgPath(points, color, isPrevious) {
+  if (!points.length) return "";
+  if (points.length === 1) {
+    return `<circle cx="${points[0].x}" cy="${points[0].y}" r="5" fill="${color}" class="${isPrevious ? "is-previous" : ""}"></circle>`;
+  }
+  const path = points.map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const circles = points.map((point) => `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="${isPrevious ? 2.6 : 3.4}" fill="${color}" class="${isPrevious ? "is-previous" : ""}"></circle>`).join("");
+  return `
+    <path d="${path}" style="--series-color:${color}" class="analytics-line-path${isPrevious ? " is-previous" : ""}"></path>
+    ${circles}
+  `;
+}
+
+function getAnalyticsLinePoints(counts, max, left, width, top, height) {
+  return counts.map((count, index) => ({
+    x: counts.length === 1 ? left + width / 2 : left + (index / (counts.length - 1)) * width,
+    y: top + height - (count / max) * height,
+  }));
+}
+
+function getAnalyticsChartSections() {
+  return [
+    ...analyticsSections,
+    ...customCategories.map((category) => ({
+      id: `custom:${category.id}`,
+      label: category.name,
+      key: `custom:${category.id}`,
+      customCategoryId: category.id,
+    })),
+  ];
+}
+
+function getAnalyticsChartValues(section, currentRows, previousRows = []) {
+  const rows = [...currentRows, ...previousRows];
+  const groups = new Map();
+
+  buildAnalyticsRanking(rows, section).forEach((item) => {
+    if (item.count > 0) groups.set(item.value, item);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => {
+    const currentA = currentRows.filter((lead) => getAnalyticsGroupValue(lead, section.key) === a.value).length;
+    const currentB = currentRows.filter((lead) => getAnalyticsGroupValue(lead, section.key) === b.value).length;
+    if (currentB !== currentA) return currentB - currentA;
+    return b.count - a.count;
+  });
+}
+
+function getAnalyticsChartValueIndex(section, value) {
+  const values = getAnalyticsChartValues(section, getAnalyticsLeads());
+  return Math.max(values.findIndex((item) => item.value === value), 0);
+}
+
+function getAnalyticsSelectedDateRange(rows) {
+  const extent = getLeadDateExtent(rows);
+  const today = toLocalDateInput(new Date());
+  const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
+  let start = "";
+  let end = "";
+
+  if (mode === "single" && analyticsSingleDate.value) {
+    start = analyticsSingleDate.value;
+    end = analyticsSingleDate.value;
+  } else if (mode === "range") {
+    start = analyticsStartDate.value || extent.start;
+    end = analyticsEndDate.value || extent.end;
+  } else {
+    start = extent.start;
+    end = extent.end;
+  }
+
+  start = start || end || today;
+  end = end || start || today;
+  if (start > end) [start, end] = [end, start];
+  return { start, end };
+}
+
+function getLeadDateExtent(rows) {
+  const dates = rows
+    .map((lead) => getLeadDateValue(lead))
+    .filter(Boolean)
+    .sort();
+  return {
+    start: dates[0] || "",
+    end: dates[dates.length - 1] || "",
+  };
+}
+
+function getPreviousDateRange(range) {
+  const days = getDateDiffDays(range.start, range.end) + 1;
+  const end = addDaysToDateValue(range.start, -1);
+  const start = addDaysToDateValue(end, -(days - 1));
+  return { start, end };
+}
+
+function filterLeadsByDateRange(rows, start, end) {
+  return rows.filter((lead) => {
+    const date = getLeadDateValue(lead);
+    return date && date >= start && date <= end;
+  });
+}
+
+function buildAnalyticsDateBuckets(range) {
+  const totalDays = getDateDiffDays(range.start, range.end) + 1;
+  const step = totalDays <= 45 ? 1 : totalDays <= 210 ? 7 : 30;
+  const buckets = [];
+  let start = range.start;
+
+  while (start <= range.end) {
+    const end = minDateValue(addDaysToDateValue(start, step - 1), range.end);
+    buckets.push({
+      start,
+      end,
+      label: formatBucketLabel(start, end, step),
+    });
+    start = addDaysToDateValue(end, 1);
+  }
+
+  return buckets.length ? buckets : [{ start: range.start, end: range.end, label: formatDateInputValue(range.start) }];
+}
+
+function countAnalyticsBucket(rows, section, value, start, end) {
+  return rows.filter((lead) => {
+    const date = getLeadDateValue(lead);
+    return date && date >= start && date <= end && getAnalyticsGroupValue(lead, section.key) === value;
+  }).length;
+}
+
+function shiftBucketToRange(bucket, currentRange, targetRange) {
+  const startOffset = getDateDiffDays(currentRange.start, bucket.start);
+  const endOffset = getDateDiffDays(currentRange.start, bucket.end);
+  return {
+    start: addDaysToDateValue(targetRange.start, startOffset),
+    end: addDaysToDateValue(targetRange.start, endOffset),
+  };
+}
+
+function formatChartRangeLabel(range) {
+  return range.start === range.end
+    ? formatDateInputValue(range.start)
+    : `${formatDateInputValue(range.start)} a ${formatDateInputValue(range.end)}`;
+}
+
+function formatBucketLabel(start, end, step) {
+  if (start === end) return formatDateInputValue(start).slice(0, 5);
+  const startLabel = formatDateInputValue(start).slice(0, 5);
+  const endLabel = formatDateInputValue(end).slice(0, 5);
+  return step >= 30 ? `${startLabel}-${endLabel}` : `${startLabel} ${endLabel}`;
+}
+
+function parseDateValue(value) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  return new Date(year || 1970, (month || 1) - 1, day || 1);
+}
+
+function addDaysToDateValue(value, days) {
+  const date = parseDateValue(value);
+  date.setDate(date.getDate() + days);
+  return toLocalDateInput(date);
+}
+
+function getDateDiffDays(start, end) {
+  const diff = parseDateValue(end).getTime() - parseDateValue(start).getTime();
+  return Math.max(0, Math.round(diff / 86400000));
+}
+
+function minDateValue(a, b) {
+  return a < b ? a : b;
 }
 
 function buildAnalyticsRanking(rows, sectionOrKey) {
@@ -2635,19 +3053,54 @@ function getAnalyticsGroupValue(lead, key) {
   return lead[key] || "Sem resposta";
 }
 
-function handleAnalyticsClick(event) {
-  const rankingButton = event.target.closest("[data-analytics-ranking-section]");
-  if (rankingButton) {
-    const sectionId = rankingButton.dataset.analyticsRankingSection;
-    if (visibleAnalyticsRankingSections.has(sectionId)) {
-      visibleAnalyticsRankingSections.delete(sectionId);
-    } else {
-      visibleAnalyticsRankingSections.add(sectionId);
-    }
-    renderAdminAnalytics();
+function toggleAnalyticsChartsMode() {
+  analyticsChartsVisible = !analyticsChartsVisible;
+  if (analyticsChartsVisible) analyticsChartType = analyticsChartType || "bar";
+  renderAnalyticsChartsPanel();
+  syncAnalyticsViewMode();
+}
+
+function syncAnalyticsViewMode() {
+  if (!analyticsKpis || !analyticsBoard || !analyticsChartsPanel || !analyticsChartsButton) return;
+  analyticsKpis.hidden = analyticsChartsVisible;
+  analyticsBoard.hidden = analyticsChartsVisible;
+  analyticsChartsPanel.hidden = !analyticsChartsVisible;
+  analyticsChartsButton.classList.toggle("is-active", analyticsChartsVisible);
+  analyticsChartsButton.setAttribute("aria-pressed", String(analyticsChartsVisible));
+}
+
+function handleAnalyticsChartInput(event) {
+  const sectionSelect = event.target.closest("[data-analytics-chart-section]");
+  if (sectionSelect) {
+    analyticsChartSectionId = sectionSelect.value;
+    analyticsChartValue = "";
+    renderAnalyticsChartsPanel();
     return;
   }
 
+  const valueSelect = event.target.closest("[data-analytics-chart-value]");
+  if (valueSelect) {
+    analyticsChartValue = valueSelect.value;
+    renderAnalyticsChartsPanel();
+  }
+}
+
+function handleAnalyticsChartClick(event) {
+  const typeButton = event.target.closest("[data-analytics-chart-type]");
+  if (typeButton) {
+    analyticsChartType = typeButton.dataset.analyticsChartType;
+    renderAnalyticsChartsPanel();
+    return;
+  }
+
+  const compareButton = event.target.closest("[data-analytics-chart-compare]");
+  if (compareButton) {
+    analyticsComparePrevious = !analyticsComparePrevious;
+    renderAnalyticsChartsPanel();
+  }
+}
+
+function handleAnalyticsClick(event) {
   const expandButton = event.target.closest("[data-analytics-expand-section]");
   if (expandButton) {
     const sectionId = expandButton.dataset.analyticsExpandSection;
@@ -3978,7 +4431,7 @@ function getVisibleStoreLeads() {
   return leads.filter((lead) => lead.storeId === store.id);
 }
 
-function getAnalyticsLeads() {
+function getAnalyticsBaseLeads() {
   let result = [...leads];
   if (analyticsStoreFilter.value) {
     result = result.filter((lead) => lead.storeId === analyticsStoreFilter.value);
@@ -4006,6 +4459,11 @@ function getAnalyticsLeads() {
     result = result.filter((lead) => (lead.customValues[categoryId] || "sem-resposta") === value);
   });
 
+  return result;
+}
+
+function getAnalyticsLeads() {
+  let result = getAnalyticsBaseLeads();
   const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
   if (mode === "single" && analyticsSingleDate.value) {
     result = result.filter((lead) => getLeadDateValue(lead) === analyticsSingleDate.value);
