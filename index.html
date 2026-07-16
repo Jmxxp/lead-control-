@@ -20,10 +20,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260616-logo-1" />
     <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260616-logo-1" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260616-logo-1" />
-    <link rel="stylesheet" href="styles.css?v=20260618-always-open-1" />
+    <link rel="stylesheet" href="styles.css?v=20260716-focus-cleanup-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260618-always-open-1" defer></script>
+    <script src="app.js?v=20260716-focus-cleanup-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -88,9 +88,14 @@
 
       <div id="appView" hidden>
       <header class="topbar">
-        <div>
+        <div class="topbar-identity">
+          <div id="sessionAvatar" class="profile-avatar topbar-avatar" aria-hidden="true">
+            <i class="fa-solid fa-building"></i>
+          </div>
+          <div>
           <p class="eyebrow" id="sessionRole">Ótica</p>
           <h1>Controle de Leads</h1>
+          </div>
         </div>
         <div class="topbar-actions">
           <div class="topbar-status" aria-label="Resumo do dia">
@@ -122,10 +127,150 @@
 
       <main>
         <section id="adminView" class="admin-view" hidden>
-          <section class="summary-grid" aria-label="Resumo administrativo">
+          <nav id="companyWorkspaceNav" class="company-workspace-nav" aria-label="Áreas da empresa">
+            <button class="company-nav-button is-active" type="button" data-company-section="clients">
+              <i class="fa-solid fa-users-gear" aria-hidden="true"></i>
+              <span><strong>Meus clientes</strong><small>Cadastros e acessos</small></span>
+            </button>
+            <button class="company-nav-button" type="button" data-company-section="analytics">
+              <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+              <span><strong>Análise individual</strong><small>Uma loja por vez</small></span>
+            </button>
+            <button class="company-nav-button" type="button" data-company-section="backups">
+              <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
+              <span><strong>Central de backups</strong><small>Excel automático e manual</small></span>
+            </button>
+          </nav>
+
+          <section id="backupCenter" class="backup-center" hidden>
+            <div class="backup-hero">
+              <div class="backup-hero-icon" aria-hidden="true">
+                <i class="fa-solid fa-shield-halved"></i>
+              </div>
+              <div class="backup-hero-copy">
+                <p class="eyebrow">Proteção de dados B2B</p>
+                <h2>Central de backups</h2>
+                <span>Exporte cada empresa separadamente para o seu HD, com pastas por ano, mês e semana.</span>
+              </div>
+              <span id="backupSupportBadge" class="backup-status-badge">Verificando navegador</span>
+            </div>
+
+            <div class="backup-summary-grid">
+              <article class="backup-summary-card">
+                <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
+                <span>Pasta escolhida</span>
+                <strong id="backupDirectoryLabel">Nenhum HD selecionado</strong>
+              </article>
+              <article class="backup-summary-card">
+                <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                <span>Rotina automática</span>
+                <strong>Todos os dias às 20:00</strong>
+              </article>
+              <article class="backup-summary-card">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                <span>Último backup</span>
+                <strong id="backupLastRun">Ainda não realizado</strong>
+              </article>
+            </div>
+
+            <div class="backup-control-panel">
+              <div class="backup-control-copy">
+                <strong>Destino do backup</strong>
+                <span id="backupDirectoryHint">Escolha uma pasta do HD externo e autorize o acesso.</span>
+              </div>
+              <div class="backup-actions">
+                <button class="ghost-button" type="button" id="backupChooseDirectory">
+                  <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
+                  Escolher HD ou pasta
+                </button>
+                <button class="primary-button compact-primary" type="button" id="backupRunNow" disabled>
+                  <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                  Fazer backup agora
+                </button>
+              </div>
+            </div>
+
+            <div class="backup-notice">
+              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+              <div>
+                <strong>Backup incremental e organizado</strong>
+                <span>Depois do primeiro Excel completo, o sistema compara os registros e salva apenas leads novos ou alterados. No HD são criados somente arquivos Excel. Para executar às 20h, este painel precisa estar aberto e o HD conectado.</span>
+              </div>
+            </div>
+
+            <section class="backup-clients-panel" aria-label="Clientes incluídos no backup">
+              <div class="panel-heading align-start">
+                <div>
+                  <p class="eyebrow">Empresas incluídas</p>
+                  <h3 id="backupClientsTitle">Carteira preparada para backup</h3>
+                </div>
+              </div>
+              <div id="backupClientList" class="backup-client-list"></div>
+            </section>
+
+            <p id="backupMessage" class="form-message backup-message" role="status" aria-live="polite"></p>
+          </section>
+
+          <section id="analyticsClientPicker" class="analytics-client-picker" hidden>
+            <div class="analytics-client-heading">
+              <div id="analyticsClientAvatar" class="profile-avatar analytics-client-avatar" aria-hidden="true">
+                <i class="fa-solid fa-store"></i>
+              </div>
+              <div>
+                <p class="eyebrow">Cliente em análise</p>
+                <h2 id="analyticsClientTitle">Selecione uma loja</h2>
+                <span id="analyticsClientSubtitle">Todos os gráficos serão exclusivos deste cliente.</span>
+              </div>
+            </div>
+            <div class="field analytics-client-select-field">
+              <span id="analyticsClientSelectLabel"><i class="fa-solid fa-store" aria-hidden="true"></i>Selecionar cliente</span>
+              <div id="analyticsClientSelect" class="analytics-client-select">
+                <button
+                  id="analyticsClientSelectTrigger"
+                  class="analytics-client-select-trigger"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                  aria-controls="analyticsClientOptions"
+                  aria-labelledby="analyticsClientSelectLabel"
+                >
+                  <span class="analytics-client-trigger-placeholder" aria-hidden="true"><i class="fa-solid fa-store"></i></span>
+                  <span class="analytics-client-trigger-copy">
+                    <strong>Escolha uma loja</strong>
+                    <small>Pesquisar na carteira de clientes</small>
+                  </span>
+                  <i class="fa-solid fa-chevron-down analytics-client-select-chevron" aria-hidden="true"></i>
+                </button>
+
+                <div id="analyticsClientDropdown" class="analytics-client-dropdown" hidden>
+                  <label class="analytics-client-search">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input id="analyticsClientSearch" type="search" placeholder="Buscar por nome ou login" autocomplete="off" />
+                  </label>
+                  <div id="analyticsClientOptions" class="analytics-client-options" role="listbox" aria-label="Clientes disponíveis"></div>
+                  <p id="analyticsClientOptionsEmpty" class="analytics-client-options-empty" hidden>
+                    <i class="fa-solid fa-store-slash" aria-hidden="true"></i>
+                    Nenhum cliente encontrado.
+                  </p>
+                </div>
+              </div>
+              <select id="analyticsClientSelector" hidden aria-hidden="true" tabindex="-1">
+                <option value="">Escolha uma loja</option>
+              </select>
+            </div>
+          </section>
+
+          <section id="analyticsSelectionEmpty" class="analytics-selection-empty" hidden>
+            <i class="fa-solid fa-chart-pie" aria-hidden="true"></i>
+            <strong>Selecione um cliente para abrir a análise</strong>
+            <span>Leads e métricas de lojas diferentes nunca serão combinados.</span>
+          </section>
+
+          <section id="adminAnalyticsSummary" class="summary-grid" aria-label="Resumo do cliente selecionado" hidden>
             <article class="metric">
-              <span>Lojas</span>
+              <span id="totalStoresLabel">Lojas</span>
               <strong id="totalStores">0</strong>
+              <small id="totalStoresHint" hidden></small>
             </article>
             <article class="metric">
               <span>Leads</span>
@@ -145,7 +290,22 @@
             </article>
           </section>
 
-          <section class="analytics-panel" aria-label="Análise das campanhas">
+          <section id="clientCapacityPanel" class="client-capacity-panel" aria-label="Capacidade de clientes" hidden>
+            <div class="client-capacity-icon" aria-hidden="true">
+              <i class="fa-solid fa-building-user"></i>
+            </div>
+            <div class="client-capacity-copy">
+              <span id="clientCapacityEyebrow">Carteira de clientes</span>
+              <strong id="clientCapacityTitle">0 de 0 clientes cadastrados</strong>
+              <small id="clientCapacityHint">Seu limite é definido pelo administrador.</small>
+            </div>
+            <div class="client-capacity-meter" aria-hidden="true">
+              <div class="client-capacity-track"><i id="clientCapacityProgress"></i></div>
+              <span id="clientCapacityPercent">0%</span>
+            </div>
+          </section>
+
+          <section id="adminAnalyticsPanel" class="analytics-panel" aria-label="Análise individual das campanhas" hidden>
             <div class="analytics-toolbar">
               <div class="analytics-toggle" id="analyticsToggle">
                 <span>
@@ -172,15 +332,15 @@
 
             <div id="analyticsContent" class="analytics-content">
               <div class="analytics-controls">
-                <label class="field">
+                <label id="analyticsStoreField" class="field" hidden>
                   <span><i class="fa-solid fa-store" aria-hidden="true"></i>Loja</span>
                   <select id="analyticsStoreFilter">
-                    <option value="">Todas as lojas</option>
+                    <option value="">Cliente selecionado</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-share-nodes" aria-hidden="true"></i>Canal</span>
+                  <span><i class="fa-solid fa-share-nodes" aria-hidden="true"></i>Plataforma / canal</span>
                   <select id="analyticsChannelFilter">
                     <option value="">Todos</option>
                   </select>
@@ -299,17 +459,7 @@
                 <article class="analytics-section-card">
                   <div class="analytics-section-heading">
                     <div>
-                      <span>Lojas</span>
-                      <strong id="analyticsStoreSummary">Sem dados</strong>
-                    </div>
-                  </div>
-                  <div id="analyticsStoreCards" class="analytics-category-list"></div>
-                </article>
-
-                <article class="analytics-section-card">
-                  <div class="analytics-section-heading">
-                    <div>
-                      <span>Canais</span>
+                      <span>Plataformas / canais</span>
                       <strong id="analyticsChannelSummary">Sem dados</strong>
                     </div>
                   </div>
@@ -371,13 +521,36 @@
             </div>
           </section>
 
-          <section class="admin-workspace">
+          <section id="clientManagementArea" class="admin-workspace">
             <form id="storeForm" class="form-panel" autocomplete="off">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Admin</p>
-                  <h2>Criar loja</h2>
+                  <p id="storeFormEyebrow" class="eyebrow">Carteira</p>
+                  <h2 id="storeFormTitle">Criar cliente</h2>
                 </div>
+              </div>
+
+              <label id="storeTechnicianField" class="field">
+                <span>Empresa responsável</span>
+                <select id="storeTechnician">
+                  <option value="">Selecione a empresa</option>
+                </select>
+              </label>
+
+              <div class="field avatar-field">
+                <span>Imagem da loja</span>
+                <div class="avatar-upload-row">
+                  <div id="storeAvatarPreview" class="profile-avatar avatar-preview"><i class="fa-solid fa-store"></i></div>
+                  <div class="avatar-upload-control">
+                    <input id="storeAvatar" class="avatar-file-input" type="file" accept="image/png,image/jpeg,image/webp" />
+                    <button class="avatar-file-button" type="button" data-avatar-input="storeAvatar">
+                      <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                      <span>Escolher imagem</span>
+                    </button>
+                    <span id="storeAvatarName" class="avatar-file-name">Nenhuma imagem selecionada</span>
+                  </div>
+                </div>
+                <small class="field-help">PNG, JPG ou WebP. A imagem será otimizada automaticamente.</small>
               </div>
 
               <label class="field">
@@ -401,29 +574,29 @@
               </label>
 
               <p id="storeMessage" class="form-message" role="status" aria-live="polite"></p>
-              <button class="primary-button" type="submit">Criar loja</button>
+              <button class="primary-button" type="submit">Criar acesso da loja</button>
             </form>
 
             <form id="technicianForm" class="form-panel technician-panel" autocomplete="off">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Equipe</p>
-                  <h2>Criar técnico</h2>
+                  <p class="eyebrow">B2B</p>
+                  <h2>Criar empresa</h2>
                 </div>
               </div>
 
               <label class="field">
-                <span>Nome do técnico</span>
-                <input id="technicianName" type="text" placeholder="Nome do técnico" required />
+                <span>Nome da empresa</span>
+                <input id="technicianName" type="text" placeholder="Agência ou empresa de tráfego" required />
               </label>
 
               <label class="field">
-                <span>Nick do técnico</span>
-                <input id="technicianNick" type="text" placeholder="ex: tecnico" required />
+                <span>Login da empresa</span>
+                <input id="technicianNick" type="text" placeholder="ex: agencia-prime" required />
               </label>
 
               <label class="field">
-                <span>Senha do técnico</span>
+                <span>Senha da empresa</span>
                 <div class="password-field">
                   <input id="technicianPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
                   <button class="password-toggle" type="button" data-toggle-password="technicianPassword" aria-label="Mostrar senha" title="Mostrar senha">
@@ -432,53 +605,66 @@
                 </div>
               </label>
 
-              <p id="technicianMessage" class="form-message" role="status" aria-live="polite"></p>
-              <button class="primary-button" type="submit">Criar técnico</button>
-            </form>
+              <label class="field">
+                <span>Limite de clientes</span>
+                <input id="technicianStoreLimit" type="number" min="0" max="9999" step="1" value="5" required />
+                <small class="field-help">Quantidade máxima de lojas que esta empresa poderá cadastrar.</small>
+              </label>
 
-            <section class="list-panel options-panel" aria-label="Opções padrão">
-              <div class="panel-heading align-start">
-                <div>
-                  <p class="eyebrow">Opções padrão</p>
-                  <h2>Opções das lojas</h2>
+              <div class="field avatar-field">
+                <span>Imagem da empresa</span>
+                <div class="avatar-upload-row">
+                  <div id="technicianAvatarPreview" class="profile-avatar avatar-preview"><i class="fa-solid fa-building"></i></div>
+                  <div class="avatar-upload-control">
+                    <input id="technicianAvatar" class="avatar-file-input" type="file" accept="image/png,image/jpeg,image/webp" />
+                    <button class="avatar-file-button" type="button" data-avatar-input="technicianAvatar">
+                      <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                      <span>Escolher imagem</span>
+                    </button>
+                    <span id="technicianAvatarName" class="avatar-file-name">Nenhuma imagem selecionada</span>
+                  </div>
                 </div>
+                <small class="field-help">Será exibida no perfil e no painel administrativo.</small>
               </div>
 
-              <p class="panel-note">
-                As alterações são salvas para todas as lojas deste admin.
-              </p>
+              <p id="technicianMessage" class="form-message" role="status" aria-live="polite"></p>
+              <button class="primary-button" type="submit">Criar empresa</button>
+            </form>
 
-              <div id="adminOptionsList" class="options-editor"></div>
-              <p id="adminOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
-            </section>
-
-            <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Técnicos cadastrados">
+            <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Empresas cadastradas">
               <div class="panel-heading align-start">
                 <div>
-                  <p class="eyebrow">Equipe</p>
-                  <h2>Técnicos</h2>
+                  <p class="eyebrow">Seus clientes B2B</p>
+                  <h2>Empresas de tráfego</h2>
                 </div>
               </div>
 
               <div id="technicianEmptyState" class="empty-state">
-                <strong>Nenhum técnico cadastrado ainda.</strong>
-                <span>Crie um acesso técnico para métricas e opções.</span>
+                <strong>Nenhuma empresa cadastrada ainda.</strong>
+                <span>Crie o primeiro acesso e defina o limite de clientes.</span>
               </div>
 
               <div id="technicianList" class="lead-list"></div>
             </section>
 
-            <section class="list-panel store-list-panel" aria-label="Lojas cadastradas">
-              <div class="panel-heading align-start">
+            <section class="list-panel store-list-panel" aria-label="Carteira de clientes">
+              <div class="panel-heading align-start client-wallet-heading">
                 <div>
-                  <p class="eyebrow">Lojas</p>
-                  <h2>Lojas individuais</h2>
+                  <p class="eyebrow">Carteira</p>
+                  <h2 id="storeListTitle">Carteira de clientes</h2>
+                </div>
+                <div class="client-wallet-search" role="search">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <input id="clientWalletSearch" type="search" placeholder="Buscar cliente por nome ou login" aria-label="Buscar cliente" />
+                  <button id="clearClientWalletSearch" type="button" aria-label="Limpar busca" title="Limpar busca" hidden>
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
                 </div>
               </div>
 
               <div id="storeEmptyState" class="empty-state">
-                <strong>Nenhuma loja cadastrada ainda.</strong>
-                <span>Crie a primeira loja para organizar os leads.</span>
+                <strong id="storeEmptyTitle">Nenhuma loja cadastrada ainda.</strong>
+                <span id="storeEmptyText">Crie o primeiro acesso para começar a receber leads.</span>
               </div>
 
               <div id="storeList" class="lead-list"></div>
@@ -548,6 +734,10 @@
               <input type="hidden" id="editingId" />
 
               <div id="storeOptionsPanel" class="options-panel-inline" hidden>
+                <div class="store-options-scope-note">
+                  <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                  <span>Campanhas, plataformas e categorias exclusivas desta loja.</span>
+                </div>
                 <div id="storeOptionsList" class="options-editor"></div>
                 <p id="storeOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
               </div>
@@ -578,7 +768,7 @@
 
             <div class="choice-section lead-entry">
               <div class="section-title">
-                <h3>Canal</h3>
+                <h3>Plataforma / canal</h3>
                 <span>Onde começou</span>
               </div>
               <div class="choice-grid compact" data-choice-group="channel"></div>
@@ -678,6 +868,10 @@
                 <p class="eyebrow">Acompanhamento</p>
                 <h2>Leads cadastrados</h2>
               </div>
+              <button class="excel-export-button store-export-button" type="button" id="storeExportLeadsButton">
+                <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
+                <span>Exportar dados</span>
+              </button>
             </div>
 
             <div class="filter-toolbar">
@@ -693,7 +887,7 @@
 
             <div class="filters" id="filtersPanel" hidden>
               <label class="field">
-                <span>Canal</span>
+                <span>Plataforma / canal</span>
                 <select id="channelFilter">
                   <option value="">Todos</option>
                 </select>
@@ -790,7 +984,7 @@
             <button class="ghost-button topbar-icon-button" type="button" id="aiHistoryToggle" aria-label="Histórico de chats" title="Histórico de chats">
               <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
             </button>
-            <button class="ghost-button topbar-icon-button" type="button" id="aiSettingsToggle" aria-label="Configurar IA" title="Configurar IA">
+            <button class="ghost-button topbar-icon-button" type="button" id="aiSettingsToggle" aria-label="Configurar IA" title="Configurar IA" hidden>
               <i class="fa-solid fa-sliders" aria-hidden="true"></i>
             </button>
             <button class="ghost-button topbar-icon-button" type="button" id="aiChatClose" aria-label="Fechar" title="Fechar">
@@ -910,6 +1104,63 @@
             <button class="primary-button compact-primary" type="submit">Salvar conta</button>
           </div>
         </form>
+
+        <section class="settings-section admin-ai-settings-section">
+          <div class="settings-section-heading">
+            <div class="settings-section-icon" aria-hidden="true">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </div>
+            <div>
+              <p class="eyebrow">IA central do sistema</p>
+              <h3>Configuração B2B</h3>
+              <span>Empresas recebem esta configuração automaticamente ao entrar, sem preencher a chave manualmente.</span>
+            </div>
+          </div>
+
+          <form id="adminAiSettingsForm" class="account-form admin-ai-settings-form" autocomplete="off">
+            <div class="field-grid">
+              <label class="field">
+                <span>Provedor</span>
+                <select id="adminAiProvider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Modelo</span>
+                <select id="adminAiModel"></select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Chave da API</span>
+              <div class="password-field">
+                <input id="adminAiApiKey" type="password" placeholder="Cole a chave da API" autocomplete="new-password" />
+                <button class="password-toggle" type="button" data-toggle-password="adminAiApiKey" aria-label="Mostrar chave" title="Mostrar chave">
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                </button>
+              </div>
+              <small id="adminAiSavedStatus" class="field-help">Nenhuma chave salva.</small>
+            </label>
+
+            <label class="field">
+              <span>System prompt</span>
+              <textarea id="adminAiSystemPrompt" rows="7"></textarea>
+            </label>
+
+            <p id="adminAiSettingsMessage" class="form-message" role="status" aria-live="polite"></p>
+            <div class="modal-actions">
+              <button class="ghost-button" type="button" id="adminAiValidateButton">
+                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                Salvar e validar
+              </button>
+              <button class="primary-button compact-primary" type="submit">
+                <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                Salvar IA
+              </button>
+            </div>
+          </form>
+        </section>
       </section>
     </div>
 
@@ -929,9 +1180,33 @@
           <input id="managedAccountType" type="hidden" />
           <input id="managedAccountId" type="hidden" />
 
+          <div class="field avatar-field">
+            <span>Imagem de perfil</span>
+            <div class="avatar-upload-row">
+              <div id="managedAccountAvatarPreview" class="profile-avatar avatar-preview"><i class="fa-solid fa-camera"></i></div>
+              <div class="avatar-upload-control">
+                <input id="managedAccountAvatar" class="avatar-file-input" type="file" accept="image/png,image/jpeg,image/webp" />
+                <button class="avatar-file-button" type="button" data-avatar-input="managedAccountAvatar">
+                  <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                  <span>Trocar imagem</span>
+                </button>
+                <span id="managedAccountAvatarName" class="avatar-file-name">Nenhuma nova imagem</span>
+              </div>
+            </div>
+            <small class="field-help">Deixe sem arquivo para manter a imagem atual.</small>
+          </div>
+
           <label class="field">
             <span id="managedAccountNameLabel">Nome</span>
             <input id="managedAccountName" type="text" placeholder="Nome" required />
+          </label>
+
+          <label id="managedAccountTechnicianField" class="field" hidden>
+            <span>Empresa responsável</span>
+            <select id="managedAccountTechnician">
+              <option value="">Selecione a empresa</option>
+            </select>
+            <small class="field-help">Use este campo para atribuir ou transferir a loja.</small>
           </label>
 
           <label class="field">
@@ -947,6 +1222,12 @@
                 <i class="fa-solid fa-eye" aria-hidden="true"></i>
               </button>
             </div>
+          </label>
+
+          <label id="managedAccountLimitField" class="field" hidden>
+            <span>Limite de clientes</span>
+            <input id="managedAccountLimit" type="number" min="0" max="9999" step="1" />
+            <small class="field-help">Novos cadastros serão bloqueados quando a empresa atingir este total.</small>
           </label>
 
           <p id="managedAccountMessage" class="form-message" role="status" aria-live="polite"></p>

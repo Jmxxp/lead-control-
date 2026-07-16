@@ -2,11 +2,17 @@ const SUPABASE_URL = "https://menlvmsgkhgqxiydphbn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lbmx2bXNna2hncXhpeWRwaGJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNTYxNzEsImV4cCI6MjA5NjgzMjE3MX0.ylQcT5KnVDvdP3Wa8ZKdI6FpXWnjXAkpzpfzRw0FP30";
 const SESSION_STORAGE_KEY = "lead-control-session";
 const THEME_STORAGE_KEY = "lead-control-theme";
-const AI_SETTINGS_STORAGE_KEY = "lead-control-ai-settings";
 const AI_CHAT_STORAGE_KEY = "lead-control-ai-chats";
+const BACKUP_DB_NAME = "lead-control-backup";
+const BACKUP_DB_VERSION = 2;
+const BACKUP_HANDLE_STORE = "directory-handles";
+const BACKUP_MANIFEST_STORE = "backup-manifests";
+const BACKUP_ROOT_FOLDER = "Controle de Leads";
+const BACKUP_SCHEDULE_HOUR = 20;
 
 const LEGACY_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
-const DEFAULT_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
+const LEGACY_MULTI_STORE_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
+const DEFAULT_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Cada conversa recebe dados de uma única loja selecionada. Nunca combine, compare ou pressuponha dados de outras lojas. Quando o usuário pedir análise, use somente os leads filtrados dessa loja, encontre padrões, gargalos e oportunidades, indique quando houver pouca amostra e priorize ações práticas.`;
 
 const aiProviderOptions = {
   gemini: {
@@ -15,12 +21,12 @@ const aiProviderOptions = {
   },
   deepseek: {
     label: "DeepSeek",
-    models: ["deepseek-chat", "deepseek-v4-flash", "deepseek-v4-pro"],
+    models: ["deepseek-chat"],
   },
 };
 
 const labels = {
-  channel: "Canal",
+  channel: "Plataforma / canal",
   campaign: "Campanha",
   conversationStart: "Início da conversa",
   conclusion: "Conclusão",
@@ -31,13 +37,12 @@ const labels = {
 
 const optionGroups = Object.keys(labels);
 const fixedOptionGroups = new Set(["scheduled", "visited", "bought"]);
-const fixedChannelOptions = new Set(["Instagram", "Facebook"]);
 const nativeYesNoOptions = ["Sim", "Não"];
 const defaultOptions = {
-  channel: ["WhatsApp", "Instagram", "Facebook", "Ligação"],
-  campaign: ["Orgânico", "Anúncio", "Indicação"],
-  conversationStart: ["Preço", "Consulta", "Armação", "Lente"],
-  conclusion: ["Aguardando", "Retornar", "Finalizado"],
+  channel: [],
+  campaign: [],
+  conversationStart: [],
+  conclusion: [],
   scheduled: nativeYesNoOptions,
   visited: nativeYesNoOptions,
   bought: nativeYesNoOptions,
@@ -49,9 +54,14 @@ let optionRecords = createDefaultOptionRecords();
 let currentProfile = null;
 let activeStoreContext = null;
 let activeTechnicianContext = null;
+let accountUsage = null;
+let companyWorkspaceSection = "clients";
+let selectedAnalyticsStoreId = "";
+let managedAccountCurrentAvatar = "";
 let stores = [];
 let leads = [];
 let technicians = [];
+let profileAvatars = [];
 let customCategories = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
@@ -62,11 +72,18 @@ let selectedCustomValues = {};
 let aiSettings = createDefaultAiSettings();
 let aiChats = [];
 let activeAiChatId = null;
+let aiChatStoreScopeId = "";
 let aiMessages = [];
 let aiIsSending = false;
 let aiAbortController = null;
 let currentAiResponseMessage = null;
 let editingAiMessageIndex = null;
+let backupDirectoryHandle = null;
+let backupManifest = createEmptyBackupManifest();
+let backupSchedulerTimer = null;
+let backupIsRunning = false;
+let backupAutoAttemptDate = "";
+let backupPermissionState = "prompt";
 let appointmentModalMode = "lead-form";
 let appointmentMonitorLeadId = null;
 const expandedAnalyticsSections = new Set();
@@ -96,6 +113,7 @@ const appView = $("#appView");
 const adminView = $("#adminView");
 const storeView = $("#storeView");
 const sessionRole = $("#sessionRole");
+const sessionAvatar = $("#sessionAvatar");
 const appNotification = $("#appNotification");
 const themeToggle = $("#themeToggle");
 const logoutButton = $("#logoutButton");
@@ -114,11 +132,20 @@ const storeForm = $("#storeForm");
 const storeName = $("#storeName");
 const storeNick = $("#storeNick");
 const storePassword = $("#storePassword");
+const storeAvatar = $("#storeAvatar");
+const storeAvatarPreview = $("#storeAvatarPreview");
 const storeMessage = $("#storeMessage");
+const storeTechnicianField = $("#storeTechnicianField");
+const storeTechnician = $("#storeTechnician");
+const storeFormEyebrow = $("#storeFormEyebrow");
+const storeFormTitle = $("#storeFormTitle");
 const technicianForm = $("#technicianForm");
 const technicianName = $("#technicianName");
 const technicianNick = $("#technicianNick");
 const technicianPassword = $("#technicianPassword");
+const technicianAvatar = $("#technicianAvatar");
+const technicianAvatarPreview = $("#technicianAvatarPreview");
+const technicianStoreLimit = $("#technicianStoreLimit");
 const technicianMessage = $("#technicianMessage");
 const technicianEmptyState = $("#technicianEmptyState");
 const technicianList = $("#technicianList");
@@ -132,6 +159,14 @@ const adminAccountNick = $("#adminAccountNick");
 const adminCurrentPassword = $("#adminCurrentPassword");
 const adminNewPassword = $("#adminNewPassword");
 const adminAccountMessage = $("#adminAccountMessage");
+const adminAiSettingsForm = $("#adminAiSettingsForm");
+const adminAiProvider = $("#adminAiProvider");
+const adminAiModel = $("#adminAiModel");
+const adminAiApiKey = $("#adminAiApiKey");
+const adminAiSystemPrompt = $("#adminAiSystemPrompt");
+const adminAiSavedStatus = $("#adminAiSavedStatus");
+const adminAiSettingsMessage = $("#adminAiSettingsMessage");
+const adminAiValidateButton = $("#adminAiValidateButton");
 const managedAccountModal = $("#managedAccountModal");
 const managedAccountClose = $("#managedAccountClose");
 const managedAccountCancel = $("#managedAccountCancel");
@@ -141,13 +176,58 @@ const managedAccountType = $("#managedAccountType");
 const managedAccountId = $("#managedAccountId");
 const managedAccountName = $("#managedAccountName");
 const managedAccountNameLabel = $("#managedAccountNameLabel");
+const managedAccountTechnicianField = $("#managedAccountTechnicianField");
+const managedAccountTechnician = $("#managedAccountTechnician");
 const managedAccountNick = $("#managedAccountNick");
 const managedAccountPassword = $("#managedAccountPassword");
+const managedAccountAvatar = $("#managedAccountAvatar");
+const managedAccountAvatarPreview = $("#managedAccountAvatarPreview");
+const managedAccountLimitField = $("#managedAccountLimitField");
+const managedAccountLimit = $("#managedAccountLimit");
 const managedAccountMessage = $("#managedAccountMessage");
+const clientCapacityPanel = $("#clientCapacityPanel");
+const clientCapacityEyebrow = $("#clientCapacityEyebrow");
+const clientCapacityTitle = $("#clientCapacityTitle");
+const clientCapacityHint = $("#clientCapacityHint");
+const clientCapacityProgress = $("#clientCapacityProgress");
+const clientCapacityPercent = $("#clientCapacityPercent");
+const totalStoresLabel = $("#totalStoresLabel");
+const totalStoresHint = $("#totalStoresHint");
+const storeListTitle = $("#storeListTitle");
+const clientWalletSearch = $("#clientWalletSearch");
+const clearClientWalletSearch = $("#clearClientWalletSearch");
+const storeEmptyTitle = $("#storeEmptyTitle");
+const storeEmptyText = $("#storeEmptyText");
+const companyWorkspaceNav = $("#companyWorkspaceNav");
+const companyWorkspaceButtons = $$('[data-company-section]');
+const backupCenter = $("#backupCenter");
+const backupSupportBadge = $("#backupSupportBadge");
+const backupDirectoryLabel = $("#backupDirectoryLabel");
+const backupDirectoryHint = $("#backupDirectoryHint");
+const backupLastRun = $("#backupLastRun");
+const backupChooseDirectory = $("#backupChooseDirectory");
+const backupRunNow = $("#backupRunNow");
+const backupClientsTitle = $("#backupClientsTitle");
+const backupClientList = $("#backupClientList");
+const backupMessage = $("#backupMessage");
+const analyticsClientPicker = $("#analyticsClientPicker");
+const analyticsClientSelect = $("#analyticsClientSelect");
+const analyticsClientSelectTrigger = $("#analyticsClientSelectTrigger");
+const analyticsClientDropdown = $("#analyticsClientDropdown");
+const analyticsClientSearch = $("#analyticsClientSearch");
+const analyticsClientOptions = $("#analyticsClientOptions");
+const analyticsClientOptionsEmpty = $("#analyticsClientOptionsEmpty");
+const analyticsClientSelector = $("#analyticsClientSelector");
+const analyticsClientAvatar = $("#analyticsClientAvatar");
+const analyticsClientTitle = $("#analyticsClientTitle");
+const analyticsClientSubtitle = $("#analyticsClientSubtitle");
+const analyticsSelectionEmpty = $("#analyticsSelectionEmpty");
+const adminAnalyticsSummary = $("#adminAnalyticsSummary");
+const adminAnalyticsPanel = $("#adminAnalyticsPanel");
+const clientManagementArea = $("#clientManagementArea");
+const analyticsStoreField = $("#analyticsStoreField");
 const storeEmptyState = $("#storeEmptyState");
 const storeList = $("#storeList");
-const adminOptionsList = $("#adminOptionsList");
-const adminOptionsMessage = $("#adminOptionsMessage");
 const analyticsContent = $("#analyticsContent");
 const analyticsStoreFilter = $("#analyticsStoreFilter");
 const analyticsChannelFilter = $("#analyticsChannelFilter");
@@ -171,6 +251,7 @@ const analyticsChartsPanel = $("#analyticsChartsPanel");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const exportLeadsButton = $("#exportLeadsButton");
+const storeExportLeadsButton = $("#storeExportLeadsButton");
 const aiInsightsButton = $("#aiInsightsButton");
 const analyticsChartsButton = $("#analyticsChartsButton");
 const aiChatModal = $("#aiChatModal");
@@ -273,8 +354,7 @@ let pendingConfirmAction = null;
 
 const analyticsSections = [
   { id: "campaign", label: "Campanhas", key: "campaign", optionGroup: "campaign", container: "#analyticsCampaignCards", summary: "#analyticsCampaignSummary" },
-  { id: "store", label: "Lojas", key: "storeName", container: "#analyticsStoreCards", summary: "#analyticsStoreSummary" },
-  { id: "channel", label: "Canais", key: "channel", optionGroup: "channel", container: "#analyticsChannelCards", summary: "#analyticsChannelSummary" },
+  { id: "channel", label: "Plataformas / canais", key: "channel", optionGroup: "channel", container: "#analyticsChannelCards", summary: "#analyticsChannelSummary" },
   { id: "start", label: "Início da conversa", key: "conversationStart", optionGroup: "conversationStart", container: "#analyticsStartCards", summary: "#analyticsStartSummary" },
   { id: "conclusion", label: "Resultado", key: "conclusion", optionGroup: "conclusion", container: "#analyticsConclusionCards", summary: "#analyticsConclusionSummary" },
   { id: "visited", label: "Visitas", key: "visited", optionGroup: "visited", container: "#analyticsVisitedCards", summary: "#analyticsVisitedSummary" },
@@ -291,6 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function init() {
   applyStoredTheme();
+  bindFocusModality();
   loadAiSettings();
   setTodayLabel();
   bindEvents();
@@ -327,6 +408,9 @@ function bindEvents() {
   settingsModal.addEventListener("click", (event) => {
     if (event.target === settingsModal) closeSettingsModal();
   });
+  adminAiProvider.addEventListener("input", handleAdminAiProviderChange);
+  adminAiSettingsForm.addEventListener("submit", handleAdminAiSettingsSubmit);
+  adminAiValidateButton.addEventListener("click", handleAdminAiValidate);
   managedAccountClose.addEventListener("click", closeManagedAccountModal);
   managedAccountCancel.addEventListener("click", closeManagedAccountModal);
   managedAccountModal.addEventListener("click", (event) => {
@@ -334,12 +418,65 @@ function bindEvents() {
   });
   managedAccountForm.addEventListener("submit", handleManagedAccountSubmit);
   storeForm.addEventListener("submit", handleCreateStore);
+  storeTechnician.addEventListener("input", syncStoreCreationAvailability);
   technicianForm.addEventListener("submit", handleCreateTechnician);
   adminAccountForm.addEventListener("submit", handleAdminAccountSubmit);
-  adminOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
-  adminOptionsList.addEventListener("input", handleOptionsEditorInput);
   storeOptionsList.addEventListener("input", handleOptionsEditorInput);
+  companyWorkspaceButtons.forEach((button) => {
+    button.addEventListener("click", () => setCompanyWorkspaceSection(button.dataset.companySection));
+  });
+  analyticsClientSelector.addEventListener("input", () => {
+    handleAnalyticsClientSelection().catch((error) => showAppNotification(readableError(error), "error"));
+  });
+  analyticsClientSelectTrigger.addEventListener("click", () => {
+    setAnalyticsClientDropdown(analyticsClientDropdown.hidden);
+  });
+  analyticsClientSelectTrigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setAnalyticsClientDropdown(true, "option");
+    }
+    if (event.key === "Escape") setAnalyticsClientDropdown(false);
+  });
+  analyticsClientSearch.addEventListener("input", renderAnalyticsClientOptions);
+  analyticsClientSearch.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusAnalyticsClientOption(0);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setAnalyticsClientDropdown(false, "trigger");
+    }
+  });
+  analyticsClientOptions.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-analytics-store-id]");
+    if (!option) return;
+    selectAnalyticsClient(option.dataset.analyticsStoreId).catch((error) => showAppNotification(readableError(error), "error"));
+  });
+  analyticsClientOptions.addEventListener("keydown", handleAnalyticsClientOptionsKeydown);
+  document.addEventListener("click", (event) => {
+    if (!analyticsClientDropdown.hidden && !analyticsClientSelect.contains(event.target)) {
+      setAnalyticsClientDropdown(false);
+    }
+  });
+  [
+    [storeAvatar, storeAvatarPreview, "store"],
+    [technicianAvatar, technicianAvatarPreview, "building"],
+    [managedAccountAvatar, managedAccountAvatarPreview, "camera"],
+  ].forEach(([input, preview, fallbackIcon]) => {
+    input.addEventListener("input", () => previewAvatarFile(input, preview, fallbackIcon));
+  });
+  $$('[data-avatar-input]').forEach((button) => {
+    button.addEventListener("click", () => document.getElementById(button.dataset.avatarInput)?.click());
+  });
+  clientWalletSearch.addEventListener("input", renderStoreList);
+  clearClientWalletSearch.addEventListener("click", () => {
+    clientWalletSearch.value = "";
+    renderStoreList();
+    clientWalletSearch.focus();
+  });
   unsavedCancel.addEventListener("click", closeUnsavedOptionsModal);
   unsavedDiscard.addEventListener("click", discardUnsavedOptionsAndContinue);
   unsavedSave.addEventListener("click", saveUnsavedOptionsAndContinue);
@@ -373,6 +510,11 @@ function bindEvents() {
   appointmentMonitorToggle.addEventListener("click", toggleAppointmentMonitorPanel);
   appointmentMonitorList.addEventListener("click", handleAppointmentMonitorClick);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
+  storeExportLeadsButton.addEventListener("click", exportStoreLeadsToExcel);
+  backupChooseDirectory.addEventListener("click", chooseBackupDirectory);
+  backupRunNow.addEventListener("click", () => {
+    runBackup({ manual: true }).catch((error) => showBackupMessage(readableError(error), "error"));
+  });
   aiInsightsButton.addEventListener("click", openAiChat);
   analyticsChartsButton.addEventListener("click", toggleAnalyticsChartsMode);
   analyticsChartsPanel.addEventListener("input", handleAnalyticsChartInput);
@@ -567,6 +709,13 @@ async function openProfile(profile) {
   appView.hidden = false;
   await refreshRemoteState();
 
+  if (["admin", "technician"].includes(profile.role)) {
+    await refreshCentralAiSettings({ silent: true });
+    await initializeBackupSystem();
+  } else {
+    stopBackupScheduler();
+  }
+
   if (profile.role === "admin" || profile.role === "technician") {
     showAdminDashboard();
     return;
@@ -578,9 +727,13 @@ async function openProfile(profile) {
 function showAdminDashboard() {
   activeStoreContext = null;
   activeTechnicianContext = null;
+  companyWorkspaceSection = "clients";
+  selectedAnalyticsStoreId = "";
+  clientWalletSearch.value = "";
+  syncAiChatStoreScope("");
   const isTechnician = currentProfile.role === "technician";
-  sessionRole.textContent = `${isTechnician ? "Técnico" : "Admin"} · ${currentProfile.username}`;
-  storeForm.hidden = isTechnician;
+  sessionRole.textContent = `${isTechnician ? "Empresa" : "Admin"} · ${currentProfile.fullName || currentProfile.username}`;
+  storeForm.hidden = false;
   technicianForm.hidden = isTechnician;
   technicianListPanel.hidden = isTechnician;
   settingsButton.hidden = isTechnician;
@@ -619,21 +772,31 @@ async function handleLogout() {
   } catch (error) {
     console.warn(error);
   } finally {
+    closeAiChat();
     clearStoredSession();
     currentProfile = null;
     activeStoreContext = null;
+    activeTechnicianContext = null;
+    accountUsage = null;
+    companyWorkspaceSection = "clients";
+    selectedAnalyticsStoreId = "";
     stores = [];
     leads = [];
     technicians = [];
+    profileAvatars = [];
     aiChats = [];
     activeAiChatId = null;
+    aiChatStoreScopeId = "";
     aiMessages = [];
     customCategories = [];
     options = cloneOptions(defaultOptions);
     optionRecords = createDefaultOptionRecords();
     selectedCustomValues = {};
+    stopBackupScheduler();
+    backupDirectoryHandle = null;
+    backupManifest = createEmptyBackupManifest();
+    backupAutoAttemptDate = "";
     resetLeadForm();
-    closeAiChat();
     showAuth();
     renderAll();
   }
@@ -667,7 +830,7 @@ async function handleCreateStore(event) {
   event.preventDefault();
   clearStoreMessage();
 
-  if (!currentProfile || currentProfile.role !== "admin") return;
+  if (!currentProfile || !["admin", "technician"].includes(currentProfile.role)) return;
 
   const username = normalizeNick(storeNick.value);
   if (!username) {
@@ -675,14 +838,31 @@ async function handleCreateStore(event) {
     return;
   }
 
+  const technicianId = getStoreCreationTechnicianId();
+  if (!technicianId) {
+    showStoreMessage("Selecione a empresa responsável por esta loja.");
+    return;
+  }
+
   try {
     setFormBusy(storeForm, true);
-    await authenticatedRpc("lc_create_store", {
+    const avatarUrl = await avatarFileToDataUrl(storeAvatar.files?.[0]);
+    const createdStore = firstRow(await authenticatedRpc("lc_create_store", {
       p_name: storeName.value.trim(),
       p_nick: username,
       p_password: storePassword.value,
-    });
+      p_technician_id: technicianId,
+    }));
+    if (avatarUrl && createdStore?.store_id) {
+      await authenticatedRpc("lc_set_profile_avatar", {
+        p_account_type: "store",
+        p_account_id: createdStore.store_id,
+        p_avatar_url: avatarUrl,
+      });
+    }
     storeForm.reset();
+    setAvatarPreview(storeAvatarPreview, "", "store");
+    setAvatarFileName(storeAvatar);
     await refreshRemoteState();
     showStoreMessage("Loja criada.", "success");
     renderAll();
@@ -690,6 +870,7 @@ async function handleCreateStore(event) {
     showStoreMessage(readableError(error));
   } finally {
     setFormBusy(storeForm, false);
+    syncStoreCreationAvailability();
   }
 }
 
@@ -700,21 +881,39 @@ async function handleCreateTechnician(event) {
   if (!currentProfile || currentProfile.role !== "admin") return;
 
   const username = normalizeNick(technicianNick.value);
+  const storeLimit = Number.parseInt(technicianStoreLimit.value, 10);
   if (!username) {
-    showTechnicianMessage("Digite um nick válido para o técnico.");
+    showTechnicianMessage("Digite um login válido para a empresa.");
+    return;
+  }
+
+  if (!Number.isInteger(storeLimit) || storeLimit < 0) {
+    showTechnicianMessage("Informe um limite de clientes válido.");
     return;
   }
 
   try {
     setFormBusy(technicianForm, true);
-    await authenticatedRpc("lc_create_technician", {
+    const avatarUrl = await avatarFileToDataUrl(technicianAvatar.files?.[0]);
+    const createdTechnician = firstRow(await authenticatedRpc("lc_create_technician", {
       p_full_name: technicianName.value.trim(),
       p_nick: username,
       p_password: technicianPassword.value,
-    });
+      p_store_limit: storeLimit,
+    }));
+    if (avatarUrl && createdTechnician?.id) {
+      await authenticatedRpc("lc_set_profile_avatar", {
+        p_account_type: "technician",
+        p_account_id: createdTechnician.id,
+        p_avatar_url: avatarUrl,
+      });
+    }
     technicianForm.reset();
+    setAvatarPreview(technicianAvatarPreview, "", "building");
+    setAvatarFileName(technicianAvatar);
     await refreshRemoteState();
-    showTechnicianMessage("Técnico criado.", "success");
+    technicianStoreLimit.value = "5";
+    showTechnicianMessage("Empresa criada.", "success");
     renderAll();
   } catch (error) {
     showTechnicianMessage(readableError(error));
@@ -773,6 +972,8 @@ function openSettingsModal() {
   adminCurrentPassword.value = "";
   adminNewPassword.value = "";
   clearAdminAccountMessage();
+  renderAdminAiSettingsForm();
+  showAdminAiSettingsMessage("");
   settingsModal.hidden = false;
   syncModalLock();
   requestAnimationFrame(() => adminAccountNick.focus());
@@ -783,11 +984,25 @@ function closeSettingsModal() {
   settingsModal.hidden = true;
   adminCurrentPassword.value = "";
   adminNewPassword.value = "";
+  adminAiApiKey.value = "";
   clearAdminAccountMessage();
+  showAdminAiSettingsMessage("");
   syncModalLock();
 }
 
 function handleManagementListClick(event) {
+  const exportButton = event.target.closest("[data-store-export]");
+  if (exportButton) {
+    exportManagedStoreLeads(exportButton.dataset.storeExport);
+    return;
+  }
+
+  const analyzeButton = event.target.closest("[data-store-analyze]");
+  if (analyzeButton) {
+    analyzeStore(analyzeButton.dataset.storeAnalyze).catch((error) => showAppNotification(readableError(error), "error"));
+    return;
+  }
+
   const editButton = event.target.closest("[data-account-edit]");
   if (editButton) {
     openManagedAccountModal(editButton.dataset.accountEdit, editButton.dataset.accountId);
@@ -801,12 +1016,14 @@ function handleManagementListClick(event) {
   }
 
   const button = event.target.closest("[data-store-login]");
-  if (!button || currentProfile?.role !== "admin") return;
-  guardUnsavedOptions(() => openStoreAsAdmin(button.dataset.storeLogin));
+  if (!button || !["admin", "technician"].includes(currentProfile?.role)) return;
+  guardUnsavedOptions(() => openStoreAsAdmin(button.dataset.storeLogin).catch((error) => showAppNotification(readableError(error), "error")));
 }
 
 function openManagedAccountModal(type, id) {
-  if (currentProfile?.role !== "admin") return;
+  const canManageTechnician = type === "technician" && currentProfile?.role === "admin";
+  const canManageStore = type === "store" && canManageStoreAccount(id);
+  if (!canManageTechnician && !canManageStore) return;
 
   const record = type === "store"
     ? stores.find((store) => store.id === id)
@@ -815,11 +1032,27 @@ function openManagedAccountModal(type, id) {
 
   managedAccountType.value = type;
   managedAccountId.value = id;
-  managedAccountTitle.textContent = type === "store" ? "Editar loja" : "Editar técnico";
-  managedAccountNameLabel.textContent = type === "store" ? "Nome da loja" : "Nome do técnico";
+  managedAccountTitle.textContent = type === "store" ? "Editar loja" : "Editar empresa";
+  managedAccountNameLabel.textContent = type === "store" ? "Nome da loja" : "Nome da empresa";
   managedAccountName.value = type === "store" ? record.name : record.fullName || record.username;
+  const canAssignCompany = type === "store" && currentProfile?.role === "admin";
+  managedAccountTechnicianField.hidden = !canAssignCompany;
+  managedAccountTechnician.required = canAssignCompany;
+  managedAccountTechnician.innerHTML = canAssignCompany
+    ? '<option value="">Selecione a empresa</option>' + technicians
+        .map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)} · ${technician.storeCount}/${technician.storeLimit}</option>`)
+        .join("")
+    : "";
+  if (canAssignCompany) managedAccountTechnician.value = record.technicianId || "";
+  managedAccountCurrentAvatar = record.avatarUrl || "";
+  managedAccountAvatar.value = "";
+  setAvatarFileName(managedAccountAvatar);
+  setAvatarPreview(managedAccountAvatarPreview, managedAccountCurrentAvatar, type === "store" ? "store" : "building");
   managedAccountNick.value = record.username || "";
   managedAccountPassword.value = "";
+  managedAccountLimitField.hidden = type !== "technician";
+  managedAccountLimit.required = type === "technician";
+  managedAccountLimit.value = type === "technician" ? String(record.storeLimit ?? 0) : "";
   clearManagedAccountMessage();
   managedAccountModal.hidden = false;
   syncModalLock();
@@ -830,6 +1063,13 @@ function closeManagedAccountModal() {
   if (!managedAccountModal || managedAccountModal.hidden) return;
   managedAccountModal.hidden = true;
   managedAccountForm.reset();
+  managedAccountCurrentAvatar = "";
+  setAvatarPreview(managedAccountAvatarPreview, "", "camera");
+  setAvatarFileName(managedAccountAvatar);
+  managedAccountTechnicianField.hidden = true;
+  managedAccountTechnician.required = false;
+  managedAccountLimitField.hidden = true;
+  managedAccountLimit.required = false;
   clearManagedAccountMessage();
   syncModalLock();
 }
@@ -838,12 +1078,15 @@ async function handleManagedAccountSubmit(event) {
   event.preventDefault();
   clearManagedAccountMessage();
 
-  if (currentProfile?.role !== "admin") return;
-
   const type = managedAccountType.value;
   const id = managedAccountId.value;
+  const canManageTechnician = type === "technician" && currentProfile?.role === "admin";
+  const canManageStore = type === "store" && canManageStoreAccount(id);
+  if (!canManageTechnician && !canManageStore) return;
+
   const username = normalizeNick(managedAccountNick.value);
   const password = managedAccountPassword.value;
+  const storeLimit = Number.parseInt(managedAccountLimit.value, 10);
 
   if (!managedAccountName.value.trim()) {
     showManagedAccountMessage("Digite o nome.");
@@ -860,14 +1103,26 @@ async function handleManagedAccountSubmit(event) {
     return;
   }
 
+  if (type === "store" && currentProfile?.role === "admin" && !managedAccountTechnician.value) {
+    showManagedAccountMessage("Selecione a empresa responsável pela loja.");
+    return;
+  }
+
+  if (type === "technician" && (!Number.isInteger(storeLimit) || storeLimit < 0)) {
+    showManagedAccountMessage("Informe um limite de clientes válido.");
+    return;
+  }
+
   try {
     setFormBusy(managedAccountForm, true);
+    const newAvatarUrl = await avatarFileToDataUrl(managedAccountAvatar.files?.[0]);
     if (type === "store") {
       await authenticatedRpc("lc_update_store_account", {
         p_store_id: id,
         p_name: managedAccountName.value.trim(),
         p_nick: username,
         p_password: password || null,
+        p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedAccountTechnician.value,
       });
     } else if (type === "technician") {
       await authenticatedRpc("lc_update_technician_account", {
@@ -875,6 +1130,15 @@ async function handleManagedAccountSubmit(event) {
         p_full_name: managedAccountName.value.trim(),
         p_nick: username,
         p_password: password || null,
+        p_store_limit: storeLimit,
+      });
+    }
+
+    if (newAvatarUrl) {
+      await authenticatedRpc("lc_set_profile_avatar", {
+        p_account_type: type,
+        p_account_id: id,
+        p_avatar_url: newAvatarUrl,
       });
     }
 
@@ -889,19 +1153,20 @@ async function handleManagedAccountSubmit(event) {
   }
 }
 
-function openStoreAsAdmin(storeId) {
+async function openStoreAsAdmin(storeId) {
+  if (!["admin", "technician"].includes(currentProfile?.role)) return;
   const store = stores.find((item) => item.id === storeId);
-  if (!store) return;
+  if (!store || (currentProfile.role === "technician" && store.technicianId !== currentProfile.id)) return;
 
   activeStoreContext = store;
-  activeTechnicianContext = null;
-  sessionRole.textContent = `Admin · ${store.name}`;
+  sessionRole.textContent = `${currentProfile.role === "technician" ? "Empresa" : "Admin"} · ${store.name}`;
   backAdminButton.hidden = false;
   appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
   adminView.hidden = true;
   storeView.hidden = false;
+  await refreshStoreConfiguration(store.id);
   resetLeadForm();
   renderAll();
 }
@@ -912,17 +1177,57 @@ function openTechnicianAsAdmin(technicianId) {
 
   activeStoreContext = null;
   activeTechnicianContext = technician;
-  sessionRole.textContent = `Técnico · ${technician.fullName || technician.username}`;
+  companyWorkspaceSection = "clients";
+  selectedAnalyticsStoreId = "";
+  clientWalletSearch.value = "";
+  syncAiChatStoreScope("");
+  analyticsStoreFilter.value = "";
+  sessionRole.textContent = `Empresa · ${technician.fullName || technician.username}`;
   backAdminButton.hidden = false;
   adminView.hidden = false;
   storeView.hidden = true;
   renderAll();
 }
 
+async function analyzeStore(storeId) {
+  const store = getDashboardStores().find((item) => item.id === storeId);
+  if (!store) return;
+
+  selectedAnalyticsStoreId = store.id;
+  syncAiChatStoreScope(store.id);
+  companyWorkspaceSection = "analytics";
+  await refreshStoreConfiguration(store.id);
+  renderAll();
+  analyticsClientPicker.scrollIntoView({ behavior: "smooth", block: "start" });
+  showAppNotification(`Analisando ${store.name}`);
+}
+
 function returnToAdmin() {
-  if (currentProfile?.role !== "admin") return;
+  if (!["admin", "technician"].includes(currentProfile?.role)) return;
+  const wasInsideStore = Boolean(activeStoreContext);
   clearFormButton.hidden = false;
-  showAdminDashboard();
+  activeStoreContext = null;
+  if (currentProfile.role === "admin" && activeTechnicianContext && !wasInsideStore) {
+    activeTechnicianContext = null;
+    companyWorkspaceSection = "clients";
+    selectedAnalyticsStoreId = "";
+    clientWalletSearch.value = "";
+    syncAiChatStoreScope("");
+    analyticsStoreFilter.value = "";
+  }
+  appointmentMonitorToggle.hidden = true;
+  appointmentMonitorPanel.hidden = true;
+  backAdminButton.hidden = currentProfile.role === "technician" || !activeTechnicianContext;
+  adminView.hidden = false;
+  storeView.hidden = true;
+  if (currentProfile.role === "technician") {
+    sessionRole.textContent = `Empresa · ${currentProfile.fullName || currentProfile.username}`;
+  } else if (activeTechnicianContext) {
+    sessionRole.textContent = `Empresa · ${activeTechnicianContext.fullName || activeTechnicianContext.username}`;
+  } else {
+    sessionRole.textContent = `Admin · ${currentProfile.fullName || currentProfile.username}`;
+  }
+  renderAll();
   resetLeadForm();
 }
 
@@ -1235,6 +1540,8 @@ function resetLeadForm() {
 async function refreshRemoteState() {
   if (!currentProfile?.sessionToken) return;
 
+  const configurationStoreId = getConfigurationStoreId();
+
   const technicianRowsRequest = currentProfile.role === "admin"
     ? authenticatedRpc("lc_list_technicians").catch((error) => {
         if (isMissingRpcError(error)) return [];
@@ -1242,15 +1549,35 @@ async function refreshRemoteState() {
       })
     : Promise.resolve([]);
 
-  const [storeRows, optionRows, customCategoryRows, leadRows, technicianRows] = await Promise.all([
+  const accountUsageRequest = currentProfile.role === "technician"
+    ? authenticatedRpc("lc_account_usage").catch((error) => {
+        if (isMissingRpcError(error)) return [];
+        throw error;
+      })
+    : Promise.resolve([]);
+
+  const optionRowsRequest = configurationStoreId
+    ? authenticatedRpc("lc_list_options", { p_store_id: configurationStoreId })
+    : Promise.resolve([]);
+  const customCategoryRowsRequest = configurationStoreId
+    ? authenticatedRpc("lc_list_custom_categories", { p_store_id: configurationStoreId }).catch((error) => {
+        if (isMissingRpcError(error)) return [];
+        throw error;
+      })
+    : Promise.resolve([]);
+  const avatarRowsRequest = authenticatedRpc("lc_list_profile_avatars").catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+
+  const [storeRows, optionRows, customCategoryRows, leadRows, technicianRows, usageRows, avatarRows] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
-    authenticatedRpc("lc_list_options"),
-    authenticatedRpc("lc_list_custom_categories").catch((error) => {
-      if (isMissingRpcError(error)) return [];
-      throw error;
-    }),
+    optionRowsRequest,
+    customCategoryRowsRequest,
     authenticatedRpc("lc_list_leads"),
     technicianRowsRequest,
+    accountUsageRequest,
+    avatarRowsRequest,
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
@@ -1258,15 +1585,46 @@ async function refreshRemoteState() {
   applyCustomCategoryRows(customCategoryRows || []);
   leads = (leadRows || []).map(mapLeadRow);
   technicians = (technicianRows || []).map(mapTechnicianRow);
+  profileAvatars = avatarRows || [];
+  applyProfileAvatars();
+  accountUsage = currentProfile.role === "technician" ? mapAccountUsage(firstRow(usageRows)) : null;
+
+  if (selectedAnalyticsStoreId && !getDashboardStores().some((store) => store.id === selectedAnalyticsStoreId)) {
+    selectedAnalyticsStoreId = "";
+    syncAiChatStoreScope("");
+  }
 
   if (activeStoreContext) {
     activeStoreContext = stores.find((store) => store.id === activeStoreContext.id) || activeStoreContext;
   }
+  if (activeTechnicianContext) {
+    activeTechnicianContext = technicians.find((technician) => technician.id === activeTechnicianContext.id) || activeTechnicianContext;
+  }
 }
 
 async function refreshOptions() {
-  applyOptionRows(await authenticatedRpc("lc_list_options"));
+  const storeId = getConfigurationStoreId();
+  if (!storeId) return;
+  applyOptionRows(await authenticatedRpc("lc_list_options", { p_store_id: storeId }));
   renderAll();
+}
+
+async function refreshStoreConfiguration(storeId) {
+  if (!storeId) {
+    applyOptionRows([]);
+    applyCustomCategoryRows([]);
+    return;
+  }
+
+  const [optionRows, categoryRows] = await Promise.all([
+    authenticatedRpc("lc_list_options", { p_store_id: storeId }),
+    authenticatedRpc("lc_list_custom_categories", { p_store_id: storeId }).catch((error) => {
+      if (isMissingRpcError(error)) return [];
+      throw error;
+    }),
+  ]);
+  applyOptionRows(optionRows || []);
+  applyCustomCategoryRows(categoryRows || []);
 }
 
 function renderAll() {
@@ -1282,22 +1640,308 @@ function renderAll() {
 }
 
 function renderAdminDashboard() {
-  const isTechnicianView = currentProfile?.role === "technician" || Boolean(activeTechnicianContext);
-  const isAdmin = currentProfile?.role === "admin" && !activeTechnicianContext;
-  storeForm.hidden = !isAdmin;
-  technicianForm.hidden = !isAdmin;
-  technicianListPanel.hidden = !isAdmin;
-  settingsButton.hidden = !isAdmin;
-  storeListPanel.hidden = isTechnicianView;
-  $("#totalStores").textContent = stores.length;
-  $("#adminTotalLeads").textContent = leads.length;
-  $("#adminScheduledCount").textContent = countByValue(leads, "scheduled", "Sim");
-  $("#adminSalesCount").textContent = countByValue(leads, "bought", "Sim");
-  $("#adminConversionRate").textContent = formatPercent(countByValue(leads, "bought", "Sim"), leads.length);
+  const isRootAdmin = currentProfile?.role === "admin" && !activeTechnicianContext;
+  const dashboardStores = getDashboardStores();
+  const selectedStore = dashboardStores.find((store) => store.id === selectedAnalyticsStoreId) || null;
+  const selectedLeads = selectedStore ? leads.filter((lead) => lead.storeId === selectedStore.id) : [];
+  const isAnalytics = companyWorkspaceSection === "analytics";
+  const isBackups = companyWorkspaceSection === "backups";
+  const isClients = companyWorkspaceSection === "clients";
+
+  clientManagementArea.hidden = !isClients;
+  backupCenter.hidden = !isBackups;
+  analyticsClientPicker.hidden = !isAnalytics;
+  if (!isAnalytics) setAnalyticsClientDropdown(false);
+  analyticsSelectionEmpty.hidden = !isAnalytics || Boolean(selectedStore);
+  adminAnalyticsSummary.hidden = !isAnalytics || !selectedStore;
+  adminAnalyticsPanel.hidden = !isAnalytics || !selectedStore;
+  clientCapacityPanel.hidden = !isClients;
+  companyWorkspaceButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.companySection === companyWorkspaceSection);
+  });
+
+  storeForm.hidden = isAnalytics;
+  technicianForm.hidden = !isRootAdmin;
+  technicianListPanel.hidden = !isRootAdmin;
+  settingsButton.hidden = !isRootAdmin;
+  storeListPanel.hidden = false;
+  totalStoresLabel.textContent = "Cliente";
+  totalStoresHint.hidden = false;
+  totalStoresHint.textContent = selectedStore ? "análise exclusiva" : "";
+  storeListTitle.textContent = "Carteira de clientes";
+  $("#totalStores").textContent = selectedStore?.name || "—";
+  $("#adminTotalLeads").textContent = selectedLeads.length;
+  $("#adminScheduledCount").textContent = countByValue(selectedLeads, "scheduled", "Sim");
+  $("#adminSalesCount").textContent = countByValue(selectedLeads, "bought", "Sim");
+  $("#adminConversionRate").textContent = formatPercent(countByValue(selectedLeads, "bought", "Sim"), selectedLeads.length);
+  if (!isAnalytics) renderClientCapacity();
+  renderStoreCreationContext();
   renderStoreList();
   renderTechnicianList();
+  renderAnalyticsClientPicker(selectedStore);
   renderAnalyticsFilters();
   renderAdminAnalytics();
+  renderBackupCenter();
+  renderCurrentSessionAvatar();
+}
+
+function setCompanyWorkspaceSection(section) {
+  if (!["clients", "analytics", "backups"].includes(section)) return;
+  companyWorkspaceSection = section;
+  renderAll();
+}
+
+async function handleAnalyticsClientSelection() {
+  const storeId = analyticsClientSelector.value;
+  selectedAnalyticsStoreId = getDashboardStores().some((store) => store.id === storeId) ? storeId : "";
+  syncAiChatStoreScope(selectedAnalyticsStoreId);
+  await refreshStoreConfiguration(selectedAnalyticsStoreId);
+  clearAnalyticsFilters();
+  renderAll();
+}
+
+async function selectAnalyticsClient(storeId) {
+  analyticsClientSelector.value = getDashboardStores().some((store) => store.id === storeId) ? storeId : "";
+  setAnalyticsClientDropdown(false);
+  await handleAnalyticsClientSelection();
+}
+
+function setAnalyticsClientDropdown(isOpen, focusTarget = "search") {
+  analyticsClientDropdown.hidden = !isOpen;
+  analyticsClientSelect.classList.toggle("is-open", isOpen);
+  analyticsClientSelectTrigger.setAttribute("aria-expanded", String(isOpen));
+
+  if (!isOpen) {
+    analyticsClientSearch.value = "";
+    if (focusTarget === "trigger") analyticsClientSelectTrigger.focus();
+    return;
+  }
+
+  analyticsClientSearch.value = "";
+  renderAnalyticsClientOptions();
+  requestAnimationFrame(() => {
+    if (focusTarget === "option") focusAnalyticsClientOption(0);
+    else analyticsClientSearch.focus();
+  });
+}
+
+function focusAnalyticsClientOption(index) {
+  const options = [...analyticsClientOptions.querySelectorAll("[data-analytics-store-id]")];
+  if (!options.length) return;
+  const safeIndex = Math.max(0, Math.min(index, options.length - 1));
+  options[safeIndex].focus();
+}
+
+function handleAnalyticsClientOptionsKeydown(event) {
+  const options = [...analyticsClientOptions.querySelectorAll("[data-analytics-store-id]")];
+  const currentIndex = options.indexOf(document.activeElement);
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setAnalyticsClientDropdown(false, "trigger");
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    focusAnalyticsClientOption(currentIndex >= options.length - 1 ? 0 : currentIndex + 1);
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusAnalyticsClientOption(currentIndex <= 0 ? options.length - 1 : currentIndex - 1);
+    return;
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    focusAnalyticsClientOption(0);
+    return;
+  }
+  if (event.key === "End") {
+    event.preventDefault();
+    focusAnalyticsClientOption(options.length - 1);
+  }
+}
+
+function renderAnalyticsClientPicker(selectedStore) {
+  const dashboardStores = getDashboardStores();
+  analyticsClientSelector.innerHTML = '<option value="">Escolha uma loja</option>' + dashboardStores
+    .map((store) => `<option value="${store.id}"${store.id === selectedStore?.id ? " selected" : ""}>${escapeHtml(store.name)}</option>`)
+    .join("");
+  analyticsClientSelector.value = selectedStore?.id || "";
+  analyticsClientSelectTrigger.innerHTML = selectedStore
+    ? `
+        ${renderProfileAvatar(selectedStore.avatarUrl, selectedStore.name, "store")}
+        <span class="analytics-client-trigger-copy">
+          <strong>${escapeHtml(selectedStore.name)}</strong>
+          <small>@${escapeHtml(selectedStore.username)} · ${selectedStore.leadsCount} leads</small>
+        </span>
+        <i class="fa-solid fa-chevron-down analytics-client-select-chevron" aria-hidden="true"></i>
+      `
+    : `
+        <span class="analytics-client-trigger-placeholder" aria-hidden="true"><i class="fa-solid fa-store"></i></span>
+        <span class="analytics-client-trigger-copy">
+          <strong>Escolha uma loja</strong>
+          <small>Pesquisar na carteira de clientes</small>
+        </span>
+        <i class="fa-solid fa-chevron-down analytics-client-select-chevron" aria-hidden="true"></i>
+      `;
+  analyticsClientTitle.textContent = selectedStore?.name || "Selecione uma loja";
+  analyticsClientSubtitle.textContent = selectedStore
+    ? `@${selectedStore.username} · ${selectedStore.leadsCount} leads cadastrados`
+    : "Todos os gráficos serão exclusivos deste cliente.";
+  setAvatarPreview(analyticsClientAvatar, selectedStore?.avatarUrl || "", "store");
+  renderAnalyticsClientOptions();
+}
+
+function renderAnalyticsClientOptions() {
+  const search = normalizeSearchText(analyticsClientSearch.value.trim());
+  const dashboardStores = getDashboardStores().filter((store) => !search || [store.name, store.username]
+    .some((value) => normalizeSearchText(value).includes(search)));
+
+  analyticsClientOptionsEmpty.hidden = dashboardStores.length > 0;
+  analyticsClientOptions.innerHTML = dashboardStores
+    .map((store) => {
+      const isSelected = store.id === selectedAnalyticsStoreId;
+      const leadCount = Number(store.leadsCount) || 0;
+      return `
+        <button
+          class="analytics-client-option${isSelected ? " is-selected" : ""}"
+          type="button"
+          role="option"
+          tabindex="-1"
+          aria-selected="${String(isSelected)}"
+          data-analytics-store-id="${escapeHtml(store.id)}"
+        >
+          ${renderProfileAvatar(store.avatarUrl, store.name, "store")}
+          <span class="analytics-client-option-copy">
+            <strong>${escapeHtml(store.name)}</strong>
+            <small>@${escapeHtml(store.username)} · ${leadCount} ${leadCount === 1 ? "lead" : "leads"}</small>
+          </span>
+          <span class="analytics-client-option-status" aria-hidden="true">
+            <i class="fa-solid ${isSelected ? "fa-check" : "fa-chevron-right"}"></i>
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function getDashboardStores() {
+  if (activeTechnicianContext) {
+    return stores.filter((store) => store.technicianId === activeTechnicianContext.id);
+  }
+  if (currentProfile?.role === "technician") {
+    return stores.filter((store) => store.technicianId === currentProfile.id);
+  }
+  if (currentProfile?.role === "store") {
+    return stores.filter((store) => store.id === currentProfile.storeId);
+  }
+  return stores;
+}
+
+function getDashboardLeads() {
+  const storeIds = new Set(getDashboardStores().map((store) => store.id));
+  return leads.filter((lead) => storeIds.has(lead.storeId));
+}
+
+function getConfigurationStoreId() {
+  if (currentProfile?.role === "store") return currentProfile.storeId;
+  return activeStoreContext?.id || selectedAnalyticsStoreId || null;
+}
+
+function configurationRpcArgs(args = {}) {
+  const storeId = getConfigurationStoreId();
+  if (!storeId) throw new Error("Selecione uma loja antes de editar as opções.");
+  return { ...args, p_store_id: storeId };
+}
+
+function getStoreCreationTechnicianId() {
+  if (currentProfile?.role === "technician") return currentProfile.id;
+  if (activeTechnicianContext) return activeTechnicianContext.id;
+  return storeTechnician.value || null;
+}
+
+function getSelectedCapacityContext() {
+  if (activeTechnicianContext) return activeTechnicianContext;
+  if (currentProfile?.role === "technician") {
+    return {
+      id: currentProfile.id,
+      fullName: currentProfile.fullName,
+      username: currentProfile.username,
+      storeCount: accountUsage?.storeCount ?? stores.length,
+      storeLimit: accountUsage?.storeLimit ?? 0,
+    };
+  }
+  return technicians.find((technician) => technician.id === storeTechnician.value) || null;
+}
+
+function renderClientCapacity() {
+  const shouldShow = currentProfile?.role === "technician" || Boolean(activeTechnicianContext);
+  clientCapacityPanel.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  const context = getSelectedCapacityContext();
+  const count = context?.storeCount ?? getDashboardStores().length;
+  const limit = context?.storeLimit ?? 0;
+  const remaining = Math.max(limit - count, 0);
+  const percent = getCapacityPercent(count, limit);
+
+  clientCapacityEyebrow.textContent = currentProfile?.role === "admin" ? "Capacidade contratada" : "Sua carteira de clientes";
+  clientCapacityTitle.textContent = `${count} de ${limit} ${limit === 1 ? "cliente cadastrado" : "clientes cadastrados"}`;
+  clientCapacityHint.textContent = count >= limit
+    ? "Limite atingido. O administrador precisa ampliar sua capacidade."
+    : `${remaining} ${remaining === 1 ? "vaga disponível" : "vagas disponíveis"} para novas lojas.`;
+  clientCapacityProgress.style.width = `${percent}%`;
+  clientCapacityPercent.textContent = `${percent}%`;
+  clientCapacityPanel.classList.toggle("is-full", count >= limit);
+}
+
+function renderStoreCreationContext() {
+  const isRootAdmin = currentProfile?.role === "admin" && !activeTechnicianContext;
+  const currentSelection = storeTechnician.value;
+
+  storeTechnicianField.hidden = !isRootAdmin;
+  storeTechnician.required = isRootAdmin;
+  storeFormEyebrow.textContent = isRootAdmin ? "Operação assistida" : "Sua carteira";
+  storeFormTitle.textContent = isRootAdmin ? "Criar cliente para empresa" : "Criar novo cliente";
+
+  if (isRootAdmin) {
+    storeTechnician.innerHTML = '<option value="">Selecione a empresa</option>' + technicians
+      .map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)} · ${technician.storeCount}/${technician.storeLimit}</option>`)
+      .join("");
+    storeTechnician.value = technicians.some((technician) => technician.id === currentSelection) ? currentSelection : "";
+  } else {
+    storeTechnician.innerHTML = "";
+  }
+
+  syncStoreCreationAvailability();
+}
+
+function syncStoreCreationAvailability() {
+  const context = getSelectedCapacityContext();
+  const submitButton = storeForm.querySelector('button[type="submit"]');
+  const hasCapacity = Boolean(context) && context.storeCount < context.storeLimit;
+
+  submitButton.disabled = !hasCapacity;
+  if (!context) {
+    submitButton.textContent = "Selecione uma empresa";
+  } else if (!hasCapacity) {
+    submitButton.textContent = "Limite de clientes atingido";
+  } else {
+    submitButton.textContent = "Criar acesso da loja";
+  }
+}
+
+function getCapacityPercent(count, limit) {
+  if (limit <= 0) return count > 0 ? 100 : 0;
+  return Math.min(Math.round((count / limit) * 100), 100);
+}
+
+function canManageStoreAccount(storeId) {
+  if (currentProfile?.role === "admin") return true;
+  if (currentProfile?.role !== "technician") return false;
+  const store = stores.find((item) => item.id === storeId);
+  return Boolean(store && store.technicianId === currentProfile.id);
 }
 
 function renderStoreList() {
@@ -1307,22 +1951,45 @@ function renderStoreList() {
     return;
   }
 
-  const canEnterStore = currentProfile?.role === "admin" && !activeTechnicianContext;
-  storeEmptyState.hidden = stores.length > 0;
-  storeList.innerHTML = stores
+  const allDashboardStores = getDashboardStores();
+  const search = normalizeSearchText(clientWalletSearch.value.trim());
+  const dashboardStores = search
+    ? allDashboardStores.filter((store) => [store.name, store.username, store.technicianName]
+        .some((value) => normalizeSearchText(value).includes(search)))
+    : allDashboardStores;
+  const canEnterStore = ["admin", "technician"].includes(currentProfile?.role);
+  clearClientWalletSearch.hidden = !search;
+  storeEmptyState.hidden = dashboardStores.length > 0;
+  storeEmptyTitle.textContent = search ? "Nenhum cliente encontrado." : "Nenhuma loja cadastrada ainda.";
+  storeEmptyText.textContent = search
+    ? "Tente buscar por outro nome, login ou empresa responsável."
+    : "Crie o primeiro acesso para começar a receber leads.";
+  storeList.innerHTML = dashboardStores
     .map(
       (store) => `
         <article class="lead-card management-card">
-          <div>
+          <div class="management-profile">
+            ${renderProfileAvatar(store.avatarUrl, store.name, "store")}
+            <div class="management-profile-copy">
             <strong>${escapeHtml(store.name)}</strong>
             <span>${escapeHtml(store.username)}</span>
+            ${store.technicianName ? `<small class="management-meta"><i class="fa-solid fa-building" aria-hidden="true"></i>${escapeHtml(store.technicianName)}</small>` : ""}
+            <div class="management-stats">
+              <span><strong>${store.leadsCount}</strong> leads</span>
+              <span><strong>${store.salesCount}</strong> compras</span>
+            </div>
+            </div>
           </div>
-          ${canEnterStore
-            ? `<div class="card-actions">
-                <button class="secondary-button" type="button" data-store-login="${store.id}">Entrar</button>
-                <button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar</button>
-              </div>`
-            : `<span class="readonly-pill">Somente métricas</span>`}
+          <div class="card-actions">
+            <button class="mini-button client-export-button" type="button" data-store-export="${store.id}">
+              <i class="fa-solid fa-file-excel" aria-hidden="true"></i>Exportar dados
+            </button>
+            <button class="secondary-button" type="button" data-store-analyze="${store.id}">
+              <i class="fa-solid fa-chart-line" aria-hidden="true"></i>Analisar
+            </button>
+            ${canEnterStore ? `<button class="mini-button" type="button" data-store-login="${store.id}">Gerenciar</button>` : ""}
+            ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar acesso</button>` : ""}
+          </div>
         </article>
       `,
     )
@@ -1337,12 +2004,21 @@ function renderTechnicianList() {
   technicianList.innerHTML = technicians
     .map((technician) => `
       <article class="lead-card technician-card">
-        <div>
+        <div class="management-profile">
+          ${renderProfileAvatar(technician.avatarUrl, technician.fullName || technician.username, "building")}
+          <div class="technician-card-main">
           <strong>${escapeHtml(technician.fullName || technician.username)}</strong>
+          <span>@${escapeHtml(technician.username)}</span>
+          <div class="technician-usage-row">
+            <span><i class="fa-solid fa-store" aria-hidden="true"></i>${technician.storeCount} de ${technician.storeLimit} clientes</span>
+            <span>${technician.storeLimit > technician.storeCount ? `${technician.storeLimit - technician.storeCount} vagas` : "Limite atingido"}</span>
+          </div>
+          <div class="technician-usage-track" aria-hidden="true"><i style="width:${getCapacityPercent(technician.storeCount, technician.storeLimit)}%"></i></div>
+          </div>
         </div>
         <div class="card-actions">
           <button class="secondary-button" type="button" data-technician-login="${technician.id}">Acessar</button>
-          <button class="mini-button" type="button" data-account-edit="technician" data-account-id="${technician.id}">Editar</button>
+          <button class="mini-button" type="button" data-account-edit="technician" data-account-id="${technician.id}">Editar plano</button>
         </div>
       </article>
     `)
@@ -1605,7 +2281,7 @@ function renderLeadDetailItem(label, value) {
 function renderChoiceButtons() {
   optionGroups.forEach((group) => {
     $$(`[data-choice-group="${group}"]`).forEach((container) => {
-      container.innerHTML = options[group]
+      container.innerHTML = options[group].length ? options[group]
         .map((value) => {
           const isActive = selectedValues[group] === value;
           const className = [
@@ -1617,7 +2293,7 @@ function renderChoiceButtons() {
           ].filter(Boolean).join(" ");
           return `<button class="${className}" type="button" data-choice="${group}" data-value="${escapeHtml(value)}">${getChoiceLabel(group, value)}</button>`;
         })
-        .join("");
+        .join("") : '<span class="choice-empty-hint">Configure as opções desta loja antes de preencher.</span>';
 
       container.querySelectorAll("[data-choice]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -1701,10 +2377,11 @@ function renderCustomLeadFilters() {
 }
 
 function renderAnalyticsFilters() {
-  const currentStore = analyticsStoreFilter.value;
-  analyticsStoreFilter.innerHTML = '<option value="">Todas as lojas</option>' +
-    stores.map((store) => `<option value="${store.id}">${escapeHtml(store.name)}</option>`).join("");
-  analyticsStoreFilter.value = stores.some((store) => store.id === currentStore) ? currentStore : "";
+  const selectedStore = getDashboardStores().find((store) => store.id === selectedAnalyticsStoreId);
+  analyticsStoreFilter.innerHTML = selectedStore
+    ? `<option value="${selectedStore.id}">${escapeHtml(selectedStore.name)}</option>`
+    : '<option value="">Selecione um cliente</option>';
+  analyticsStoreFilter.value = selectedStore?.id || "";
 
   fillSelect(analyticsChannelFilter, options.channel, "Todos");
   fillSelect(analyticsCampaignFilter, options.campaign, "Todas");
@@ -1746,7 +2423,6 @@ function renderCustomFilters(container, firstLabel) {
 }
 
 function renderOptionsEditors() {
-  renderOptionsEditor(adminOptionsList, "admin");
   renderOptionsEditor(storeOptionsList, "store");
 }
 
@@ -2016,7 +2692,7 @@ async function handleOptionsEditorClick(event) {
 
   const row = button.closest(".option-row");
   const group = button.dataset.group || row?.dataset.group;
-  const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
+  const messageTarget = storeOptionsMessage;
 
   if (fixedOptionGroups.has(group)) return;
   if (row && getOptionRecord(group, row.dataset.optionId)?.fixed) return;
@@ -2037,7 +2713,7 @@ async function handleOptionsEditorClick(event) {
         return;
       }
 
-      await authenticatedRpc("lc_delete_option", { p_option_id: row.dataset.optionId });
+      await authenticatedRpc("lc_delete_option", configurationRpcArgs({ p_option_id: row.dataset.optionId }));
       dirtyOptionKeys.delete(row.dataset.optionId);
       dirtyOptionValues.delete(row.dataset.optionId);
       await refreshOptions();
@@ -2060,11 +2736,13 @@ async function handleOptionsEditorClick(event) {
         await authenticatedRpc("lc_add_option", {
           p_group_key: group,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       } else {
         await authenticatedRpc("lc_update_option", {
           p_option_id: row.dataset.optionId,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       }
       dirtyOptionKeys.delete(row.dataset.optionId);
@@ -2084,7 +2762,7 @@ async function handleCustomOptionsEditorClick(button) {
   const editor = button.closest(".custom-category-editor");
   const row = button.closest(".custom-option-row");
   const categoryId = editor?.dataset.customCategoryId || row?.dataset.customCategoryId;
-  const messageTarget = button.closest("#adminOptionsList") ? adminOptionsMessage : storeOptionsMessage;
+  const messageTarget = storeOptionsMessage;
 
   try {
     button.disabled = true;
@@ -2104,7 +2782,7 @@ async function handleCustomOptionsEditorClick(button) {
         removePendingCustomCategory(categoryId);
         return;
       }
-      await authenticatedRpc("lc_delete_custom_category", { p_category_id: categoryId });
+      await authenticatedRpc("lc_delete_custom_category", configurationRpcArgs({ p_category_id: categoryId }));
       dirtyOptionKeys.delete(categoryId);
       dirtyOptionValues.delete(categoryId);
       await refreshRemoteState();
@@ -2118,7 +2796,7 @@ async function handleCustomOptionsEditorClick(button) {
         removePendingCustomOption(categoryId, row.dataset.optionId);
         return;
       }
-      await authenticatedRpc("lc_delete_custom_option", { p_option_id: row.dataset.optionId });
+      await authenticatedRpc("lc_delete_custom_option", configurationRpcArgs({ p_option_id: row.dataset.optionId }));
       dirtyOptionKeys.delete(row.dataset.optionId);
       dirtyOptionValues.delete(row.dataset.optionId);
       await refreshRemoteState();
@@ -2140,9 +2818,9 @@ async function handleCustomOptionsEditorClick(button) {
         return;
       }
       if (isPendingOption(categoryId)) {
-        await authenticatedRpc("lc_add_custom_category", { p_name: value });
+        await authenticatedRpc("lc_add_custom_category", configurationRpcArgs({ p_name: value }));
       } else {
-        await authenticatedRpc("lc_update_custom_category", { p_category_id: categoryId, p_name: value });
+        await authenticatedRpc("lc_update_custom_category", configurationRpcArgs({ p_category_id: categoryId, p_name: value }));
       }
       dirtyOptionKeys.delete(categoryId);
       dirtyOptionValues.delete(categoryId);
@@ -2165,9 +2843,9 @@ async function handleCustomOptionsEditorClick(button) {
         return;
       }
       if (isPendingOption(row.dataset.optionId)) {
-        await authenticatedRpc("lc_add_custom_option", { p_category_id: categoryId, p_value: value });
+        await authenticatedRpc("lc_add_custom_option", configurationRpcArgs({ p_category_id: categoryId, p_value: value }));
       } else {
-        await authenticatedRpc("lc_update_custom_option", { p_option_id: row.dataset.optionId, p_value: value });
+        await authenticatedRpc("lc_update_custom_option", configurationRpcArgs({ p_option_id: row.dataset.optionId, p_value: value }));
       }
       dirtyOptionKeys.delete(row.dataset.optionId);
       dirtyOptionValues.delete(row.dataset.optionId);
@@ -2227,7 +2905,7 @@ async function saveUnsavedOptionsAndContinue() {
     await saveDirtyOptions();
     continuePendingAction();
   } catch (error) {
-    showOptionsMessage(storeOptionsPanel.hidden ? adminOptionsMessage : storeOptionsMessage, readableError(error));
+    showOptionsMessage(storeOptionsMessage, readableError(error));
   }
 }
 
@@ -2247,11 +2925,13 @@ async function saveDirtyOptions() {
         await authenticatedRpc("lc_add_option", {
           p_group_key: record.groupKey,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       } else {
         await authenticatedRpc("lc_update_option", {
           p_option_id: optionId,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       }
     }
@@ -2261,11 +2941,12 @@ async function saveDirtyOptions() {
         throw new Error(`A categoria "${value}" já existe.`);
       }
       if (isPendingOption(optionId)) {
-        await authenticatedRpc("lc_add_custom_category", { p_name: value });
+        await authenticatedRpc("lc_add_custom_category", configurationRpcArgs({ p_name: value }));
       } else {
         await authenticatedRpc("lc_update_custom_category", {
           p_category_id: optionId,
           p_name: value,
+          p_store_id: getConfigurationStoreId(),
         });
       }
     }
@@ -2278,11 +2959,13 @@ async function saveDirtyOptions() {
         await authenticatedRpc("lc_add_custom_option", {
           p_category_id: record.categoryId,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       } else {
         await authenticatedRpc("lc_update_custom_option", {
           p_option_id: optionId,
           p_value: value,
+          p_store_id: getConfigurationStoreId(),
         });
       }
     }
@@ -3026,7 +3709,7 @@ function buildAnalyticsRanking(rows, sectionOrKey) {
 
 function getAnalyticsKnownValues(section) {
   if (section.id === "store") {
-    return stores.map((store) => store.name).filter(Boolean);
+    return getDashboardStores().map((store) => store.name).filter(Boolean);
   }
 
   if (section.customCategoryId) {
@@ -3149,34 +3832,89 @@ function closeAnalyticsInspector() {
 function exportLeadsToExcel() {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
 
-  const exportRows = [...leads].sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
-  if (!exportRows.length) {
-    showAppNotification("Nenhum lead para exportar.", "error");
+  const selectedStore = getDashboardStores().find((store) => store.id === selectedAnalyticsStoreId);
+  if (!selectedStore) {
+    showAppNotification("Selecione um cliente antes de exportar.", "error");
     return;
   }
 
-  const workbook = buildLeadsExcelWorkbook(exportRows);
+  const exportRows = [...getAnalyticsLeads()].sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
+  if (!exportRows.length) {
+    showAppNotification("Nenhum lead deste cliente no filtro atual.", "error");
+    return;
+  }
+
+  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore);
+  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
+  showAppNotification("Excel exportado.");
+}
+
+function exportStoreLeadsToExcel() {
+  const selectedStore = getActiveStore();
+  if (!selectedStore) {
+    showAppNotification("Loja não encontrada para exportação.", "error");
+    return;
+  }
+
+  const exportRows = [...getFilteredLeads()].sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
+  if (!exportRows.length) {
+    showAppNotification("Nenhum lead no filtro atual.", "error");
+    return;
+  }
+
+  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore, {
+    scopeLabel: "Leads visíveis no filtro atual",
+  });
+  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
+  showAppNotification("Dados exportados para Excel.");
+}
+
+function exportManagedStoreLeads(storeId) {
+  if (!["admin", "technician"].includes(currentProfile?.role)) return;
+  const selectedStore = getDashboardStores().find((store) => store.id === storeId);
+  if (!selectedStore) {
+    showAppNotification("Cliente não encontrado para exportação.", "error");
+    return;
+  }
+
+  const exportRows = leads
+    .filter((lead) => lead.storeId === selectedStore.id)
+    .sort((a, b) => getLeadSortDate(b).localeCompare(getLeadSortDate(a)));
+  if (!exportRows.length) {
+    showAppNotification("Este cliente ainda não possui leads para exportar.", "error");
+    return;
+  }
+
+  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore, {
+    scopeLabel: "Todos os leads deste cliente",
+    categories: getLeadCategoriesForExport(exportRows),
+  });
+  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
+  showAppNotification(`Dados de ${selectedStore.name} exportados.`);
+}
+
+function downloadExcelWorkbook(workbook, filename) {
   const blob = new Blob(["\ufeff", workbook], { type: "application/vnd.ms-excel;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `leads-${formatExportFileDate(new Date())}.xls`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showAppNotification("Excel exportado.");
 }
 
-function buildLeadsExcelWorkbook(exportRows) {
+function buildLeadsExcelWorkbook(exportRows, selectedStore, { scopeLabel = "Somente os leads deste cliente no filtro atual", categories = customCategories } = {}) {
   const visited = countByValue(exportRows, "visited", "Sim");
   const scheduled = countByValue(exportRows, "scheduled", "Sim");
   const bought = countByValue(exportRows, "bought", "Sim");
   const totalRevenue = exportRows.reduce((sum, lead) => sum + Number(lead.purchaseAmount || 0), 0);
-  const columns = buildLeadExportColumns();
+  const columns = buildLeadExportColumns(categories);
   const summaryRows = [
     ["Gerado em", formatDateTime(new Date().toISOString())],
-    ["Escopo", "Todos os leads carregados para este acesso"],
+    ["Cliente", selectedStore.name],
+    ["Escopo", scopeLabel],
     ["Total de leads", exportRows.length],
     ["Agendaram visita", scheduled],
     ["Visitaram a loja", visited],
@@ -3205,7 +3943,7 @@ function buildLeadsExcelWorkbook(exportRows) {
   </head>
   <body>
     <h1>Exportação de Leads</h1>
-    <p class="subtitle">Controle de Leads | Ótica</p>
+    <p class="subtitle">Controle de Leads | ${excelCell(selectedStore.name)}</p>
     <table class="summary">
       <tbody>
         ${summaryRows.map(([label, value]) => `<tr><th>${excelCell(label)}</th><td>${excelCell(value)}</td></tr>`).join("")}
@@ -3227,7 +3965,7 @@ function buildLeadsExcelWorkbook(exportRows) {
 </html>`;
 }
 
-function buildLeadExportColumns() {
+function buildLeadExportColumns(categories = customCategories) {
   return [
     { header: "#", value: (_lead, index) => index + 1 },
     { header: "Data do contato", className: "date", value: (lead) => formatLeadContactDate(lead) },
@@ -3235,7 +3973,7 @@ function buildLeadExportColumns() {
     { header: "Loja", value: (lead) => lead.storeName },
     { header: "Nome do lead", value: (lead) => lead.name },
     { header: "Telefone", value: (lead) => lead.phone },
-    { header: "Canal", value: (lead) => lead.channel || "Sem resposta" },
+    { header: "Plataforma / canal", value: (lead) => lead.channel || "Sem resposta" },
     { header: "Campanha", value: (lead) => lead.campaign || "Sem resposta" },
     { header: "Início da conversa", value: (lead) => lead.conversationStart || "Sem resposta" },
     { header: "Conclusão", value: (lead) => lead.conclusion || "Sem resposta" },
@@ -3246,7 +3984,7 @@ function buildLeadExportColumns() {
     { header: "Valor da compra", className: "currency", value: (lead) => lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "" },
     { header: "OS", value: (lead) => lead.serviceOrder || "" },
     { header: "Inspecionado", value: (lead) => lead.inspected ? "Sim" : "Não" },
-    ...customCategories.map((category) => ({
+    ...categories.map((category) => ({
       header: category.name,
       value: (lead) => lead.customValues[category.id] || "Sem resposta",
     })),
@@ -3265,13 +4003,461 @@ function formatExportFileDate(date) {
   return date.toISOString().slice(0, 19).replace(/[:T]/g, "-");
 }
 
+function isBackupSupported() {
+  return typeof window.showDirectoryPicker === "function" && typeof indexedDB !== "undefined";
+}
+
+function createEmptyBackupManifest() {
+  return {
+    version: 1,
+    ownerId: "",
+    updatedAt: null,
+    lastRunAt: null,
+    lastAutoRunDate: "",
+    stores: {},
+  };
+}
+
+function getBackupOwnerKey() {
+  if (!currentProfile) return "guest";
+  return `${currentProfile.role}:${currentProfile.id || currentProfile.username || "current"}`;
+}
+
+async function initializeBackupSystem() {
+  stopBackupScheduler();
+  backupDirectoryHandle = null;
+  backupManifest = createEmptyBackupManifest();
+  backupPermissionState = "prompt";
+  backupAutoAttemptDate = "";
+
+  if (!["admin", "technician"].includes(currentProfile?.role) || !isBackupSupported()) {
+    renderBackupCenter();
+    return;
+  }
+
+  try {
+    backupManifest = await loadBackupManifest();
+    backupDirectoryHandle = await loadBackupDirectoryHandle();
+    if (backupDirectoryHandle) {
+      backupPermissionState = await queryBackupPermission(backupDirectoryHandle);
+    }
+  } catch (error) {
+    console.warn("Não foi possível restaurar o HD de backup:", error);
+    backupDirectoryHandle = null;
+    backupPermissionState = "prompt";
+  }
+
+  startBackupScheduler();
+  renderBackupCenter();
+  window.setTimeout(() => checkScheduledBackup(), 1200);
+}
+
+function startBackupScheduler() {
+  stopBackupScheduler();
+  if (!["admin", "technician"].includes(currentProfile?.role) || !isBackupSupported()) return;
+  backupSchedulerTimer = window.setInterval(checkScheduledBackup, 60 * 1000);
+}
+
+function stopBackupScheduler() {
+  if (backupSchedulerTimer) window.clearInterval(backupSchedulerTimer);
+  backupSchedulerTimer = null;
+}
+
+async function checkScheduledBackup() {
+  if (backupIsRunning || !backupDirectoryHandle || backupPermissionState !== "granted") return;
+  const now = new Date();
+  const today = formatLocalDateKey(now);
+  if (now.getHours() < BACKUP_SCHEDULE_HOUR) return;
+  if (backupManifest.lastAutoRunDate === today || backupAutoAttemptDate === today) return;
+
+  backupAutoAttemptDate = today;
+  try {
+    await runBackup({ manual: false });
+  } catch (error) {
+    showBackupMessage(`Backup automático pendente: ${readableError(error)}`, "error");
+  }
+}
+
+async function chooseBackupDirectory() {
+  if (!isBackupSupported()) {
+    showBackupMessage("Use Chrome ou Edge no computador para escolher um HD externo.", "error");
+    return;
+  }
+
+  try {
+    const handle = await window.showDirectoryPicker({
+      id: `lead-control-${normalizeNick(currentProfile?.username || "backup")}`,
+      mode: "readwrite",
+      startIn: "downloads",
+    });
+    const permission = await requestBackupPermission(handle);
+    if (permission !== "granted") throw new Error("Autorize a gravação na pasta escolhida.");
+
+    const isSameDirectory = backupDirectoryHandle?.isSameEntry
+      ? await backupDirectoryHandle.isSameEntry(handle)
+      : false;
+
+    backupDirectoryHandle = handle;
+    backupPermissionState = permission;
+    if (!isSameDirectory) {
+      backupManifest = createEmptyBackupManifest();
+      await saveBackupManifest(backupManifest);
+    } else {
+      backupManifest = await loadBackupManifest();
+    }
+    await saveBackupDirectoryHandle(handle);
+    renderBackupCenter();
+    showBackupMessage(`Destino conectado: ${handle.name}.`, "success");
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    showBackupMessage(readableError(error), "error");
+  }
+}
+
+async function runBackup({ manual = false } = {}) {
+  if (backupIsRunning) return;
+  if (!isBackupSupported()) throw new Error("Backup em HD não suportado neste navegador.");
+  if (!backupDirectoryHandle) throw new Error("Escolha primeiro o HD ou a pasta de destino.");
+
+  const permission = manual
+    ? await requestBackupPermission(backupDirectoryHandle)
+    : await queryBackupPermission(backupDirectoryHandle);
+  backupPermissionState = permission;
+  if (permission !== "granted") {
+    renderBackupCenter();
+    throw new Error("Reconecte o HD e autorize o acesso para continuar.");
+  }
+
+  backupIsRunning = true;
+  backupRunNow.disabled = true;
+  backupChooseDirectory.disabled = true;
+  showBackupMessage(manual ? "Verificando diferenças e preparando os arquivos..." : "Executando backup automático das 20h...");
+
+  try {
+    await refreshRemoteState();
+    backupManifest = await loadBackupManifest();
+    const targetStores = getDashboardStores();
+    const results = [];
+
+    for (const store of targetStores) {
+      const storeRows = leads
+        .filter((lead) => lead.storeId === store.id)
+        .sort((a, b) => getLeadSortDate(a).localeCompare(getLeadSortDate(b)));
+      results.push(await backupStoreLeads(store, storeRows, new Date()));
+      backupManifest.ownerId = getBackupOwnerKey();
+      backupManifest.updatedAt = new Date().toISOString();
+      await saveBackupManifest(backupManifest);
+    }
+
+    const now = new Date();
+    backupManifest.ownerId = getBackupOwnerKey();
+    backupManifest.updatedAt = now.toISOString();
+    backupManifest.lastRunAt = now.toISOString();
+    if (!manual || now.getHours() >= BACKUP_SCHEDULE_HOUR) {
+      backupManifest.lastAutoRunDate = formatLocalDateKey(now);
+    }
+    await saveBackupManifest(backupManifest);
+
+    const exportedStores = results.filter((result) => result.exported > 0);
+    const exportedLeads = exportedStores.reduce((total, result) => total + result.exported, 0);
+    const currentStores = results.filter((result) => result.exported === 0).length;
+    const summary = exportedLeads
+      ? `${exportedLeads} ${exportedLeads === 1 ? "lead novo ou alterado" : "leads novos ou alterados"} em ${exportedStores.length} ${exportedStores.length === 1 ? "empresa" : "empresas"}.`
+      : "Nenhuma diferença encontrada. Todos os backups já estavam atualizados.";
+    showBackupMessage(`${summary}${currentStores && exportedLeads ? ` ${currentStores} sem alterações.` : ""}`, "success");
+    renderAll();
+  } finally {
+    backupIsRunning = false;
+    backupChooseDirectory.disabled = false;
+    renderBackupCenter();
+  }
+}
+
+async function backupStoreLeads(store, storeRows, now) {
+  const previousStore = backupManifest.stores[store.id] || { records: {} };
+  const nextRecords = {};
+  const changedRows = [];
+
+  for (const lead of storeRows) {
+    const fingerprint = await fingerprintLead(lead);
+    nextRecords[lead.id] = fingerprint;
+    if (previousStore.records?.[lead.id] !== fingerprint) changedRows.push(lead);
+  }
+
+  const isFirstBackup = !backupManifest.stores[store.id];
+  if (changedRows.length) {
+    const destination = await getBackupStoreDirectory(backupDirectoryHandle, store, now);
+    const categories = getLeadCategoriesForExport(storeRows);
+    const workbook = buildLeadsExcelWorkbook(changedRows, store, {
+      scopeLabel: isFirstBackup
+        ? "Primeiro backup completo desta empresa"
+        : "Backup incremental: somente leads novos ou alterados",
+      categories,
+    });
+    const kind = isFirstBackup ? "completo" : "incremental";
+    const filename = `backup-${kind}-${formatExportFileDate(now)}.xls`;
+    await writeDirectoryFile(destination, filename, `\ufeff${workbook}`);
+  }
+
+  backupManifest.stores[store.id] = {
+    name: store.name,
+    username: store.username,
+    lastRunAt: now.toISOString(),
+    lastExportedCount: changedRows.length,
+    totalRecords: storeRows.length,
+    records: nextRecords,
+  };
+
+  return { storeId: store.id, exported: changedRows.length, total: storeRows.length };
+}
+
+function getLeadCategoriesForExport(storeRows) {
+  const categories = new Map();
+  storeRows.forEach((lead) => {
+    lead.customValueRows.forEach((row) => {
+      if (row.categoryId && !categories.has(row.categoryId)) {
+        categories.set(row.categoryId, { id: row.categoryId, name: row.categoryName || "Campo personalizado" });
+      }
+    });
+  });
+  return [...categories.values()];
+}
+
+async function fingerprintLead(lead) {
+  const snapshot = JSON.stringify({
+    id: lead.id,
+    updatedAt: lead.updatedAt,
+    contactDate: lead.contactDate,
+    name: lead.name,
+    phone: lead.phone,
+    channel: lead.channel,
+    campaign: lead.campaign,
+    conversationStart: lead.conversationStart,
+    conclusion: lead.conclusion,
+    scheduled: lead.scheduled,
+    scheduledVisitDate: lead.scheduledVisitDate,
+    scheduledVisitTime: lead.scheduledVisitTime,
+    visited: lead.visited,
+    bought: lead.bought,
+    purchaseAmount: lead.purchaseAmount,
+    serviceOrder: lead.serviceOrder,
+    inspected: lead.inspected,
+    notes: lead.notes,
+    customValues: [...lead.customValueRows]
+      .sort((a, b) => String(a.categoryId).localeCompare(String(b.categoryId)))
+      .map((row) => [row.categoryId, row.value]),
+  });
+
+  if (globalThis.crypto?.subtle && typeof TextEncoder !== "undefined") {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(snapshot));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  let hash = 2166136261;
+  for (let index = 0; index < snapshot.length; index += 1) {
+    hash ^= snapshot.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+async function getBackupStoreDirectory(rootHandle, store, date) {
+  const root = await rootHandle.getDirectoryHandle(BACKUP_ROOT_FOLDER, { create: true });
+  const owner = await root.getDirectoryHandle(sanitizePathSegment(getBackupOwnerLabel()), { create: true });
+  const storeFolder = await owner.getDirectoryHandle(
+    sanitizePathSegment(`${store.name} (@${store.username || "cliente"})`),
+    { create: true },
+  );
+  const year = await storeFolder.getDirectoryHandle(String(date.getFullYear()), { create: true });
+  const monthNumber = String(date.getMonth() + 1).padStart(2, "0");
+  const monthName = new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(date);
+  const month = await year.getDirectoryHandle(sanitizePathSegment(`${monthNumber} - ${monthName}`), { create: true });
+  const week = String(Math.ceil(date.getDate() / 7)).padStart(2, "0");
+  return month.getDirectoryHandle(`Semana ${week}`, { create: true });
+}
+
+function getBackupOwnerLabel() {
+  if (currentProfile?.role === "technician") {
+    return currentProfile.fullName || currentProfile.username || "Empresa B2B";
+  }
+  return currentProfile?.fullName || currentProfile?.username || "Administrador";
+}
+
+function sanitizePathSegment(value) {
+  return String(value || "Sem nome")
+    .normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/[. ]+$/g, "")
+    .trim()
+    .slice(0, 100) || "Sem nome";
+}
+
+function formatLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function queryBackupPermission(handle) {
+  if (!handle?.queryPermission) return "prompt";
+  return handle.queryPermission({ mode: "readwrite" });
+}
+
+async function requestBackupPermission(handle) {
+  const current = await queryBackupPermission(handle);
+  if (current === "granted") return current;
+  if (!handle?.requestPermission) return current;
+  return handle.requestPermission({ mode: "readwrite" });
+}
+
+async function writeDirectoryFile(directoryHandle, filename, content) {
+  const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  try {
+    await writable.write(content);
+    await writable.close();
+  } catch (error) {
+    await writable.abort?.().catch(() => {});
+    throw error;
+  }
+}
+
+function openBackupDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BACKUP_DB_NAME, BACKUP_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(BACKUP_HANDLE_STORE)) {
+        database.createObjectStore(BACKUP_HANDLE_STORE);
+      }
+      if (!database.objectStoreNames.contains(BACKUP_MANIFEST_STORE)) {
+        database.createObjectStore(BACKUP_MANIFEST_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveBackupDirectoryHandle(handle) {
+  const database = await openBackupDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(BACKUP_HANDLE_STORE, "readwrite");
+    transaction.objectStore(BACKUP_HANDLE_STORE).put(handle, getBackupOwnerKey());
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
+}
+
+async function loadBackupDirectoryHandle() {
+  const database = await openBackupDatabase();
+  const handle = await new Promise((resolve, reject) => {
+    const transaction = database.transaction(BACKUP_HANDLE_STORE, "readonly");
+    const request = transaction.objectStore(BACKUP_HANDLE_STORE).get(getBackupOwnerKey());
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  database.close();
+  return handle;
+}
+
+async function saveBackupManifest(manifest) {
+  const database = await openBackupDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(BACKUP_MANIFEST_STORE, "readwrite");
+    transaction.objectStore(BACKUP_MANIFEST_STORE).put(manifest, getBackupOwnerKey());
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
+}
+
+async function loadBackupManifest() {
+  const database = await openBackupDatabase();
+  const saved = await new Promise((resolve, reject) => {
+    const transaction = database.transaction(BACKUP_MANIFEST_STORE, "readonly");
+    const request = transaction.objectStore(BACKUP_MANIFEST_STORE).get(getBackupOwnerKey());
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  database.close();
+  return saved && typeof saved === "object"
+    ? { ...createEmptyBackupManifest(), ...saved, stores: saved.stores || {} }
+    : createEmptyBackupManifest();
+}
+
+function renderBackupCenter() {
+  if (!backupCenter) return;
+  const supported = isBackupSupported();
+  const storesForBackup = getDashboardStores();
+  const hasDirectory = Boolean(backupDirectoryHandle);
+  const isReady = supported && hasDirectory && backupPermissionState === "granted";
+
+  backupSupportBadge.classList.toggle("is-ready", isReady);
+  backupSupportBadge.classList.toggle("is-error", !supported);
+  backupSupportBadge.textContent = !supported
+    ? "Navegador incompatível"
+    : isReady
+      ? "HD conectado"
+      : hasDirectory
+        ? "Reconectar HD"
+        : "Aguardando pasta";
+  backupDirectoryLabel.textContent = hasDirectory ? backupDirectoryHandle.name : "Nenhum HD selecionado";
+  backupDirectoryHint.textContent = !supported
+    ? "Abra o sistema no Chrome ou Edge para usar o backup em disco."
+    : isReady
+      ? "Acesso autorizado. O backup automático está preparado."
+      : hasDirectory
+        ? "Clique em escolher HD ou pasta para renovar a autorização."
+        : "Escolha uma pasta do HD externo e autorize o acesso.";
+  backupLastRun.textContent = backupManifest.lastRunAt ? formatDateTime(backupManifest.lastRunAt) : "Ainda não realizado";
+  backupRunNow.disabled = backupIsRunning || !supported || !hasDirectory;
+  backupChooseDirectory.disabled = backupIsRunning || !supported;
+  backupChooseDirectory.innerHTML = hasDirectory
+    ? '<i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i> Trocar ou reconectar HD'
+    : '<i class="fa-solid fa-hard-drive" aria-hidden="true"></i> Escolher HD ou pasta';
+  backupClientsTitle.textContent = `${storesForBackup.length} ${storesForBackup.length === 1 ? "empresa preparada" : "empresas preparadas"}`;
+  backupClientList.innerHTML = storesForBackup.length
+    ? storesForBackup.map((store) => {
+        const storeManifest = backupManifest.stores[store.id];
+        const total = leads.filter((lead) => lead.storeId === store.id).length;
+        return `
+          <article class="backup-client-row">
+            <i class="fa-solid fa-building" aria-hidden="true"></i>
+            <div class="backup-client-main">
+              <strong>${escapeHtml(store.name)}</strong>
+              <span>@${escapeHtml(store.username || "cliente")} · ${total} ${total === 1 ? "lead" : "leads"}</span>
+            </div>
+            <small>${storeManifest?.lastRunAt ? `Último: ${escapeHtml(formatDateTime(storeManifest.lastRunAt))}` : "Aguardando primeiro backup"}</small>
+          </article>
+        `;
+      }).join("")
+    : '<div class="empty-state"><strong>Nenhuma empresa nesta carteira.</strong><span>Cadastre um cliente antes de iniciar os backups.</span></div>';
+}
+
+function showBackupMessage(message, type = "") {
+  if (!backupMessage) return;
+  backupMessage.textContent = message;
+  backupMessage.classList.toggle("success", type === "success");
+}
+
 function openAiChat() {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
+  if (!selectedAnalyticsStoreId) {
+    showAppNotification("Selecione um cliente antes de abrir a análise por IA.", "error");
+    return;
+  }
 
+  syncAiChatStoreScope(selectedAnalyticsStoreId);
   ensureActiveAiChat();
   updateAiContextLabel();
   renderAiMessages();
   renderAiHistoryList();
+  renderAiSettingsForm();
   aiChatDialogSettingsState();
   aiChatModal.hidden = false;
   syncModalLock();
@@ -3299,6 +4485,11 @@ function closeAiChat() {
 }
 
 function toggleAiSettingsPanel() {
+  if (!canConfigureAiSettings()) {
+    aiSettingsPanel.hidden = true;
+    aiChatDialogSettingsState();
+    return;
+  }
   aiSettingsPanel.hidden = !aiSettingsPanel.hidden;
   if (!aiSettingsPanel.hidden) {
     aiHistoryPanel.hidden = true;
@@ -3310,6 +4501,10 @@ function toggleAiSettingsPanel() {
 }
 
 function aiChatDialogSettingsState() {
+  const canConfigure = canConfigureAiSettings();
+  aiSettingsToggle.hidden = !canConfigure;
+  aiSettingsToggle.disabled = !canConfigure;
+  if (!canConfigure) aiSettingsPanel.hidden = true;
   const isOpen = !aiSettingsPanel.hidden;
   const isHistoryOpen = !aiHistoryPanel.hidden;
   const dialog = aiChatModal.querySelector(".ai-chat-dialog");
@@ -3481,6 +4676,14 @@ function loadAiChatSessions() {
   aiMessages = getActiveAiChat()?.messages || [];
 }
 
+function syncAiChatStoreScope(storeId) {
+  const nextScopeId = storeId || "";
+  if (aiChatStoreScopeId === nextScopeId) return;
+  saveActiveAiChatMessages();
+  aiChatStoreScopeId = nextScopeId;
+  loadAiChatSessions();
+}
+
 function saveAiChatSessions() {
   const ownerKey = getAiChatOwnerKey();
   if (!ownerKey) return;
@@ -3549,42 +4752,59 @@ function createLocalAiChatId() {
 
 function getAiChatOwnerKey() {
   if (!currentProfile) return "guest";
-  return `${currentProfile.role}:${currentProfile.id || currentProfile.username || "current"}`;
+  return `${currentProfile.role}:${currentProfile.id || currentProfile.username || "current"}:store:${aiChatStoreScopeId || "none"}`;
 }
 
 function handleAiProviderChange() {
   const provider = aiProvider.value;
   renderAiModelOptions(provider);
   aiModel.value = aiSettings.models[provider] || aiProviderOptions[provider]?.models[0] || "";
-  aiApiKey.value = aiSettings.apiKeys[provider] || "";
+  aiApiKey.value = "";
+  aiApiKey.placeholder = aiSettings.hasApiKey && provider === aiSettings.provider
+    ? "Chave já salva — deixe vazio para manter"
+    : "Cole a chave da API";
   clearAiKeyStatus();
 }
 
-function handleAiSettingsSubmit(event) {
+async function handleAiSettingsSubmit(event) {
   event.preventDefault();
-  const provider = aiProvider.value;
-  aiSettings.provider = provider;
-  aiSettings.models[provider] = aiModel.value;
-  aiSettings.apiKeys[provider] = aiApiKey.value.trim();
-  aiSettings.systemPrompt = aiSystemPrompt.value.trim() || DEFAULT_AI_SYSTEM_PROMPT;
-  saveAiSettings();
-  showAiSettingsMessage("Configuração salva.", "success");
+  if (!canConfigureAiSettings()) return;
+
+  try {
+    setFormBusy(aiSettingsForm, true);
+    await saveCentralAiSettings({
+      provider: aiProvider.value,
+      model: aiModel.value,
+      apiKey: aiApiKey.value,
+      systemPrompt: aiSystemPrompt.value,
+    });
+    renderAiSettingsForm();
+    renderAdminAiSettingsForm();
+    showAiSettingsMessage("Configuração central salva para todas as empresas.", "success");
+  } catch (error) {
+    showAiSettingsMessage(readableError(error));
+  } finally {
+    setFormBusy(aiSettingsForm, false);
+  }
 }
 
 async function handleAiValidateKey() {
-  const provider = aiProvider.value;
-  const apiKey = aiApiKey.value.trim();
-  if (!apiKey) {
-    showAiKeyStatus("Informe uma chave para validar.", "error");
-    return;
-  }
+  if (!canConfigureAiSettings()) return;
 
   aiValidateKeyButton.disabled = true;
-  showAiKeyStatus("Validando chave...", "pending");
+  showAiKeyStatus("Salvando e validando...", "pending");
 
   try {
-    await validateAiApiKey(provider, apiKey);
-    showAiKeyStatus("Chave válida.", "success");
+    await saveCentralAiSettings({
+      provider: aiProvider.value,
+      model: aiModel.value,
+      apiKey: aiApiKey.value,
+      systemPrompt: aiSystemPrompt.value,
+    });
+    await validateCentralAiConfiguration();
+    renderAiSettingsForm();
+    renderAdminAiSettingsForm();
+    showAiKeyStatus("Configuração válida e pronta para o B2B.", "success");
   } catch (error) {
     showAiKeyStatus(readableError(error), "error");
   } finally {
@@ -3592,31 +4812,110 @@ async function handleAiValidateKey() {
   }
 }
 
-async function validateAiApiKey(provider, apiKey) {
+function handleAdminAiProviderChange() {
+  const provider = adminAiProvider.value;
+  renderAiModelOptionsFor(adminAiModel, provider, aiSettings.models[provider]);
+  adminAiApiKey.value = "";
+  adminAiApiKey.placeholder = aiSettings.hasApiKey && provider === aiSettings.provider
+    ? "Chave já salva — deixe vazio para manter"
+    : "Cole a chave da API";
+  showAdminAiSettingsMessage("");
+}
+
+async function handleAdminAiSettingsSubmit(event) {
+  event.preventDefault();
+  if (currentProfile?.role !== "admin") return;
+
+  try {
+    setFormBusy(adminAiSettingsForm, true);
+    await saveCentralAiSettings({
+      provider: adminAiProvider.value,
+      model: adminAiModel.value,
+      apiKey: adminAiApiKey.value,
+      systemPrompt: adminAiSystemPrompt.value,
+    });
+    renderAdminAiSettingsForm();
+    renderAiSettingsForm();
+    showAdminAiSettingsMessage("IA salva. As empresas B2B já usarão esta configuração.", "success");
+  } catch (error) {
+    showAdminAiSettingsMessage(readableError(error));
+  } finally {
+    setFormBusy(adminAiSettingsForm, false);
+  }
+}
+
+async function handleAdminAiValidate() {
+  if (currentProfile?.role !== "admin") return;
+
+  adminAiValidateButton.disabled = true;
+  showAdminAiSettingsMessage("Salvando e validando a API...");
+
+  try {
+    await saveCentralAiSettings({
+      provider: adminAiProvider.value,
+      model: adminAiModel.value,
+      apiKey: adminAiApiKey.value,
+      systemPrompt: adminAiSystemPrompt.value,
+    });
+    await validateCentralAiConfiguration();
+    renderAdminAiSettingsForm();
+    renderAiSettingsForm();
+    showAdminAiSettingsMessage("API validada. A IA está pronta para o admin e para os B2B.", "success");
+  } catch (error) {
+    showAdminAiSettingsMessage(readableError(error));
+  } finally {
+    adminAiValidateButton.disabled = false;
+  }
+}
+
+async function refreshCentralAiSettings({ silent = false } = {}) {
+  try {
+    const row = firstRow(await authenticatedRpc("lc_get_ai_settings"));
+    aiSettings = normalizeAiSettings(row);
+    renderAiSettingsForm();
+    renderAdminAiSettingsForm();
+    return aiSettings;
+  } catch (error) {
+    aiSettings = createDefaultAiSettings();
+    aiSettings.centralAvailable = false;
+    if (!silent) throw error;
+    console.warn("Configuração central de IA indisponível:", error);
+    return aiSettings;
+  }
+}
+
+async function saveCentralAiSettings({ provider, model, apiKey, systemPrompt }) {
+  if (currentProfile?.role !== "admin") {
+    throw new Error("Apenas o administrador pode alterar a IA central.");
+  }
+
+  const normalizedProvider = aiProviderOptions[provider] ? provider : "deepseek";
+  const normalizedModel = String(model || "").trim() || aiProviderOptions[normalizedProvider].models[0];
+  const row = firstRow(await authenticatedRpc("lc_save_ai_settings", {
+    p_provider: normalizedProvider,
+    p_model: normalizedModel,
+    p_api_key: String(apiKey || "").trim() || null,
+    p_system_prompt: String(systemPrompt || "").trim() || DEFAULT_AI_SYSTEM_PROMPT,
+  }));
+  aiSettings = normalizeAiSettings(row);
+  return aiSettings;
+}
+
+async function validateCentralAiConfiguration() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
 
   try {
-    if (provider === "gemini") {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {
-        signal: controller.signal,
-      });
-      await readAiValidationResponse(response);
-      return;
-    }
-
-    if (provider === "deepseek") {
-      const response = await fetch("https://api.deepseek.com/models", {
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
-      await readAiValidationResponse(response);
-      return;
-    }
-
-    throw new Error("Provedor inválido.");
+    if (!aiSettings.apiKey) throw new Error("Informe a chave da API antes de validar.");
+    const response = aiSettings.provider === "gemini"
+      ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(aiSettings.apiKey)}`, {
+          signal: controller.signal,
+        })
+      : await fetch("https://api.deepseek.com/models", {
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${aiSettings.apiKey}` },
+        });
+    await readAiValidationResponse(response);
   } catch (error) {
     if (isAbortError(error)) {
       throw new Error("Tempo de validação esgotado.");
@@ -3663,13 +4962,12 @@ async function handleAiChatSubmit(event) {
   const content = aiChatInput.value.trim();
   if (!content) return;
 
-  const provider = aiSettings.provider;
-  const apiKey = aiSettings.apiKeys[provider];
-  if (!apiKey) {
-    aiSettingsPanel.hidden = false;
-    aiChatDialogSettingsState();
-    renderAiSettingsForm();
-    showAiSettingsMessage("Informe a chave de API.", "error");
+  if (!aiSettings.hasApiKey) {
+    if (currentProfile?.role === "admin") {
+      showAppNotification("Configure e valide a API nas configurações do admin.", "error");
+    } else {
+      showAppNotification("A IA ainda não foi configurada pelo administrador.", "error");
+    }
     return;
   }
 
@@ -3716,78 +5014,54 @@ async function handleAiChatSubmit(event) {
 async function requestAiAnalysis({ onChunk, signal } = {}) {
   const provider = aiSettings.provider;
   const model = aiSettings.models[provider] || aiProviderOptions[provider]?.models[0];
+  const apiKey = aiSettings.apiKey;
   const context = buildAiLeadContext(getAnalyticsLeads());
   const systemPrompt = `${aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT}\n\nContexto atual dos leads filtrados:\n${context}`;
   const conversationMessages = aiMessages.filter((message) => !message.isThinking && !message.isStreaming);
+  if (!apiKey) throw new Error("A IA ainda não foi configurada pelo administrador.");
 
-  if (provider === "gemini") {
-    return requestGeminiAnalysis({ model, systemPrompt, messages: conversationMessages, apiKey: aiSettings.apiKeys.gemini, onChunk, signal });
-  }
-
-  if (provider === "deepseek") {
-    return requestDeepSeekAnalysis({ model, systemPrompt, messages: conversationMessages, apiKey: aiSettings.apiKeys.deepseek, onChunk, signal });
-  }
-
-  throw new Error("Provedor de IA inválido.");
-}
-
-async function requestGeminiAnalysis({ model, systemPrompt, messages, apiKey, onChunk, signal }) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: systemPrompt }],
+  const response = provider === "gemini"
+    ? await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: conversationMessages.map((message) => ({
+              role: message.role === "assistant" ? "model" : "user",
+              parts: [{ text: message.content }],
+            })),
+            generationConfig: { temperature: 0.35 },
+          }),
         },
-        contents: messages.map((message) => ({
-          role: message.role === "assistant" ? "model" : "user",
-          parts: [{ text: message.content }],
-        })),
-        generationConfig: {
+      )
+    : await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...conversationMessages.map((message) => ({
+              role: message.role === "assistant" ? "assistant" : "user",
+              content: message.content,
+            })),
+          ],
+          stream: true,
           temperature: 0.35,
-        },
-      }),
-    },
-  );
+        }),
+      });
 
   const text = await readAiStream(response, (data) => {
-    const chunk = data?.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text || "")
-      .join("") || "";
-    if (chunk) onChunk?.(chunk);
-    return chunk;
-  });
-  if (!text) throw new Error("A IA não retornou texto.");
-  return text;
-}
-
-async function requestDeepSeekAnalysis({ model, systemPrompt, messages, apiKey, onChunk, signal }) {
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages.map((message) => ({
-          role: message.role === "assistant" ? "assistant" : "user",
-          content: message.content,
-        })),
-      ],
-      stream: true,
-      temperature: 0.35,
-    }),
-  });
-
-  const text = await readAiStream(response, (data) => {
-    const chunk = data?.choices?.[0]?.delta?.content || "";
+    const chunk = provider === "gemini"
+      ? data?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || ""
+      : data?.choices?.[0]?.delta?.content || "";
     if (chunk) onChunk?.(chunk);
     return chunk;
   });
@@ -4204,15 +5478,7 @@ function updateAiContextLabel(rows = getAnalyticsLeads()) {
 }
 
 function loadAiSettings() {
-  try {
-    aiSettings = normalizeAiSettings(JSON.parse(localStorage.getItem(AI_SETTINGS_STORAGE_KEY) || "null"));
-  } catch {
-    aiSettings = createDefaultAiSettings();
-  }
-}
-
-function saveAiSettings() {
-  localStorage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(aiSettings));
+  aiSettings = createDefaultAiSettings();
 }
 
 function normalizeAiSettings(saved) {
@@ -4220,59 +5486,118 @@ function normalizeAiSettings(saved) {
   if (!saved || typeof saved !== "object") return defaults;
 
   const provider = aiProviderOptions[saved.provider] ? saved.provider : defaults.provider;
-  const savedModels = saved.models || {};
-  const deepseekModel = savedModels.deepseek === "deepseek-v4-flash"
-    ? "deepseek-chat"
-    : savedModels.deepseek;
-  const savedPrompt = typeof saved.systemPrompt === "string" ? saved.systemPrompt.trim() : "";
+  const model = String(saved.model || "").trim() || aiProviderOptions[provider].models[0];
+  const savedPrompt = typeof saved.system_prompt === "string" ? saved.system_prompt.trim() : "";
+  const apiKey = typeof saved.api_key === "string" ? saved.api_key.trim() : "";
   return {
     provider,
     models: {
       ...defaults.models,
-      ...savedModels,
-      deepseek: deepseekModel || defaults.models.deepseek,
+      [provider]: model,
     },
-    apiKeys: {
-      ...defaults.apiKeys,
-      ...(saved.apiKeys || {}),
-    },
-    systemPrompt: savedPrompt && savedPrompt !== LEGACY_AI_SYSTEM_PROMPT
+    systemPrompt: savedPrompt && ![LEGACY_AI_SYSTEM_PROMPT, LEGACY_MULTI_STORE_AI_SYSTEM_PROMPT].includes(savedPrompt)
       ? savedPrompt
       : defaults.systemPrompt,
+    apiKey,
+    hasApiKey: Boolean(apiKey || saved.has_api_key),
+    updatedAt: saved.updated_at || null,
+    centralAvailable: true,
   };
 }
 
 function createDefaultAiSettings() {
   return {
-    provider: "gemini",
+    provider: "deepseek",
     models: {
       gemini: aiProviderOptions.gemini.models[0],
-      deepseek: aiProviderOptions.deepseek.models[0],
-    },
-    apiKeys: {
-      gemini: "",
-      deepseek: "",
+      deepseek: "deepseek-chat",
     },
     systemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
+    apiKey: "",
+    hasApiKey: false,
+    updatedAt: null,
+    centralAvailable: true,
   };
 }
 
+function canConfigureAiSettings() {
+  // A configuração central existe somente na tela de Configurações do Admin.
+  // O modal de IA é exclusivo para chat e histórico em todos os contextos.
+  return false;
+}
+
 function renderAiSettingsForm() {
+  if (!aiSettingsForm) return;
+  const canConfigure = canConfigureAiSettings();
+  aiSettingsToggle.hidden = !canConfigure;
+  aiSettingsToggle.disabled = !canConfigure;
+  aiSettingsPanel.hidden = canConfigure ? aiSettingsPanel.hidden : true;
+  aiSettingsPanel.toggleAttribute("inert", !canConfigure);
+  aiSettingsPanel.setAttribute("aria-hidden", String(!canConfigure || aiSettingsPanel.hidden));
+  aiSettingsForm.hidden = !canConfigure;
+  aiSettingsForm.toggleAttribute("inert", !canConfigure);
+  [aiProvider, aiModel, aiApiKey, aiSystemPrompt, aiValidateKeyButton].forEach((element) => {
+    element.disabled = !canConfigure;
+  });
+
+  if (!canConfigure) {
+    aiProvider.value = "";
+    aiModel.innerHTML = "";
+    aiApiKey.value = "";
+    aiApiKey.placeholder = "";
+    aiSystemPrompt.value = "";
+    clearAiKeyStatus();
+    clearAiSettingsMessage();
+    aiChatDialogSettingsState();
+    return;
+  }
+
+  aiSettingsPanel.removeAttribute("aria-hidden");
   aiProvider.value = aiSettings.provider;
   renderAiModelOptions(aiSettings.provider);
   aiModel.value = aiSettings.models[aiSettings.provider] || aiProviderOptions[aiSettings.provider].models[0];
-  aiApiKey.value = aiSettings.apiKeys[aiSettings.provider] || "";
+  aiApiKey.value = "";
+  aiApiKey.placeholder = aiSettings.hasApiKey
+    ? "Chave já salva — deixe vazio para manter"
+    : "Cole a chave da API";
   aiSystemPrompt.value = aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
   clearAiKeyStatus();
 }
 
 function renderAiModelOptions(provider) {
+  renderAiModelOptionsFor(aiModel, provider, aiSettings.models[provider]);
+}
+
+function renderAiModelOptionsFor(select, provider, selectedModel = "") {
   const models = aiProviderOptions[provider]?.models || [];
-  const current = aiSettings.models[provider] || models[0] || "";
+  const current = selectedModel || models[0] || "";
   const entries = models.includes(current) ? models : [...models, current].filter(Boolean);
-  aiModel.innerHTML = entries
+  select.innerHTML = entries
     .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
     .join("");
+  select.value = current;
+}
+
+function renderAdminAiSettingsForm() {
+  if (!adminAiSettingsForm) return;
+  const provider = aiSettings.provider || "deepseek";
+  adminAiProvider.value = provider;
+  renderAiModelOptionsFor(adminAiModel, provider, aiSettings.models[provider]);
+  adminAiApiKey.value = "";
+  adminAiApiKey.placeholder = aiSettings.hasApiKey
+    ? "Chave já salva — deixe vazio para manter"
+    : "Cole a chave da API";
+  adminAiSystemPrompt.value = aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
+  adminAiSavedStatus.textContent = aiSettings.hasApiKey
+    ? `Chave protegida e salva${aiSettings.updatedAt ? ` · atualizada em ${formatDateTime(aiSettings.updatedAt)}` : ""}.`
+    : "Nenhuma chave salva.";
+  adminAiSavedStatus.classList.toggle("is-ready", aiSettings.hasApiKey);
+}
+
+function showAdminAiSettingsMessage(message, type = "error") {
+  if (!adminAiSettingsMessage) return;
+  adminAiSettingsMessage.textContent = message;
+  adminAiSettingsMessage.classList.toggle("success", type === "success");
 }
 
 function showAiSettingsMessage(message, type = "error") {
@@ -4432,10 +5757,8 @@ function getVisibleStoreLeads() {
 }
 
 function getAnalyticsBaseLeads() {
-  let result = [...leads];
-  if (analyticsStoreFilter.value) {
-    result = result.filter((lead) => lead.storeId === analyticsStoreFilter.value);
-  }
+  if (!selectedAnalyticsStoreId) return [];
+  let result = getDashboardLeads().filter((lead) => lead.storeId === selectedAnalyticsStoreId);
   if (analyticsChannelFilter.value) {
     result = result.filter((lead) => lead.channel === analyticsChannelFilter.value);
   }
@@ -4460,6 +5783,25 @@ function getAnalyticsBaseLeads() {
   });
 
   return result;
+}
+
+function clearAnalyticsFilters() {
+  [
+    analyticsChannelFilter,
+    analyticsCampaignFilter,
+    analyticsConclusionFilter,
+    analyticsVisitedFilter,
+    analyticsScheduledFilter,
+    analyticsBoughtFilter,
+    analyticsSingleDate,
+    analyticsStartDate,
+    analyticsEndDate,
+  ].forEach((element) => {
+    element.value = "";
+  });
+  analyticsCustomFilters.querySelectorAll("[data-custom-filter]").forEach((element) => {
+    element.value = "";
+  });
 }
 
 function getAnalyticsLeads() {
@@ -4595,6 +5937,9 @@ function mapStoreRow(row) {
     createdAt: row.created_at,
     leadsCount: Number(row.leads_count || 0),
     salesCount: Number(row.sales_count || 0),
+    technicianId: row.technician_id || null,
+    technicianName: row.technician_name || "",
+    avatarUrl: "",
   };
 }
 
@@ -4605,6 +5950,127 @@ function mapTechnicianRow(row) {
     fullName: row.full_name,
     createdAt: row.created_at,
     isActive: row.is_active !== false,
+    storeLimit: Number(row.store_limit || 0),
+    storeCount: Number(row.store_count || 0),
+    avatarUrl: "",
+  };
+}
+
+function applyProfileAvatars() {
+  const avatarByAccount = new Map(
+    profileAvatars.map((row) => [`${row.account_type}:${row.account_id}`, row.avatar_url || ""]),
+  );
+  stores.forEach((store) => {
+    store.avatarUrl = avatarByAccount.get(`store:${store.id}`) || "";
+  });
+  technicians.forEach((technician) => {
+    technician.avatarUrl = avatarByAccount.get(`technician:${technician.id}`) || "";
+  });
+}
+
+function getProfileAvatar(accountType, accountId) {
+  return profileAvatars.find((row) => row.account_type === accountType && row.account_id === accountId)?.avatar_url || "";
+}
+
+function renderCurrentSessionAvatar() {
+  if (!sessionAvatar) return;
+  if (!storeView.hidden && activeStoreContext) {
+    setAvatarPreview(sessionAvatar, activeStoreContext.avatarUrl || "", "store");
+    return;
+  }
+  if (activeTechnicianContext) {
+    setAvatarPreview(sessionAvatar, activeTechnicianContext.avatarUrl || "", "building");
+    return;
+  }
+  if (currentProfile?.role === "technician") {
+    setAvatarPreview(sessionAvatar, getProfileAvatar("technician", currentProfile.id), "building");
+    return;
+  }
+  if (currentProfile?.role === "store") {
+    setAvatarPreview(sessionAvatar, getProfileAvatar("store", currentProfile.storeId), "store");
+    return;
+  }
+  setAvatarPreview(sessionAvatar, "", "user-shield");
+}
+
+function renderProfileAvatar(avatarUrl, name, fallbackIcon) {
+  const label = escapeHtml(name || "Perfil");
+  return avatarUrl
+    ? `<span class="profile-avatar management-avatar"><img src="${escapeHtml(avatarUrl)}" alt="${label}" /></span>`
+    : `<span class="profile-avatar management-avatar" aria-hidden="true"><i class="fa-solid fa-${fallbackIcon}"></i></span>`;
+}
+
+function setAvatarPreview(target, avatarUrl, fallbackIcon) {
+  if (!target) return;
+  target.innerHTML = avatarUrl
+    ? `<img src="${escapeHtml(avatarUrl)}" alt="Imagem de perfil" />`
+    : `<i class="fa-solid fa-${fallbackIcon}"></i>`;
+}
+
+function previewAvatarFile(input, preview, fallbackIcon) {
+  const file = input.files?.[0];
+  setAvatarFileName(input, file);
+  if (!file) {
+    setAvatarPreview(preview, preview === managedAccountAvatarPreview ? managedAccountCurrentAvatar : "", fallbackIcon);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => setAvatarPreview(preview, String(reader.result || ""), fallbackIcon);
+  reader.readAsDataURL(file);
+}
+
+function setAvatarFileName(input, file = null) {
+  const target = document.getElementById(`${input.id}Name`);
+  if (!target) return;
+  const emptyLabel = input === managedAccountAvatar ? "Nenhuma nova imagem" : "Nenhuma imagem selecionada";
+  target.textContent = file?.name || emptyLabel;
+  target.title = file?.name || "";
+  target.classList.toggle("has-file", Boolean(file));
+}
+
+async function avatarFileToDataUrl(file) {
+  if (!file) return null;
+  if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
+  if (file.size > 8 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 8 MB.");
+
+  const source = await readFileAsDataUrl(file);
+  const image = await loadAvatarImage(source);
+  const maxSide = 512;
+  const scale = Math.min(maxSide / image.width, maxSide / image.height, 1);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const optimized = canvas.toDataURL("image/webp", 0.82);
+  if (optimized.length > 750000) throw new Error("Não foi possível reduzir a imagem. Escolha um arquivo menor.");
+  return optimized;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadAvatarImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Não foi possível processar a imagem."));
+    image.src = source;
+  });
+}
+
+function mapAccountUsage(row) {
+  if (!row) return null;
+  return {
+    technicianId: row.technician_id,
+    storeLimit: Number(row.store_limit || 0),
+    storeCount: Number(row.store_count || 0),
   };
 }
 
@@ -4658,7 +6124,7 @@ function applyOptionRows(rows) {
         groupKey: group,
         value,
         sortOrder: (index + 1) * 10,
-        fixed: fixedOptionGroups.has(group) || fixedChannelOptions.has(value),
+        fixed: fixedOptionGroups.has(group),
       }));
     }
     optionRecords[group].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -4760,7 +6226,7 @@ function createDefaultOptionRecords() {
         groupKey: group,
         value,
         sortOrder: (index + 1) * 10,
-        fixed: fixedOptionGroups.has(group) || fixedChannelOptions.has(value),
+        fixed: fixedOptionGroups.has(group),
       })),
     ]),
   );
@@ -5095,6 +6561,17 @@ function applyStoredTheme() {
   setTheme(localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light");
 }
 
+function bindFocusModality() {
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" || event.key.startsWith("Arrow") || ["Home", "End"].includes(event.key)) {
+      document.body.classList.add("is-keyboard-navigation");
+    }
+  }, true);
+  document.addEventListener("pointerdown", () => {
+    document.body.classList.remove("is-keyboard-navigation");
+  }, true);
+}
+
 function toggleTheme() {
   setTheme(document.body.classList.contains("is-dark") ? "light" : "dark");
 }
@@ -5200,6 +6677,10 @@ function showFormMessage(message, type = "error") {
 }
 
 function showOptionsMessage(target, message, type = "error") {
+  if (!target) {
+    if (message) showAppNotification(message, type);
+    return;
+  }
   target.textContent = message;
   target.classList.toggle("success", type === "success");
   if (type === "success") showAppNotification(message, "success");
