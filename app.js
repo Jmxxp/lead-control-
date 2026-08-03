@@ -88,6 +88,8 @@ let backupAutoAttemptDate = "";
 let backupPermissionState = "prompt";
 let appointmentModalMode = "lead-form";
 let appointmentMonitorLeadId = null;
+let leadPanelResizeObserver = null;
+let leadPanelSyncFrame = 0;
 const expandedAnalyticsSections = new Set();
 let analyticsChartsVisible = false;
 let analyticsChartType = "line";
@@ -315,6 +317,7 @@ const endDateFilter = $("#endDateFilter");
 const clearFiltersButton = $("#clearFilters");
 const emptyState = $("#emptyState");
 const leadList = $("#leadList");
+const registeredLeadsPanel = $("#registeredLeadsPanel");
 const customLeadFields = $("#customLeadFields");
 const customLeadFilters = $("#customLeadFilters");
 const appointmentDetails = $("#appointmentDetails");
@@ -386,6 +389,7 @@ async function init() {
   loadAiSettings();
   setTodayLabel();
   bindEvents();
+  initializeLeadWorkspaceSizing();
   showAuth();
   renderAiSettingsForm();
   renderAiMessages();
@@ -624,6 +628,33 @@ function bindEvents() {
       requestCloseStoreOptions();
     }
   });
+}
+
+function initializeLeadWorkspaceSizing() {
+  window.addEventListener("resize", scheduleLeadWorkspaceSizing);
+  if (typeof ResizeObserver === "function") {
+    leadPanelResizeObserver = new ResizeObserver(scheduleLeadWorkspaceSizing);
+    leadPanelResizeObserver.observe(form);
+  }
+  scheduleLeadWorkspaceSizing();
+}
+
+function scheduleLeadWorkspaceSizing() {
+  cancelAnimationFrame(leadPanelSyncFrame);
+  leadPanelSyncFrame = requestAnimationFrame(syncLeadWorkspacePanelHeight);
+}
+
+function syncLeadWorkspacePanelHeight() {
+  if (!registeredLeadsPanel || !form) return;
+
+  const isSideBySide = window.matchMedia("(min-width: 1081px)").matches;
+  if (!isSideBySide || storeView.hidden) {
+    registeredLeadsPanel.style.removeProperty("height");
+    return;
+  }
+
+  const formHeight = Math.ceil(form.getBoundingClientRect().height);
+  if (formHeight > 0) registeredLeadsPanel.style.height = `${formHeight}px`;
 }
 
 function initializeSupabase() {
@@ -1677,6 +1708,7 @@ function renderAll() {
   renderAppointmentMonitor();
   renderLeadList();
   renderTodayCount();
+  scheduleLeadWorkspaceSizing();
 }
 
 function renderConfiguredCategoryLabels() {

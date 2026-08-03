@@ -3113,6 +3113,74 @@ body.is-keyboard-navigation .client-wallet-search:focus-within {
   padding: 24px;
 }
 
+.registered-leads-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "heading"
+    "toolbar"
+    "filters"
+    "list";
+  align-self: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.registered-leads-panel > .panel-heading {
+  grid-area: heading;
+}
+
+.registered-leads-panel > .filter-toolbar {
+  grid-area: toolbar;
+}
+
+.registered-leads-panel > .filters {
+  grid-area: filters;
+  margin-bottom: 18px;
+}
+
+.registered-leads-scroll {
+  grid-area: list;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 7px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--muted) 48%, transparent) transparent !important;
+}
+
+.registered-leads-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 7px !important;
+}
+
+.registered-leads-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.registered-leads-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  background-clip: padding-box;
+}
+
+.registered-leads-scroll:focus-visible {
+  outline: 3px solid rgba(22, 133, 95, 0.16);
+  outline-offset: -3px;
+}
+
+.registered-leads-scroll .lead-list {
+  margin-top: 0;
+  padding-bottom: 2px;
+}
+
+.registered-leads-scroll .empty-state {
+  margin-top: 0;
+}
+
 .panel-heading {
   display: flex;
   align-items: center;
@@ -5658,6 +5726,18 @@ body.is-dark .analytics-lead-delete {
 
   .options-panel {
     grid-column: auto;
+  }
+
+  .registered-leads-panel {
+    display: block;
+    height: auto;
+    min-height: 620px;
+    overflow: visible;
+  }
+
+  .registered-leads-scroll {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .summary-grid {

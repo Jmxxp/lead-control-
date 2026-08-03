@@ -884,7 +884,7 @@
             <button class="primary-button lead-entry" type="submit" id="submitButton">Salvar lead</button>
           </form>
 
-          <section class="list-panel" aria-label="Leads cadastrados">
+          <section id="registeredLeadsPanel" class="list-panel registered-leads-panel" aria-label="Leads cadastrados">
             <div class="panel-heading align-start">
               <div>
                 <p class="eyebrow">Acompanhamento</p>
@@ -976,12 +976,20 @@
               </button>
             </div>
 
-            <div id="emptyState" class="empty-state">
-              <strong>Nenhum lead cadastrado ainda.</strong>
-              <span>Preencha o formulário ao lado para começar o controle.</span>
-            </div>
+            <div
+              id="registeredLeadsScroll"
+              class="registered-leads-scroll"
+              role="region"
+              aria-label="Lista de leads cadastrados"
+              tabindex="0"
+            >
+              <div id="emptyState" class="empty-state">
+                <strong>Nenhum lead cadastrado ainda.</strong>
+                <span>Preencha o formulário ao lado para começar o controle.</span>
+              </div>
 
-            <div id="leadList" class="lead-list"></div>
+              <div id="leadList" class="lead-list"></div>
+            </div>
           </section>
         </section>
         </section>
