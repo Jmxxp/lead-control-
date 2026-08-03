@@ -3519,6 +3519,153 @@ body.is-dark .password-field input:focus {
   display: none;
 }
 
+.configuration-backdrop {
+  z-index: 44;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(22, 133, 95, 0.16), transparent 36%),
+    rgba(14, 18, 17, 0.58);
+  backdrop-filter: blur(16px) saturate(0.9);
+  -webkit-backdrop-filter: blur(16px) saturate(0.9);
+  animation: configuration-backdrop-in 180ms ease-out both;
+}
+
+#unsavedOptionsModal {
+  z-index: 70;
+  background: rgba(14, 18, 17, 0.56);
+  backdrop-filter: blur(18px) saturate(0.9);
+  -webkit-backdrop-filter: blur(18px) saturate(0.9);
+}
+
+.configuration-backdrop .modal-dialog.configuration-dialog {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0;
+  width: min(1800px, calc(100vw - 64px));
+  max-width: none;
+  height: min(860px, calc(100vh - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.42);
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 247, 0.96));
+  box-shadow:
+    0 34px 100px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  padding: 0;
+  animation: configuration-dialog-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+body.is-dark .configuration-backdrop .modal-dialog.configuration-dialog {
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(22, 133, 95, 0.12), transparent 32%),
+    linear-gradient(145deg, rgba(29, 31, 30, 0.99), rgba(19, 21, 20, 0.98));
+  box-shadow:
+    0 34px 110px rgba(0, 0, 0, 0.64),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.configuration-dialog-header,
+.configuration-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 24px;
+}
+
+.configuration-dialog-header {
+  border-bottom: 1px solid var(--line);
+}
+
+.configuration-dialog-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.configuration-dialog-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.configuration-dialog-heading h2,
+.configuration-dialog-heading p {
+  margin: 0;
+}
+
+.configuration-dialog-heading h2 {
+  overflow: hidden;
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.configuration-dialog-heading > div > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.configuration-dialog-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(22, 133, 95, 0.22);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(22, 133, 95, 0.16), rgba(47, 128, 237, 0.1));
+  color: var(--green);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.configuration-dialog > .store-options-scope-note {
+  margin: 16px 24px 0;
+}
+
+.configuration-editor {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  overflow: auto;
+  padding: 18px 24px 24px;
+  scrollbar-gutter: stable;
+}
+
+.configuration-editor .option-group {
+  align-self: start;
+  min-width: 0;
+}
+
+.configuration-editor .custom-category-group {
+  grid-column: 1 / -1;
+}
+
+.configuration-dialog-footer {
+  min-height: 78px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.configuration-dialog-footer .form-message {
+  min-width: 0;
+  margin: 0;
+}
+
+@keyframes configuration-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes configuration-dialog-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.975); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .options-panel,
 .options-panel-inline,
 .options-editor,
@@ -3545,6 +3692,48 @@ body.is-dark .password-field input:focus {
   overflow-wrap: anywhere;
 }
 
+.option-group-title {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.option-group-title > span,
+.fixed-category-note {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+
+.category-label-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.category-label-editor input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0 11px;
+  font-size: 1rem;
+  font-weight: 900;
+  outline: none;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.category-label-editor input:hover,
+.category-label-editor input:focus {
+  border-color: rgba(22, 133, 95, 0.24);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px rgba(22, 133, 95, 0.08);
+}
+
 .option-add-button {
   width: 42px;
   min-width: 42px;
@@ -3559,6 +3748,22 @@ body.is-dark .password-field input:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.fixed-category-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fixed-category-note i,
+.fixed-option-chip i {
+  color: var(--green);
+}
+
+.fixed-option-chip {
+  gap: 7px;
 }
 
 .option-list {
@@ -3583,7 +3788,7 @@ body.is-dark .password-field input:focus {
 
 .custom-category-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   gap: 10px;
   align-items: center;
 }
@@ -3641,17 +3846,33 @@ body.is-dark .custom-category-heading input {
 .option-row,
 .option-add {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.option-row {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
 }
 
 .option-add {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.option-row-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .option-row input,
-.option-add input {
+.option-add input,
+.custom-category-heading input {
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -3659,6 +3880,45 @@ body.is-dark .custom-category-heading input {
   color: var(--ink);
   padding: 0 12px;
   outline: none;
+}
+
+.option-row-handle {
+  display: grid;
+  width: 22px;
+  min-height: 42px;
+  place-items: center;
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.option-order-controls {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 34px);
+  gap: 4px;
+}
+
+.option-order-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.option-order-button:not(:disabled):hover,
+.option-order-button:not(:disabled):focus-visible {
+  border-color: rgba(22, 133, 95, 0.32);
+  color: var(--green);
+}
+
+.option-order-button:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.option-delete-button {
+  gap: 7px;
 }
 
 .primary-button,
@@ -5576,6 +5836,79 @@ body.is-dark .analytics-lead-delete {
     grid-template-columns: 1fr;
   }
 
+  .configuration-backdrop {
+    padding: 0;
+  }
+
+  .configuration-backdrop .modal-dialog.configuration-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .configuration-dialog-header,
+  .configuration-dialog-footer {
+    padding: 16px;
+  }
+
+  .configuration-dialog-heading {
+    gap: 10px;
+  }
+
+  .configuration-dialog-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  .configuration-dialog-heading > div > span {
+    display: none;
+  }
+
+  .configuration-dialog > .store-options-scope-note {
+    margin: 12px 16px 0;
+  }
+
+  .configuration-editor {
+    grid-template-columns: 1fr;
+    padding: 14px 16px 20px;
+  }
+
+  .configuration-editor .custom-category-group {
+    grid-column: auto;
+  }
+
+  .configuration-editor .option-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 10px;
+  }
+
+  .configuration-editor .option-row-actions {
+    grid-column: 2;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .configuration-editor .option-row-actions .option-save,
+  .configuration-editor .option-row-actions .option-delete-button {
+    width: auto;
+  }
+
+  .category-label-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .configuration-dialog-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .configuration-dialog-footer .compact-primary {
+    width: 100%;
+  }
+
   .analytics-category-card {
     grid-template-columns: 1fr;
   }
@@ -5730,7 +6063,9 @@ body.is-dark .analytics-lead-delete {
 @media (prefers-reduced-motion: reduce) {
   .ai-insights-button::before,
   .ai-chat-backdrop,
-  .ai-chat-dialog {
+  .ai-chat-dialog,
+  .configuration-backdrop,
+  .configuration-backdrop .modal-dialog.configuration-dialog {
     animation: none;
   }
 }
@@ -5768,10 +6103,17 @@ body.is-dark .field select,
 body.is-dark .field textarea,
 body.is-dark .password-field,
 body.is-dark .option-row input,
-body.is-dark .option-add input {
+body.is-dark .option-add input,
+body.is-dark .category-label-editor input,
+body.is-dark .custom-category-heading input {
   border-color: #505050;
   background-color: #202020;
   color: #f7f7f7;
+}
+
+body:not(.is-dark) .category-label-editor input,
+body:not(.is-dark) .custom-category-heading input {
+  color: #171717;
 }
 
 body:not(.is-dark) input::placeholder,

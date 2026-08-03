@@ -340,42 +340,42 @@
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-share-nodes" aria-hidden="true"></i>Plataforma / canal</span>
+                  <span data-category-label="channel"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i>Plataforma / canal</span>
                   <select id="analyticsChannelFilter">
                     <option value="">Todos</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-bullhorn" aria-hidden="true"></i>Campanha</span>
+                  <span data-category-label="campaign"><i class="fa-solid fa-bullhorn" aria-hidden="true"></i>Campanha</span>
                   <select id="analyticsCampaignFilter">
                     <option value="">Todas</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i>Resultado</span>
+                  <span data-category-label="conclusion"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i>Resultado</span>
                   <select id="analyticsConclusionFilter">
                     <option value="">Todos</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-person-walking" aria-hidden="true"></i>Visita</span>
+                  <span data-category-label="visited"><i class="fa-solid fa-person-walking" aria-hidden="true"></i>Visita</span>
                   <select id="analyticsVisitedFilter">
                     <option value="">Todas</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Agendamento</span>
+                  <span data-category-label="scheduled"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Agendamento</span>
                   <select id="analyticsScheduledFilter">
                     <option value="">Todos</option>
                   </select>
                 </label>
 
                 <label class="field">
-                  <span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>Compra</span>
+                  <span data-category-label="bought"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>Compra</span>
                   <select id="analyticsBoughtFilter">
                     <option value="">Todas</option>
                   </select>
@@ -744,7 +744,8 @@
                 </div>
                 <div class="heading-actions">
                   <button class="ghost-button" type="button" id="toggleOptionsEdit">
-                    Editar opções
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    Editar categorias
                   </button>
                   <button class="ghost-button" type="button" id="cancelEdit" hidden>
                     Sair da edição
@@ -754,15 +755,6 @@
               </div>
 
               <input type="hidden" id="editingId" />
-
-              <div id="storeOptionsPanel" class="options-panel-inline" hidden>
-                <div class="store-options-scope-note">
-                  <i class="fa-solid fa-lock" aria-hidden="true"></i>
-                  <span>Campanhas, plataformas e categorias exclusivas desta loja.</span>
-                </div>
-                <div id="storeOptionsList" class="options-editor"></div>
-                <p id="storeOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
-              </div>
 
               <div class="field-grid lead-entry">
                 <label class="field">
@@ -909,42 +901,42 @@
 
             <div class="filters" id="filtersPanel" hidden>
               <label class="field">
-                <span>Plataforma / canal</span>
+                <span data-category-label="channel">Plataforma / canal</span>
                 <select id="channelFilter">
                   <option value="">Todos</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>Campanha</span>
+                <span data-category-label="campaign">Campanha</span>
                 <select id="campaignFilter">
                   <option value="">Todos</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>Início</span>
+                <span data-category-label="conversationStart">Início</span>
                 <select id="conversationStartFilter">
                   <option value="">Todos</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>Conclusão</span>
+                <span data-category-label="conclusion">Conclusão</span>
                 <select id="conclusionFilter">
                   <option value="">Todos</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>Visitou</span>
+                <span data-category-label="visited">Visitou</span>
                 <select id="visitedFilter">
                   <option value="">Todos</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>Agendou</span>
+                <span data-category-label="scheduled">Agendou</span>
                 <select id="scheduledFilter">
                   <option value="">Todos</option>
                   <option value="sem-resposta">Sem resposta</option>
@@ -952,7 +944,7 @@
               </label>
 
               <label class="field">
-                <span>Comprou</span>
+                <span data-category-label="bought">Comprou</span>
                 <select id="boughtFilter">
                   <option value="">Todos</option>
                   <option value="sem-resposta">Sem resposta</option>
@@ -1258,6 +1250,41 @@
             <button class="primary-button compact-primary" type="submit">Salvar alterações</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div id="storeOptionsPanel" class="modal-backdrop configuration-backdrop" hidden>
+      <section class="modal-dialog configuration-dialog" role="dialog" aria-modal="true" aria-labelledby="storeOptionsTitle">
+        <header class="configuration-dialog-header">
+          <div class="configuration-dialog-heading">
+            <span class="configuration-dialog-icon" aria-hidden="true">
+              <i class="fa-solid fa-sliders"></i>
+            </span>
+            <div>
+              <p class="eyebrow">Personalização da loja</p>
+              <h2 id="storeOptionsTitle">Editar categorias e cards</h2>
+              <span id="storeOptionsSubtitle">Organize os campos usados no atendimento.</span>
+            </div>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="storeOptionsClose" aria-label="Fechar editor" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <div class="store-options-scope-note">
+          <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+          <span>As alterações ficam restritas a este cliente e aparecem imediatamente no cadastro de leads.</span>
+        </div>
+
+        <div id="storeOptionsList" class="options-editor configuration-editor"></div>
+
+        <footer class="configuration-dialog-footer">
+          <p id="storeOptionsMessage" class="form-message" role="status" aria-live="polite"></p>
+          <button class="primary-button compact-primary" type="button" id="storeOptionsDone">
+            <i class="fa-solid fa-check" aria-hidden="true"></i>
+            Concluir
+          </button>
+        </footer>
       </section>
     </div>
 

@@ -25,7 +25,7 @@ const aiProviderOptions = {
   },
 };
 
-const labels = {
+const defaultLabels = Object.freeze({
   channel: "Plataforma / canal",
   campaign: "Campanha",
   conversationStart: "Início da conversa",
@@ -33,9 +33,10 @@ const labels = {
   scheduled: "Agendou visita",
   visited: "Visitou a loja",
   bought: "Comprou",
-};
+});
 
-const optionGroups = Object.keys(labels);
+const labels = { ...defaultLabels };
+const optionGroups = Object.keys(defaultLabels);
 const fixedOptionGroups = new Set(["scheduled", "visited", "bought"]);
 const nativeYesNoOptions = ["Sim", "Não"];
 const defaultOptions = {
@@ -66,6 +67,7 @@ let customCategories = [];
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
 const dirtyOptionValues = new Map();
+const dirtyGroupLabels = new Map();
 let newOptionCounter = 0;
 let selectedValues = createEmptySelection();
 let selectedCustomValues = {};
@@ -332,6 +334,10 @@ const leadNotesInput = $("#leadNotes");
 const storeOptionsPanel = $("#storeOptionsPanel");
 const storeOptionsList = $("#storeOptionsList");
 const storeOptionsMessage = $("#storeOptionsMessage");
+const storeOptionsTitle = $("#storeOptionsTitle");
+const storeOptionsSubtitle = $("#storeOptionsSubtitle");
+const storeOptionsClose = $("#storeOptionsClose");
+const storeOptionsDone = $("#storeOptionsDone");
 const unsavedOptionsModal = $("#unsavedOptionsModal");
 const unsavedCancel = $("#unsavedCancel");
 const unsavedDiscard = $("#unsavedDiscard");
@@ -426,6 +432,11 @@ function bindEvents() {
   adminAccountForm.addEventListener("submit", handleAdminAccountSubmit);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("input", handleOptionsEditorInput);
+  storeOptionsClose.addEventListener("click", requestCloseStoreOptions);
+  storeOptionsDone.addEventListener("click", requestCloseStoreOptions);
+  storeOptionsPanel.addEventListener("click", (event) => {
+    if (event.target === storeOptionsPanel) requestCloseStoreOptions();
+  });
   companyWorkspaceButtons.forEach((button) => {
     button.addEventListener("click", () => setCompanyWorkspaceSection(button.dataset.companySection));
   });
@@ -575,13 +586,7 @@ function bindEvents() {
   form.addEventListener("submit", handleLeadSubmit);
   clearFormButton.addEventListener("click", resetLeadForm);
   cancelEditButton.addEventListener("click", resetLeadForm);
-  toggleOptionsEditButton.addEventListener("click", () => {
-    if (!storeOptionsPanel.hidden) {
-      guardUnsavedOptions(toggleStoreOptionsMode);
-      return;
-    }
-    toggleStoreOptionsMode();
-  });
+  toggleOptionsEditButton.addEventListener("click", () => toggleStoreOptionsMode(true));
   phoneInput.addEventListener("input", () => {
     phoneInput.value = formatPhone(phoneInput.value);
   });
@@ -609,6 +614,12 @@ function bindEvents() {
   storeList.addEventListener("click", handleManagementListClick);
   technicianList.addEventListener("click", handleManagementListClick);
   themeToggle.addEventListener("click", toggleTheme);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !storeOptionsPanel.hidden && unsavedOptionsModal.hidden && confirmModal.hidden) {
+      event.preventDefault();
+      requestCloseStoreOptions();
+    }
+  });
 }
 
 function initializeSupabase() {
@@ -799,6 +810,7 @@ async function handleLogout() {
     customCategories = [];
     options = cloneOptions(defaultOptions);
     optionRecords = createDefaultOptionRecords();
+    applyCategoryLabelRows([]);
     selectedCustomValues = {};
     stopBackupScheduler();
     backupDirectoryHandle = null;
@@ -1574,15 +1586,22 @@ async function refreshRemoteState() {
         throw error;
       })
     : Promise.resolve([]);
+  const categoryLabelRowsRequest = configurationStoreId
+    ? authenticatedRpc("lc_list_configuration_labels", { p_store_id: configurationStoreId }).catch((error) => {
+        if (isMissingRpcError(error)) return [];
+        throw error;
+      })
+    : Promise.resolve([]);
   const avatarRowsRequest = authenticatedRpc("lc_list_profile_avatars").catch((error) => {
     if (isMissingRpcError(error)) return [];
     throw error;
   });
 
-  const [storeRows, optionRows, customCategoryRows, leadRows, technicianRows, usageRows, avatarRows] = await Promise.all([
+  const [storeRows, optionRows, customCategoryRows, categoryLabelRows, leadRows, technicianRows, usageRows, avatarRows] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     optionRowsRequest,
     customCategoryRowsRequest,
+    categoryLabelRowsRequest,
     authenticatedRpc("lc_list_leads"),
     technicianRowsRequest,
     accountUsageRequest,
@@ -1592,6 +1611,7 @@ async function refreshRemoteState() {
   stores = (storeRows || []).map(mapStoreRow);
   applyOptionRows(optionRows || []);
   applyCustomCategoryRows(customCategoryRows || []);
+  applyCategoryLabelRows(categoryLabelRows || []);
   leads = (leadRows || []).map(mapLeadRow);
   technicians = (technicianRows || []).map(mapTechnicianRow);
   profileAvatars = avatarRows || [];
@@ -1622,21 +1642,28 @@ async function refreshStoreConfiguration(storeId) {
   if (!storeId) {
     applyOptionRows([]);
     applyCustomCategoryRows([]);
+    applyCategoryLabelRows([]);
     return;
   }
 
-  const [optionRows, categoryRows] = await Promise.all([
+  const [optionRows, categoryRows, categoryLabelRows] = await Promise.all([
     authenticatedRpc("lc_list_options", { p_store_id: storeId }),
     authenticatedRpc("lc_list_custom_categories", { p_store_id: storeId }).catch((error) => {
+      if (isMissingRpcError(error)) return [];
+      throw error;
+    }),
+    authenticatedRpc("lc_list_configuration_labels", { p_store_id: storeId }).catch((error) => {
       if (isMissingRpcError(error)) return [];
       throw error;
     }),
   ]);
   applyOptionRows(optionRows || []);
   applyCustomCategoryRows(categoryRows || []);
+  applyCategoryLabelRows(categoryLabelRows || []);
 }
 
 function renderAll() {
+  renderConfiguredCategoryLabels();
   renderChoiceButtons();
   renderCustomChoiceButtons();
   renderFilters();
@@ -1646,6 +1673,17 @@ function renderAll() {
   renderAppointmentMonitor();
   renderLeadList();
   renderTodayCount();
+}
+
+function renderConfiguredCategoryLabels() {
+  $$('[data-category-label]').forEach((element) => {
+    const label = labels[element.dataset.categoryLabel];
+    if (!label) return;
+    const icon = element.querySelector("i");
+    element.replaceChildren();
+    if (icon) element.appendChild(icon);
+    element.appendChild(document.createTextNode(label));
+  });
 }
 
 function renderAdminDashboard() {
@@ -2268,15 +2306,7 @@ function closeLeadDetailsModal() {
 }
 
 function syncModalLock() {
-  document.body.classList.toggle(
-    "is-modal-open",
-    !leadDetailsModal.hidden ||
-      !analyticsInspectorModal.hidden ||
-      !settingsModal.hidden ||
-      !managedAccountModal.hidden ||
-      !appointmentModal.hidden ||
-      !aiChatModal.hidden,
-  );
+  document.body.classList.toggle("is-modal-open", $$(".modal-backdrop").some((modal) => !modal.hidden));
 }
 
 function renderLeadDetailItem(label, value) {
@@ -2291,6 +2321,8 @@ function renderLeadDetailItem(label, value) {
 function renderChoiceButtons() {
   optionGroups.forEach((group) => {
     $$(`[data-choice-group="${group}"]`).forEach((container) => {
+      const sectionTitle = container.closest(".choice-section")?.querySelector(".section-title h3");
+      if (sectionTitle) sectionTitle.textContent = labels[group];
       container.innerHTML = options[group].length ? options[group]
         .map((value) => {
           const isActive = selectedValues[group] === value;
@@ -2436,20 +2468,41 @@ function renderOptionsEditors() {
   renderOptionsEditor(storeOptionsList, "store");
 }
 
-function renderOptionsEditor(container, scope) {
-  const editableGroups = optionGroups.filter((group) => !fixedOptionGroups.has(group));
+function renderOrderControls({ action, index, total, label, disabled = false, group = "" }) {
+  const groupAttribute = group ? ` data-group="${group}"` : "";
+  const isDisabled = disabled || total < 2;
+  return `
+    <div class="option-order-controls" role="group" aria-label="Ordenar ${escapeHtml(label)}">
+      <button class="mini-button option-order-button" type="button" data-option-action="${action}" data-direction="up"${groupAttribute} ${isDisabled || index === 0 ? "disabled" : ""} aria-label="Mover para cima" title="Mover para cima">
+        <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+      </button>
+      <button class="mini-button option-order-button" type="button" data-option-action="${action}" data-direction="down"${groupAttribute} ${isDisabled || index === total - 1 ? "disabled" : ""} aria-label="Mover para baixo" title="Mover para baixo">
+        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+      </button>
+    </div>
+  `;
+}
 
-  const standardGroups = editableGroups
+function renderOptionsEditor(container, scope) {
+  const standardGroups = optionGroups
     .map((group) => {
       const isFixed = fixedOptionGroups.has(group);
-      const chips = (optionRecords[group] || [])
-        .map((record) =>
+      const records = optionRecords[group] || [];
+      const hasPendingRecord = records.some((record) => record.pending);
+      const chips = records
+        .map((record, index) =>
           isFixed || record.fixed
-            ? `<span class="option-chip">${escapeHtml(record.value)}</span>`
+            ? `<span class="option-chip fixed-option-chip"><i class="fa-solid fa-lock" aria-hidden="true"></i>${escapeHtml(record.value)}</span>`
             : `<div class="option-row${record.pending ? " is-pending" : ""}" data-group="${group}" data-option-id="${record.id}">
+                <span class="option-row-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
                 <input value="${escapeHtml(dirtyOptionValues.get(record.id) ?? record.value)}" aria-label="${labels[group]}" />
-                <button class="mini-button option-save" type="button" data-option-action="save" ${record.pending || dirtyOptionKeys.has(record.id) ? "" : "hidden"}>Salvar</button>
-                <button class="mini-button danger" type="button" data-option-action="delete">Excluir</button>
+                <div class="option-row-actions">
+                  ${renderOrderControls({ action: "move", index, total: records.length, label: record.value || labels[group], disabled: record.pending || hasPendingRecord, group })}
+                  <button class="mini-button option-save" type="button" data-option-action="save" ${record.pending || dirtyOptionKeys.has(record.id) ? "" : "hidden"}>Salvar</button>
+                  <button class="mini-button danger option-delete-button" type="button" data-option-action="delete" aria-label="Excluir ${escapeHtml(record.value || "opção")}" title="Excluir">
+                    <i class="fa-solid fa-trash" aria-hidden="true"></i><span>Excluir</span>
+                  </button>
+                </div>
               </div>`,
         )
         .join("");
@@ -2462,10 +2515,17 @@ function renderOptionsEditor(container, scope) {
       return `
         <section class="option-group" data-scope="${scope}">
           <div class="option-group-heading">
-            <strong>${labels[group]}</strong>
+            <div class="option-group-title">
+              <span>Nome da categoria</span>
+              <div class="category-label-editor">
+                <input value="${escapeHtml(dirtyGroupLabels.get(group) ?? labels[group])}" data-group-label="${group}" aria-label="Nome da categoria ${escapeHtml(labels[group])}" />
+                <button class="mini-button option-save" type="button" data-option-action="save-group-label" data-group="${group}" ${dirtyGroupLabels.has(group) ? "" : "hidden"}>Salvar nome</button>
+              </div>
+            </div>
             ${addButton}
           </div>
-          <div class="option-list">${chips}</div>
+          ${isFixed ? '<span class="fixed-category-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>Os valores Sim e Não são protegidos.</span>' : ""}
+          <div class="option-list">${chips || '<span class="option-chip">Nenhum card criado</span>'}</div>
         </section>
       `;
     })
@@ -2475,16 +2535,24 @@ function renderOptionsEditor(container, scope) {
 }
 
 function renderCustomCategoriesEditor(scope) {
+  const hasPendingCategory = customCategories.some((category) => category.pending);
   const categoryCards = customCategories
-    .map((category) => {
+    .map((category, categoryIndex) => {
       const categoryKey = category.id;
       const categoryName = dirtyOptionValues.get(categoryKey) ?? category.name;
+      const hasPendingCustomOption = category.options.some((option) => option.pending);
       const optionRows = category.options
-        .map((option) => `
+        .map((option, optionIndex) => `
           <div class="option-row custom-option-row${option.pending ? " is-pending" : ""}" data-custom-category-id="${category.id}" data-option-id="${option.id}">
+            <span class="option-row-handle" aria-hidden="true"><i class="fa-solid fa-grip-vertical"></i></span>
             <input value="${escapeHtml(dirtyOptionValues.get(option.id) ?? option.value)}" aria-label="${escapeHtml(category.name)}" />
-            <button class="mini-button option-save" type="button" data-option-action="save-custom-option" ${option.pending || dirtyOptionKeys.has(option.id) ? "" : "hidden"}>Salvar</button>
-            <button class="mini-button danger" type="button" data-option-action="delete-custom-option">Excluir</button>
+            <div class="option-row-actions">
+              ${renderOrderControls({ action: "move-custom-option", index: optionIndex, total: category.options.length, label: option.value || category.name, disabled: option.pending || hasPendingCustomOption })}
+              <button class="mini-button option-save" type="button" data-option-action="save-custom-option" ${option.pending || dirtyOptionKeys.has(option.id) ? "" : "hidden"}>Salvar</button>
+              <button class="mini-button danger option-delete-button" type="button" data-option-action="delete-custom-option" aria-label="Excluir ${escapeHtml(option.value || "opção")}" title="Excluir">
+                <i class="fa-solid fa-trash" aria-hidden="true"></i><span>Excluir</span>
+              </button>
+            </div>
           </div>
         `)
         .join("");
@@ -2493,6 +2561,7 @@ function renderCustomCategoriesEditor(scope) {
         <div class="custom-category-editor${category.pending ? " is-pending" : ""}" data-custom-category-id="${category.id}">
           <div class="custom-category-heading">
             <input value="${escapeHtml(categoryName)}" data-custom-category-name aria-label="Nome da categoria adicional" placeholder="Nome da categoria" />
+            ${renderOrderControls({ action: "move-custom-category", index: categoryIndex, total: customCategories.length, label: category.name || "categoria", disabled: category.pending || hasPendingCategory })}
             <button class="mini-button option-save" type="button" data-option-action="save-custom-category" ${category.pending || dirtyOptionKeys.has(categoryKey) ? "" : "hidden"}>Salvar</button>
             <button class="mini-button option-add-button" type="button" data-option-action="add-custom-option" ${category.pending ? "hidden" : ""} aria-label="Adicionar opção em ${escapeHtml(category.name)}" title="Adicionar opção">
               <i class="fa-solid fa-plus" aria-hidden="true"></i>
@@ -2522,6 +2591,14 @@ function renderCustomCategoriesEditor(scope) {
 }
 
 function handleOptionsEditorInput(event) {
+  if (event.target.matches("[data-group-label]")) {
+    const group = event.target.dataset.groupLabel;
+    dirtyGroupLabels.set(group, event.target.value);
+    const saveButton = event.target.closest(".category-label-editor")?.querySelector("[data-option-action='save-group-label']");
+    if (saveButton) saveButton.hidden = false;
+    return;
+  }
+
   const customCategory = event.target.closest(".custom-category-editor");
   if (customCategory && event.target.matches("[data-custom-category-name]")) {
     dirtyOptionKeys.add(customCategory.dataset.customCategoryId);
@@ -2690,19 +2767,143 @@ function isDuplicateCustomOptionValue(categoryId, optionId, value) {
   );
 }
 
+function moveRecord(records, recordId, direction) {
+  const currentIndex = records.findIndex((record) => record.id === recordId);
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= records.length) return false;
+  [records[currentIndex], records[targetIndex]] = [records[targetIndex], records[currentIndex]];
+  records.forEach((record, index) => {
+    record.sortOrder = (index + 1) * 10;
+  });
+  return true;
+}
+
+async function moveStandardOption(group, optionId, direction) {
+  const records = optionRecords[group] || [];
+  const previousOrder = [...records];
+  if (!moveRecord(records, optionId, direction)) return;
+  options[group] = records.map((record) => record.value);
+  renderAll();
+  try {
+    await authenticatedRpc("lc_reorder_options", configurationRpcArgs({
+      p_group_key: group,
+      p_option_ids: records.filter((record) => !record.pending && !record.fixed).map((record) => record.id),
+    }));
+    showOptionsMessage(storeOptionsMessage, "Ordem dos cards atualizada.", "success");
+  } catch (error) {
+    optionRecords[group] = previousOrder;
+    options[group] = previousOrder.map((record) => record.value);
+    renderAll();
+    throw error;
+  }
+}
+
+async function moveCustomCategory(categoryId, direction) {
+  const previousOrder = [...customCategories];
+  if (!moveRecord(customCategories, categoryId, direction)) return;
+  renderAll();
+  try {
+    await authenticatedRpc("lc_reorder_custom_categories", configurationRpcArgs({
+      p_category_ids: customCategories.filter((category) => !category.pending).map((category) => category.id),
+    }));
+    showOptionsMessage(storeOptionsMessage, "Ordem das categorias atualizada.", "success");
+  } catch (error) {
+    customCategories = previousOrder;
+    renderAll();
+    throw error;
+  }
+}
+
+async function moveCustomOption(categoryId, optionId, direction) {
+  const category = getCustomCategory(categoryId);
+  if (!category) return;
+  const previousOrder = [...category.options];
+  if (!moveRecord(category.options, optionId, direction)) return;
+  renderAll();
+  try {
+    await authenticatedRpc("lc_reorder_custom_options", configurationRpcArgs({
+      p_category_id: categoryId,
+      p_option_ids: category.options.filter((option) => !option.pending).map((option) => option.id),
+    }));
+    showOptionsMessage(storeOptionsMessage, "Ordem dos cards atualizada.", "success");
+  } catch (error) {
+    category.options = previousOrder;
+    renderAll();
+    throw error;
+  }
+}
+
+async function saveGroupLabel(group, input) {
+  const value = input.value.trim();
+  if (!value) {
+    showOptionsMessage(storeOptionsMessage, "Digite o nome da categoria.");
+    input.focus();
+    return;
+  }
+  const duplicate = optionGroups.some((item) => item !== group && labels[item].trim().toLowerCase() === value.toLowerCase());
+  if (duplicate) {
+    showOptionsMessage(storeOptionsMessage, "Já existe uma categoria com esse nome.");
+    input.focus();
+    return;
+  }
+  await authenticatedRpc("lc_update_configuration_label", configurationRpcArgs({ p_group_key: group, p_label: value }));
+  labels[group] = value;
+  const analyticsSection = analyticsSections.find((section) => section.optionGroup === group);
+  if (analyticsSection) analyticsSection.label = value;
+  dirtyGroupLabels.delete(group);
+  renderAll();
+  showOptionsMessage(storeOptionsMessage, "Nome da categoria atualizado.", "success");
+}
+
 async function handleOptionsEditorClick(event) {
   const button = event.target.closest("[data-option-action]");
   if (!button) return;
 
   const action = button.dataset.optionAction;
-  if (action.startsWith("add-custom") || action.startsWith("save-custom") || action.startsWith("delete-custom")) {
+  const messageTarget = storeOptionsMessage;
+
+  try {
+    if (action === "save-group-label") {
+      button.disabled = true;
+      const input = button.closest(".category-label-editor")?.querySelector("[data-group-label]");
+      if (input) await saveGroupLabel(button.dataset.group, input);
+      return;
+    }
+
+    if (action === "move") {
+      button.disabled = true;
+      const row = button.closest(".option-row");
+      if (row) await moveStandardOption(button.dataset.group || row.dataset.group, row.dataset.optionId, button.dataset.direction);
+      return;
+    }
+
+    if (action === "move-custom-category") {
+      button.disabled = true;
+      const editor = button.closest(".custom-category-editor");
+      if (editor) await moveCustomCategory(editor.dataset.customCategoryId, button.dataset.direction);
+      return;
+    }
+
+    if (action === "move-custom-option") {
+      button.disabled = true;
+      const row = button.closest(".custom-option-row");
+      if (row) await moveCustomOption(row.dataset.customCategoryId, row.dataset.optionId, button.dataset.direction);
+      return;
+    }
+  } catch (error) {
+    showOptionsMessage(messageTarget, readableError(error));
+    return;
+  } finally {
+    button.disabled = false;
+  }
+
+  if (action.includes("custom")) {
     await handleCustomOptionsEditorClick(button);
     return;
   }
 
   const row = button.closest(".option-row");
   const group = button.dataset.group || row?.dataset.group;
-  const messageTarget = storeOptionsMessage;
 
   if (fixedOptionGroups.has(group)) return;
   if (row && getOptionRecord(group, row.dataset.optionId)?.fixed) return;
@@ -2872,19 +3073,34 @@ async function handleCustomOptionsEditorClick(button) {
 
 function toggleStoreOptionsMode(forceOpen = null) {
   const shouldOpen = forceOpen === null ? storeOptionsPanel.hidden : forceOpen;
+  const activeStore = getActiveStore();
+  const canManage = Boolean(activeStore) && (
+    currentProfile?.role === "admin" ||
+    currentProfile?.role === "store" ||
+    (currentProfile?.role === "technician" && activeStore.technicianId === currentProfile.id)
+  );
+  if (shouldOpen && !canManage) {
+    showAppNotification("Você não tem permissão para editar esta loja.", "error");
+    return;
+  }
+
   storeOptionsPanel.hidden = !shouldOpen;
-  form.classList.toggle("is-options-mode", shouldOpen);
-  formTitle.textContent = shouldOpen ? "Editar opções" : "Cadastrar lead";
-  toggleOptionsEditButton.innerHTML = shouldOpen
-    ? '<i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Sair'
-    : "Editar opções";
-  toggleOptionsEditButton.classList.toggle("is-exit-mode", shouldOpen);
-  cancelEditButton.hidden = shouldOpen || !editingIdInput.value;
-  clearFormButton.hidden = shouldOpen || clearFormButton.hidden;
+  if (shouldOpen) {
+    storeOptionsTitle.textContent = `Personalizar ${activeStore.name}`;
+    storeOptionsSubtitle.textContent = `Categorias, cards e campanhas exclusivos de ${activeStore.name}.`;
+    storeOptionsMessage.textContent = "";
+    document.body.appendChild(storeOptionsPanel);
+    requestAnimationFrame(() => storeOptionsClose.focus());
+  }
+  syncModalLock();
+}
+
+function requestCloseStoreOptions() {
+  guardUnsavedOptions(() => toggleStoreOptionsMode(false));
 }
 
 function hasUnsavedOptions() {
-  return dirtyOptionKeys.size > 0;
+  return dirtyOptionKeys.size > 0 || dirtyGroupLabels.size > 0;
 }
 
 function guardUnsavedOptions(nextAction) {
@@ -2895,17 +3111,20 @@ function guardUnsavedOptions(nextAction) {
 
   pendingUnsavedAction = nextAction;
   unsavedOptionsModal.hidden = false;
+  syncModalLock();
 }
 
 function closeUnsavedOptionsModal() {
   pendingUnsavedAction = null;
   unsavedOptionsModal.hidden = true;
+  syncModalLock();
 }
 
 function discardUnsavedOptionsAndContinue() {
   clearPendingOptions();
   dirtyOptionKeys.clear();
   dirtyOptionValues.clear();
+  dirtyGroupLabels.clear();
   renderOptionsEditors();
   continuePendingAction();
 }
@@ -2920,6 +3139,17 @@ async function saveUnsavedOptionsAndContinue() {
 }
 
 async function saveDirtyOptions() {
+  const nextLabels = { ...labels, ...Object.fromEntries(dirtyGroupLabels) };
+  const normalizedLabels = optionGroups.map((group) => String(nextLabels[group] || "").trim().toLowerCase());
+  if (normalizedLabels.some((label) => !label)) throw new Error("Digite o nome de todas as categorias.");
+  if (new Set(normalizedLabels).size !== normalizedLabels.length) throw new Error("Os nomes das categorias precisam ser diferentes.");
+
+  for (const [group, rawValue] of dirtyGroupLabels) {
+    const value = rawValue.trim();
+    await authenticatedRpc("lc_update_configuration_label", configurationRpcArgs({ p_group_key: group, p_label: value }));
+    labels[group] = value;
+  }
+
   for (const optionId of Array.from(dirtyOptionKeys)) {
     const value = dirtyOptionValues.get(optionId)?.trim();
     if (!value) throw new Error("Digite um valor para salvar as opções.");
@@ -2983,6 +3213,7 @@ async function saveDirtyOptions() {
 
   dirtyOptionKeys.clear();
   dirtyOptionValues.clear();
+  dirtyGroupLabels.clear();
   await refreshRemoteState();
   renderAll();
 }
@@ -6599,6 +6830,19 @@ function applyCustomCategoryRows(rows) {
       options: normalizeCustomOptions(row.options),
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function applyCategoryLabelRows(rows) {
+  Object.assign(labels, defaultLabels);
+  (rows || []).forEach((row) => {
+    const group = row.group_key;
+    const label = String(row.label || "").trim();
+    if (optionGroups.includes(group) && label) labels[group] = label;
+  });
+  analyticsSections.forEach((section) => {
+    section.label = labels[section.optionGroup] || section.label;
+  });
+  dirtyGroupLabels.clear();
 }
 
 function normalizeCustomOptions(optionsValue) {
