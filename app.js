@@ -241,6 +241,8 @@ const analyticsBoughtFilter = $("#analyticsBoughtFilter");
 const analyticsSingleDate = $("#analyticsSingleDate");
 const analyticsStartDate = $("#analyticsStartDate");
 const analyticsEndDate = $("#analyticsEndDate");
+const analyticsApplyFiltersButton = $("#analyticsApplyFiltersButton");
+const analyticsFilterStatus = $("#analyticsFilterStatus");
 const analyticsSingleDateField = $(".analytics-single-date");
 const analyticsRangeDateFields = $$(".analytics-range-date");
 const analyticsQuickRangeField = $(".quick-range-field");
@@ -575,6 +577,7 @@ function bindEvents() {
   analyticsContent.addEventListener("click", handleAnalyticsClick);
   [analyticsSingleDate, analyticsStartDate, analyticsEndDate].forEach((element) => {
     element.addEventListener("input", renderAdminAnalytics);
+    element.addEventListener("change", renderAdminAnalytics);
   });
   analyticsDateModeButtons.forEach((button) => {
     button.addEventListener("click", () => setAnalyticsDateMode(button.dataset.analyticsDateMode));
@@ -582,6 +585,7 @@ function bindEvents() {
   analyticsQuickRangeButtons.forEach((button) => {
     button.addEventListener("click", () => setAnalyticsQuickRange(button.dataset.analyticsRange));
   });
+  analyticsApplyFiltersButton.addEventListener("click", forceApplyAnalyticsFilters);
 
   form.addEventListener("submit", handleLeadSubmit);
   clearFormButton.addEventListener("click", resetLeadForm);
@@ -3244,6 +3248,60 @@ function renderAdminAnalytics() {
   renderAnalyticsChartsPanel();
   syncAnalyticsViewMode();
   updateAiContextLabel(filtered);
+}
+
+async function forceApplyAnalyticsFilters() {
+  if (!selectedAnalyticsStoreId) {
+    showAppNotification("Selecione um cliente antes de aplicar os filtros.", "error");
+    return;
+  }
+
+  const mode = $(".segment-button.is-active")?.dataset.analyticsDateMode || "single";
+  if (
+    mode === "range" &&
+    analyticsStartDate.value &&
+    analyticsEndDate.value &&
+    analyticsStartDate.value > analyticsEndDate.value
+  ) {
+    analyticsFilterStatus.textContent = "Revise o período informado.";
+    analyticsFilterStatus.classList.remove("is-success");
+    analyticsFilterStatus.classList.add("is-error");
+    analyticsStartDate.focus();
+    showAppNotification("A data inicial não pode ser maior que a data final.", "error");
+    return;
+  }
+
+  analyticsApplyFiltersButton.disabled = true;
+  analyticsApplyFiltersButton.classList.add("is-loading");
+  analyticsApplyFiltersButton.setAttribute("aria-busy", "true");
+  analyticsApplyFiltersButton.querySelector("span").textContent = "Aplicando...";
+  analyticsContent.setAttribute("aria-busy", "true");
+  analyticsFilterStatus.textContent = "Atualizando dados e recalculando resultados...";
+  analyticsFilterStatus.classList.remove("is-success", "is-error");
+
+  // Aplica imediatamente sobre os dados atuais e depois confirma com uma nova leitura do servidor.
+  renderAdminAnalytics();
+
+  try {
+    await refreshRemoteState();
+    renderAll();
+    const total = getAnalyticsLeads().length;
+    const resultLabel = total === 1 ? "1 lead encontrado" : `${total} leads encontrados`;
+    analyticsFilterStatus.textContent = `Filtros aplicados · ${resultLabel}`;
+    analyticsFilterStatus.classList.add("is-success");
+    showAppNotification(`Filtros aplicados: ${resultLabel}.`);
+  } catch (error) {
+    renderAdminAnalytics();
+    analyticsFilterStatus.textContent = "Filtros aplicados aos dados já carregados.";
+    analyticsFilterStatus.classList.add("is-error");
+    showAppNotification(`Filtros aplicados, mas não foi possível atualizar os dados: ${readableError(error)}`, "error");
+  } finally {
+    analyticsContent.removeAttribute("aria-busy");
+    analyticsApplyFiltersButton.disabled = false;
+    analyticsApplyFiltersButton.classList.remove("is-loading");
+    analyticsApplyFiltersButton.removeAttribute("aria-busy");
+    analyticsApplyFiltersButton.querySelector("span").textContent = "Aplicar filtros";
+  }
 }
 
 function renderMetricBars(container, rows, suffix = "") {
