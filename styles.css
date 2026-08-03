@@ -108,6 +108,7 @@ button {
 body.is-dark .topbar,
 body.is-dark .auth-card,
 body.is-dark .analytics-panel,
+body.is-dark .store-export-panel,
 body.is-dark .form-panel,
 body.is-dark .list-panel,
 body.is-dark .metric,
@@ -514,6 +515,45 @@ h3 {
   grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
+}
+
+.store-export-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid rgba(32, 33, 31, 0.09);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 247, 247, 0.9));
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.store-export-heading {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.store-export-heading h2 {
+  margin: 0;
+  font-size: 1.22rem;
+  line-height: 1.15;
+}
+
+.store-export-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(156px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.store-export-button {
+  min-width: 148px;
 }
 
 .metric {
@@ -5303,6 +5343,8 @@ body.is-dark .analytics-lead-delete {
   .workspace,
   .admin-workspace,
   .analytics-controls,
+  .store-export-panel,
+  .store-export-controls,
   .field-grid,
   .filter-toolbar,
   .filters {
@@ -5493,6 +5535,7 @@ body.is-dark .analytics-lead-delete {
   }
 
   .topbar,
+  .store-export-panel,
   .form-panel,
   .list-panel,
   .analytics-toggle,
@@ -5507,6 +5550,7 @@ body.is-dark .analytics-lead-delete {
 
   .ai-insights-button,
   .analytics-charts-button,
+  .store-export-button,
   .excel-export-button {
     width: 100%;
   }

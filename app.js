@@ -252,6 +252,9 @@ const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
 const analyticsQuickRangeButtons = $$("[data-analytics-range]");
 const exportLeadsButton = $("#exportLeadsButton");
 const storeExportLeadsButton = $("#storeExportLeadsButton");
+const storeExportStartDate = $("#storeExportStartDate");
+const storeExportEndDate = $("#storeExportEndDate");
+const storeExportButton = $("#storeExportButton");
 const aiInsightsButton = $("#aiInsightsButton");
 const analyticsChartsButton = $("#analyticsChartsButton");
 const aiChatModal = $("#aiChatModal");
@@ -510,10 +513,14 @@ function bindEvents() {
   appointmentMonitorToggle.addEventListener("click", toggleAppointmentMonitorPanel);
   appointmentMonitorList.addEventListener("click", handleAppointmentMonitorClick);
   exportLeadsButton.addEventListener("click", exportLeadsToExcel);
-  storeExportLeadsButton.addEventListener("click", exportStoreLeadsToExcel);
+  storeExportLeadsButton.addEventListener("click", exportFilteredStoreLeadsToExcel);
   backupChooseDirectory.addEventListener("click", chooseBackupDirectory);
   backupRunNow.addEventListener("click", () => {
     runBackup({ manual: true }).catch((error) => showBackupMessage(readableError(error), "error"));
+  });
+  storeExportButton.addEventListener("click", exportStoreLeadsToExcel);
+  [storeExportStartDate, storeExportEndDate].forEach((element) => {
+    element.addEventListener("input", renderStoreExportSummary);
   });
   aiInsightsButton.addEventListener("click", openAiChat);
   analyticsChartsButton.addEventListener("click", toggleAnalyticsChartsMode);
@@ -759,6 +766,7 @@ function showStoreDashboard() {
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
   storeOptionsPanel.hidden = true;
+  initializeStoreExportDates();
   adminView.hidden = true;
   storeView.hidden = false;
   renderAll();
@@ -1164,6 +1172,7 @@ async function openStoreAsAdmin(storeId) {
   appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
+  initializeStoreExportDates();
   adminView.hidden = true;
   storeView.hidden = false;
   await refreshStoreConfiguration(store.id);
@@ -2072,6 +2081,7 @@ function renderLeadList() {
   $("#storeScheduled").textContent = countByValue(storeLeads, "scheduled", "Sim");
   $("#salesCount").textContent = countByValue(storeLeads, "bought", "Sim");
   $("#conversionRate").textContent = formatPercent(countByValue(storeLeads, "bought", "Sim"), storeLeads.length);
+  renderStoreExportSummary();
 }
 
 function renderAppointmentMonitor() {
@@ -3829,6 +3839,47 @@ function closeAnalyticsInspector() {
   syncModalLock();
 }
 
+function initializeStoreExportDates() {
+  const { start, end } = getCurrentWeekDateRange();
+  if (storeExportStartDate) storeExportStartDate.value = start;
+  if (storeExportEndDate) storeExportEndDate.value = end;
+  renderStoreExportSummary();
+}
+
+function renderStoreExportSummary() {
+  if (!storeExportButton || storeView.hidden) return;
+
+  const total = getStoreExportLeads().length;
+  const label = total === 1 ? "1 lead no período" : `${total} leads no período`;
+  storeExportButton.title = label;
+  storeExportButton.setAttribute("aria-label", `Exportar ${label}`);
+}
+
+function getStoreExportLeads() {
+  const { start, end } = getStoreExportDateRange();
+  return getVisibleStoreLeads().filter((lead) => {
+    const createdDate = getLeadCreatedDateValue(lead);
+    if (!createdDate) return false;
+    if (start && createdDate < start) return false;
+    if (end && createdDate > end) return false;
+    return true;
+  });
+}
+
+function getStoreExportDateRange() {
+  return {
+    start: storeExportStartDate?.value || "",
+    end: storeExportEndDate?.value || "",
+  };
+}
+
+function formatStoreExportPeriodLabel(start, end) {
+  if (start && end) return `Cadastros de ${formatDateInputValue(start)} até ${formatDateInputValue(end)}`;
+  if (start) return `Cadastros a partir de ${formatDateInputValue(start)}`;
+  if (end) return `Cadastros até ${formatDateInputValue(end)}`;
+  return "Todos os cadastros da loja";
+}
+
 function exportLeadsToExcel() {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
 
@@ -3844,12 +3895,14 @@ function exportLeadsToExcel() {
     return;
   }
 
-  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore);
-  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
+  downloadLeadsWorkbook(exportRows, {
+    filePrefix: `leads-${slugifyFileName(selectedStore.name)}`,
+    scopeLabel: `Cliente: ${selectedStore.name}`,
+  });
   showAppNotification("Excel exportado.");
 }
 
-function exportStoreLeadsToExcel() {
+function exportFilteredStoreLeadsToExcel() {
   const selectedStore = getActiveStore();
   if (!selectedStore) {
     showAppNotification("Loja não encontrada para exportação.", "error");
@@ -3862,10 +3915,10 @@ function exportStoreLeadsToExcel() {
     return;
   }
 
-  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore, {
-    scopeLabel: "Leads visíveis no filtro atual",
+  downloadLeadsWorkbook(exportRows, {
+    filePrefix: `leads-${slugifyFileName(selectedStore.name)}`,
+    scopeLabel: `Leads visíveis no filtro atual · ${selectedStore.name}`,
   });
-  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
   showAppNotification("Dados exportados para Excel.");
 }
 
@@ -3885,11 +3938,10 @@ function exportManagedStoreLeads(storeId) {
     return;
   }
 
-  const workbook = buildLeadsExcelWorkbook(exportRows, selectedStore, {
-    scopeLabel: "Todos os leads deste cliente",
-    categories: getLeadCategoriesForExport(exportRows),
+  downloadLeadsWorkbook(exportRows, {
+    filePrefix: `leads-${slugifyFileName(selectedStore.name)}`,
+    scopeLabel: `Todos os leads · ${selectedStore.name}`,
   });
-  downloadExcelWorkbook(workbook, `leads-${normalizeNick(selectedStore.name)}-${formatExportFileDate(new Date())}.xls`);
   showAppNotification(`Dados de ${selectedStore.name} exportados.`);
 }
 
@@ -3905,7 +3957,134 @@ function downloadExcelWorkbook(workbook, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function buildLeadsExcelWorkbook(exportRows, selectedStore, { scopeLabel = "Somente os leads deste cliente no filtro atual", categories = customCategories } = {}) {
+function exportStoreLeadsToExcel() {
+  if (storeView.hidden) return;
+
+  const { start, end } = getStoreExportDateRange();
+  if (start && end && start > end) {
+    showAppNotification("A data inicial não pode ser maior que a final.", "error");
+    storeExportStartDate.focus();
+    return;
+  }
+
+  const exportRows = getStoreExportLeads().sort((a, b) => {
+    const createdCompare = getLeadCreatedDateValue(b).localeCompare(getLeadCreatedDateValue(a));
+    return createdCompare || getLeadSortDate(b).localeCompare(getLeadSortDate(a));
+  });
+
+  if (!exportRows.length) {
+    showAppNotification("Nenhum lead cadastrado nesse período.", "error");
+    return;
+  }
+
+  const store = getActiveStore();
+  const storeName = store?.name || currentProfile?.storeName || currentProfile?.username || "Loja";
+  downloadLeadsWorkbook(exportRows, {
+    filePrefix: `leads-${slugifyFileName(storeName)}`,
+    scopeLabel: `Loja: ${storeName}`,
+    periodLabel: formatStoreExportPeriodLabel(start, end),
+  });
+  showAppNotification("Excel da loja exportado.");
+}
+
+function downloadLeadsWorkbook(exportRows, { filePrefix = "leads", scopeLabel, periodLabel } = {}) {
+  const workbook = buildLeadsExcelWorkbook(exportRows, { scopeLabel, periodLabel });
+  const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${filePrefix}-${formatExportFileDate(new Date())}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildLeadsExcelWorkbook(exportRows, { scopeLabel = "Todos os leads carregados para este acesso", periodLabel = "" } = {}) {
+  const visited = countByValue(exportRows, "visited", "Sim");
+  const scheduled = countByValue(exportRows, "scheduled", "Sim");
+  const bought = countByValue(exportRows, "bought", "Sim");
+  const totalRevenue = exportRows.reduce((sum, lead) => sum + Number(lead.purchaseAmount || 0), 0);
+  const tableColumns = buildLeadTableExportColumns();
+  const summaryRows = [
+    ["Gerado em", formatDateTime(new Date().toISOString())],
+    ["Escopo", scopeLabel],
+    ...(periodLabel ? [["Período", periodLabel]] : []),
+    ["Total de leads", exportRows.length],
+    ["Agendaram visita", scheduled],
+    ["Visitaram a loja", visited],
+    ["Compraram", bought],
+    ["Conversão", formatPercent(bought, exportRows.length)],
+    ["Receita registrada", formatCurrency(totalRevenue)],
+  ];
+  const leadRows = buildLeadTableRows(exportRows, tableColumns, totalRevenue);
+
+  return buildXlsxWorkbook([
+    {
+      name: "Leads",
+      rows: leadRows,
+      columnWidths: [12, 18, 28, 16, 54, 72, 18, 16, 14, 14, 14],
+      tableColumnCount: 11,
+      frozenRows: 1,
+    },
+    {
+      name: "Resumo",
+      rows: [["Exportação de Leads"], ["Controle de Leads | Ótica"], [], ...summaryRows],
+      columnWidths: [28, 48],
+    },
+  ]);
+}
+
+function buildLeadTableExportColumns() {
+  const productCategory = customCategories.find((category) =>
+    normalizeSearchText(category.name).includes("produto") ||
+    normalizeSearchText(category.name).includes("interesse")
+  );
+
+  return [
+    { header: "DATA", value: (lead) => formatLeadContactDate(lead) || formatDateInputValue(getLeadCreatedDateValue(lead)) },
+    { header: "TELEFONE", value: (lead) => lead.phone || "" },
+    { header: "NOME", value: (lead) => lead.name || "" },
+    { header: "CANAL", value: (lead) => lead.channel || "" },
+    {
+      header: productCategory?.name || "Qual produto tem interesse?",
+      value: (lead) => productCategory
+        ? lead.customValues[productCategory.id] || ""
+        : lead.conversationStart || "",
+    },
+    { header: "STATUS", value: (lead) => lead.conclusion || "" },
+    { header: "Veio até a loja?", value: (lead) => lead.visited || "" },
+    { header: "Comprou?", value: (lead) => lead.bought || "" },
+    { header: "Valor", value: (lead) => Number(lead.purchaseAmount || 0) || "" },
+  ];
+}
+
+function buildLeadTableRows(exportRows, tableColumns, totalRevenue) {
+  const rows = [
+    [...tableColumns.map((column) => column.header), "TT", "LUCRO"],
+    ...exportRows.map((lead) => [
+      ...tableColumns.map((column) => column.value(lead)),
+      "",
+      "",
+    ]),
+  ];
+
+  if (rows.length < 32) {
+    const emptyRow = Array.from({ length: 11 }, () => "");
+    while (rows.length < 32) rows.push([...emptyRow]);
+  }
+
+  rows[1] = rows[1] || Array.from({ length: 11 }, () => "");
+  rows[1][9] = totalRevenue || 0;
+  rows[1][10] = "";
+  return rows;
+}
+
+function buildLegacyLeadsExcelWorkbook(
+  exportRows,
+  selectedStore,
+  { scopeLabel = "Somente os leads deste cliente no filtro atual", categories = customCategories } = {},
+) {
   const visited = countByValue(exportRows, "visited", "Sim");
   const scheduled = countByValue(exportRows, "scheduled", "Sim");
   const bought = countByValue(exportRows, "bought", "Sim");
@@ -3993,10 +4172,274 @@ function buildLeadExportColumns(categories = customCategories) {
   ];
 }
 
-function excelCell(value) {
-  const text = String(value ?? "");
+function buildXlsxWorkbook(sheets) {
+  const workbookFiles = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  ${sheets.map((_sheet, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}
+</Types>`,
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    ${sheets.map((sheet, index) => `<sheet name="${xmlAttribute(cleanSheetName(sheet.name))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}
+  </sheets>
+</workbook>`,
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${sheets.map((_sheet, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("")}
+  <Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+    },
+    {
+      name: "xl/styles.xml",
+      content: buildXlsxStyles(),
+    },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: buildXlsxWorksheet(sheet.rows, sheet),
+    })),
+  ];
+
+  return createZipArchive(workbookFiles);
+}
+
+function buildXlsxWorksheet(rows, options = {}) {
+  const normalizedRows = rows.map((row) => Array.isArray(row) ? row : [row]);
+  const maxColumnCount = options.tableColumnCount || normalizedRows.reduce((max, row) => Math.max(max, row.length), 1);
+  const dimension = `A1:${columnName(maxColumnCount)}${Math.max(normalizedRows.length, 1)}`;
+  const columnsXml = Array.isArray(options.columnWidths)
+    ? `<cols>${options.columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("")}</cols>`
+    : "";
+  const freezeXml = options.frozenRows
+    ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${options.frozenRows}" topLeftCell="A${options.frozenRows + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    : `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`;
+  const rowXml = normalizedRows
+    .map((row, rowIndex) => {
+      const rowNumber = rowIndex + 1;
+      const rowValues = options.tableColumnCount
+        ? Array.from({ length: options.tableColumnCount }, (_value, index) => row[index] ?? "")
+        : row;
+      const rowHeight = rowIndex === 0 ? 22 : 21;
+      const cells = rowValues
+        .map((value, columnIndex) => {
+          const isCurrencyColumn = options.tableColumnCount && columnIndex >= 8;
+          const styleId = options.tableColumnCount
+            ? rowIndex === 0 ? 1 : isCurrencyColumn ? 3 : 2
+            : 0;
+          return buildXlsxCell(value, `${columnName(columnIndex + 1)}${rowNumber}`, styleId);
+        })
+        .join("");
+      return `<row r="${rowNumber}" ht="${rowHeight}" customHeight="1">${cells}</row>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="${dimension}"/>
+  ${freezeXml}
+  <sheetFormatPr defaultRowHeight="21"/>
+  ${columnsXml}
+  <sheetData>${rowXml}</sheetData>
+</worksheet>`;
+}
+
+function buildXlsxCell(value, reference, styleId = 0) {
+  const styleAttribute = styleId ? ` s="${styleId}"` : "";
+  if (value === null || value === undefined || value === "") {
+    return `<c r="${reference}"${styleAttribute}/>`;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `<c r="${reference}"${styleAttribute}><v>${value}</v></c>`;
+  }
+
+  const text = String(value);
   const protectedText = /^[=+\-@]/.test(text.trim()) ? `'${text}` : text;
-  return escapeHtml(protectedText).replace(/\r?\n/g, "<br>");
+  return `<c r="${reference}"${styleAttribute} t="inlineStr"><is><t xml:space="preserve">${xmlText(protectedText)}</t></is></c>`;
+}
+
+function buildXlsxStyles() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="R$ #,##0.00"/>
+  </numFmts>
+  <fonts count="2">
+    <font><sz val="11"/><name val="Arial"/></font>
+    <font><b/><sz val="11"/><name val="Arial"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FF3F3F3F"/></left>
+      <right style="thin"><color rgb="FF3F3F3F"/></right>
+      <top style="thin"><color rgb="FF3F3F3F"/></top>
+      <bottom style="thin"><color rgb="FF3F3F3F"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="4">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center" wrapText="1"/>
+    </xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1">
+      <alignment vertical="center" wrapText="1"/>
+    </xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="right" vertical="center" wrapText="1"/>
+    </xf>
+  </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
+</styleSheet>`;
+}
+
+function createZipArchive(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+
+  files.forEach((file) => {
+    const fileName = encoder.encode(file.name);
+    const content = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
+    const crc = crc32(content);
+    const localHeader = new Uint8Array(30 + fileName.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, dosTime, true);
+    localView.setUint16(12, dosDate, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, content.length, true);
+    localView.setUint32(22, content.length, true);
+    localView.setUint16(26, fileName.length, true);
+    localHeader.set(fileName, 30);
+    localParts.push(localHeader, content);
+
+    const centralHeader = new Uint8Array(46 + fileName.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, dosTime, true);
+    centralView.setUint16(14, dosDate, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, content.length, true);
+    centralView.setUint32(24, content.length, true);
+    centralView.setUint16(28, fileName.length, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(fileName, 46);
+    centralParts.push(centralHeader);
+
+    offset += localHeader.length + content.length;
+  });
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const endRecord = new Uint8Array(22);
+  const endView = new DataView(endRecord.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, centralOffset, true);
+
+  return concatUint8Arrays([...localParts, ...centralParts, endRecord]);
+}
+
+function concatUint8Arrays(parts) {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  parts.forEach((part) => {
+    result.set(part, offset);
+    offset += part.length;
+  });
+  return result;
+}
+
+let crc32Lookup = null;
+
+function crc32(bytes) {
+  if (!crc32Lookup) {
+    crc32Lookup = Array.from({ length: 256 }, (_value, index) => {
+      let current = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        current = current & 1 ? 0xedb88320 ^ (current >>> 1) : current >>> 1;
+      }
+      return current >>> 0;
+    });
+  }
+
+  let crc = 0xffffffff;
+  bytes.forEach((byte) => {
+    crc = crc32Lookup[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function columnName(index) {
+  let name = "";
+  let current = index;
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    current = Math.floor((current - 1) / 26);
+  }
+  return name;
+}
+
+function cleanSheetName(value) {
+  return String(value || "Planilha").replace(/[:\\/?*\[\]]/g, " ").slice(0, 31) || "Planilha";
+}
+
+function xmlText(value) {
+  return String(value)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function xmlAttribute(value) {
+  return xmlText(value).replace(/"/g, "&quot;");
 }
 
 function formatExportFileDate(date) {
@@ -4188,7 +4631,7 @@ async function backupStoreLeads(store, storeRows, now) {
   if (changedRows.length) {
     const destination = await getBackupStoreDirectory(backupDirectoryHandle, store, now);
     const categories = getLeadCategoriesForExport(storeRows);
-    const workbook = buildLeadsExcelWorkbook(changedRows, store, {
+    const workbook = buildLegacyLeadsExcelWorkbook(changedRows, store, {
       scopeLabel: isFirstBackup
         ? "Primeiro backup completo desta empresa"
         : "Backup incremental: somente leads novos ou alterados",
@@ -4443,6 +4886,16 @@ function showBackupMessage(message, type = "") {
   if (!backupMessage) return;
   backupMessage.textContent = message;
   backupMessage.classList.toggle("success", type === "success");
+}
+
+function slugifyFileName(value) {
+  return String(value || "loja")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "loja";
 }
 
 function openAiChat() {
@@ -6353,6 +6806,22 @@ function toLocalDateInput(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getCurrentWeekDateRange() {
+  const today = new Date();
+  const start = new Date(today);
+  const day = today.getDay();
+  const distanceToMonday = day === 0 ? -6 : 1 - day;
+  start.setDate(today.getDate() + distanceToMonday);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return {
+    start: toLocalDateInput(start),
+    end: toLocalDateInput(end),
+  };
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", {
@@ -6375,6 +6844,15 @@ function formatDateInputValue(value) {
 
 function getLeadDateValue(lead) {
   return lead?.contactDate || lead?.createdAt?.slice(0, 10) || "";
+}
+
+function getLeadCreatedDateValue(lead) {
+  const value = lead?.createdAt;
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return toLocalDateInput(date);
 }
 
 function getLeadSortDate(lead) {

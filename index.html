@@ -673,6 +673,28 @@
         </section>
 
         <section id="storeView" hidden>
+        <section class="store-export-panel" aria-label="Exportação de leads da loja">
+          <div class="store-export-heading">
+            <p class="eyebrow">Exportação</p>
+            <h2>Leads da loja</h2>
+          </div>
+
+          <div class="store-export-controls">
+            <label class="field">
+              <span><i class="fa-solid fa-play" aria-hidden="true"></i>De</span>
+              <input id="storeExportStartDate" type="date" />
+            </label>
+            <label class="field">
+              <span><i class="fa-solid fa-stop" aria-hidden="true"></i>Até</span>
+              <input id="storeExportEndDate" type="date" />
+            </label>
+            <button class="excel-export-button store-export-button" type="button" id="storeExportButton">
+              <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
+              <span>Exportar</span>
+            </button>
+          </div>
+        </section>
+
         <section class="summary-grid" aria-label="Resumo dos leads">
           <article class="metric">
             <span>Total</span>
