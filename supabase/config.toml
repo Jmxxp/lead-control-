@@ -1,0 +1,5 @@
+[functions.ai-analysis]
+verify_jwt = false
+
+[functions.marketing-conversions]
+verify_jwt = false

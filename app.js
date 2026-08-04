@@ -17,7 +17,7 @@ const DEFAULT_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comer
 const aiProviderOptions = {
   gemini: {
     label: "Google Gemini",
-    models: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-pro"],
+    models: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"],
   },
   deepseek: {
     label: "DeepSeek",
@@ -61,6 +61,10 @@ let selectedAnalyticsStoreId = "";
 let managedAccountCurrentAvatar = "";
 let stores = [];
 let leads = [];
+let leadIntelligenceRows = [];
+let adDailyMetrics = [];
+let marketingTargets = [];
+let marketingConnections = [];
 let technicians = [];
 let profileAvatars = [];
 let customCategories = [];
@@ -237,6 +241,8 @@ const analyticsStoreFilter = $("#analyticsStoreFilter");
 const analyticsChannelFilter = $("#analyticsChannelFilter");
 const analyticsCampaignFilter = $("#analyticsCampaignFilter");
 const analyticsConclusionFilter = $("#analyticsConclusionFilter");
+const analyticsLifecycleFilter = $("#analyticsLifecycleFilter");
+const analyticsQualifiedFilter = $("#analyticsQualifiedFilter");
 const analyticsVisitedFilter = $("#analyticsVisitedFilter");
 const analyticsScheduledFilter = $("#analyticsScheduledFilter");
 const analyticsBoughtFilter = $("#analyticsBoughtFilter");
@@ -252,6 +258,28 @@ const analyticsCustomFilters = $("#analyticsCustomFilters");
 const analyticsCustomSections = $("#analyticsCustomSections");
 const analyticsActions = $(".analytics-ai-row");
 const analyticsKpis = $("#analyticsKpis");
+const marketingIntelligencePanel = $("#marketingIntelligencePanel");
+const marketingFunnel = $("#marketingFunnel");
+const marketingDataBadge = $("#marketingDataBadge");
+const marketingGoalSummary = $("#marketingGoalSummary");
+const marketingSourcePerformanceList = $("#marketingSourcePerformanceList");
+const adMetricForm = $("#adMetricForm");
+const adMetricDate = $("#adMetricDate");
+const adMetricPlatform = $("#adMetricPlatform");
+const adMetricCampaign = $("#adMetricCampaign");
+const adMetricSpend = $("#adMetricSpend");
+const adMetricImpressions = $("#adMetricImpressions");
+const adMetricReach = $("#adMetricReach");
+const adMetricClicks = $("#adMetricClicks");
+const adMetricMessage = $("#adMetricMessage");
+const marketingTargetsForm = $("#marketingTargetsForm");
+const marketingMonthlyBudget = $("#marketingMonthlyBudget");
+const marketingLeadGoal = $("#marketingLeadGoal");
+const marketingQualifiedGoal = $("#marketingQualifiedGoal");
+const marketingSalesGoal = $("#marketingSalesGoal");
+const marketingRevenueGoal = $("#marketingRevenueGoal");
+const marketingTargetRoas = $("#marketingTargetRoas");
+const marketingTargetsMessage = $("#marketingTargetsMessage");
 const analyticsBoard = $("#analyticsBoard");
 const analyticsChartsPanel = $("#analyticsChartsPanel");
 const analyticsDateModeButtons = $$("[data-analytics-date-mode]");
@@ -336,6 +364,24 @@ const purchaseDetails = $("#purchaseDetails");
 const purchaseAmountInput = $("#purchaseAmount");
 const serviceOrderInput = $("#serviceOrder");
 const leadNotesInput = $("#leadNotes");
+const leadLifecycleStatus = $("#leadLifecycleStatus");
+const leadOwnerName = $("#leadOwnerName");
+const leadEmail = $("#leadEmail");
+const leadLossReasonField = $("#leadLossReasonField");
+const leadLossReason = $("#leadLossReason");
+const leadQualified = $("#leadQualified");
+const leadReturningCustomer = $("#leadReturningCustomer");
+const leadMarketingConsent = $("#leadMarketingConsent");
+const leadUtmSource = $("#leadUtmSource");
+const leadUtmMedium = $("#leadUtmMedium");
+const leadUtmCampaign = $("#leadUtmCampaign");
+const leadUtmContent = $("#leadUtmContent");
+const leadCampaignExternalId = $("#leadCampaignExternalId");
+const leadAdsetExternalId = $("#leadAdsetExternalId");
+const leadAdExternalId = $("#leadAdExternalId");
+const leadGoogleClickId = $("#leadGoogleClickId");
+const leadMetaClickId = $("#leadMetaClickId");
+const leadLandingPage = $("#leadLandingPage");
 const storeOptionsPanel = $("#storeOptionsPanel");
 const storeOptionsList = $("#storeOptionsList");
 const storeOptionsMessage = $("#storeOptionsMessage");
@@ -388,6 +434,8 @@ async function init() {
   bindFocusModality();
   loadAiSettings();
   setTodayLabel();
+  if (adMetricDate) adMetricDate.value = toLocalDateInput(new Date());
+  syncLeadIntelligenceVisibility();
   bindEvents();
   initializeLeadWorkspaceSizing();
   showAuth();
@@ -571,6 +619,8 @@ function bindEvents() {
     analyticsChannelFilter,
     analyticsCampaignFilter,
     analyticsConclusionFilter,
+    analyticsLifecycleFilter,
+    analyticsQualifiedFilter,
     analyticsVisitedFilter,
     analyticsScheduledFilter,
     analyticsBoughtFilter,
@@ -590,6 +640,16 @@ function bindEvents() {
     button.addEventListener("click", () => setAnalyticsQuickRange(button.dataset.analyticsRange));
   });
   analyticsApplyFiltersButton.addEventListener("click", forceApplyAnalyticsFilters);
+  adMetricForm?.addEventListener("submit", handleAdMetricSubmit);
+  marketingTargetsForm?.addEventListener("submit", handleMarketingTargetsSubmit);
+  adMetricSpend?.addEventListener("input", () => {
+    adMetricSpend.value = adMetricSpend.value.replace(/[^\d.,]/g, "");
+  });
+  [marketingMonthlyBudget, marketingRevenueGoal].forEach((element) => {
+    element?.addEventListener("input", () => {
+      element.value = element.value.replace(/[^\d.,]/g, "");
+    });
+  });
 
   form.addEventListener("submit", handleLeadSubmit);
   clearFormButton.addEventListener("click", resetLeadForm);
@@ -600,6 +660,13 @@ function bindEvents() {
   });
   purchaseAmountInput.addEventListener("input", () => {
     purchaseAmountInput.value = purchaseAmountInput.value.replace(/[^\d.,]/g, "");
+  });
+  leadLifecycleStatus?.addEventListener("input", syncLeadIntelligenceVisibility);
+  leadQualified?.addEventListener("input", () => {
+    if (leadQualified.checked && ["new", "contacted"].includes(leadLifecycleStatus.value)) {
+      leadLifecycleStatus.value = "qualified";
+    }
+    syncLeadIntelligenceVisibility();
   });
 
   [
@@ -1222,7 +1289,10 @@ async function openStoreAsAdmin(storeId) {
   initializeStoreExportDates();
   adminView.hidden = true;
   storeView.hidden = false;
-  await refreshStoreConfiguration(store.id);
+  await Promise.all([
+    refreshStoreConfiguration(store.id),
+    refreshMarketingConnections(store.id),
+  ]);
   resetLeadForm();
   renderAll();
 }
@@ -1252,7 +1322,10 @@ async function analyzeStore(storeId) {
   selectedAnalyticsStoreId = store.id;
   syncAiChatStoreScope(store.id);
   companyWorkspaceSection = "analytics";
-  await refreshStoreConfiguration(store.id);
+  await Promise.all([
+    refreshStoreConfiguration(store.id),
+    refreshMarketingConnections(store.id),
+  ]);
   renderAll();
   analyticsClientPicker.scrollIntoView({ behavior: "smooth", block: "start" });
   showAppNotification(`Analisando ${store.name}`);
@@ -1346,10 +1419,39 @@ async function handleLeadSubmit(event) {
     return;
   }
 
+  const intelligencePayload = buildLeadIntelligencePayload();
+  if (intelligencePayload.lifecycle_status === "lost" && !intelligencePayload.loss_reason) {
+    showFormMessage("Informe o motivo da perda do lead.");
+    leadLossReason.focus();
+    return;
+  }
+
   try {
     setFormBusy(form, true);
-    await authenticatedRpc("lc_upsert_lead", payload);
+    try {
+      await authenticatedRpc("lc_upsert_lead_with_intelligence", {
+        ...payload,
+        p_intelligence: intelligencePayload,
+      });
+    } catch (error) {
+      if (!isMissingRpcError(error)) throw error;
+      const savedLeadId = await authenticatedRpc("lc_upsert_lead", payload);
+      const leadId = Array.isArray(savedLeadId) ? savedLeadId[0] : savedLeadId;
+      if (leadId) {
+        await authenticatedRpc("lc_save_lead_intelligence", {
+          p_lead_id: leadId,
+          p_payload: intelligencePayload,
+        }).catch((intelligenceError) => {
+          if (!isMissingRpcError(intelligenceError)) throw intelligenceError;
+        });
+      }
+    }
     const wasEditing = Boolean(editingIdInput.value);
+    if (payload.p_bought === "Sim") {
+      dispatchPendingMarketingConversions(store.id).catch((error) => {
+        console.warn("Conversão offline pendente:", readableError(error));
+      });
+    }
     await refreshRemoteState();
     resetLeadForm();
     showFormMessage(wasEditing ? "Lead atualizado." : "Lead salvo.", "success");
@@ -1395,11 +1497,29 @@ function editLead(id) {
   purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
   serviceOrderInput.value = lead.serviceOrder || "";
   leadNotesInput.value = lead.notes || "";
+  leadLifecycleStatus.value = lead.lifecycleStatus || inferLeadLifecycleStatus(lead);
+  leadOwnerName.value = lead.ownerName || "";
+  leadEmail.value = lead.email || "";
+  leadLossReason.value = lead.lossReason || "";
+  leadQualified.checked = Boolean(lead.qualified);
+  leadReturningCustomer.checked = Boolean(lead.returningCustomer);
+  leadMarketingConsent.checked = Boolean(lead.marketingConsent);
+  leadUtmSource.value = lead.utmSource || "";
+  leadUtmMedium.value = lead.utmMedium || "";
+  leadUtmCampaign.value = lead.utmCampaign || "";
+  leadUtmContent.value = lead.utmContent || "";
+  leadCampaignExternalId.value = lead.campaignExternalId || "";
+  leadAdsetExternalId.value = lead.adsetExternalId || "";
+  leadAdExternalId.value = lead.adExternalId || "";
+  leadGoogleClickId.value = lead.gclid || lead.gbraid || lead.wbraid || "";
+  leadMetaClickId.value = lead.fbclid || lead.fbc || "";
+  leadLandingPage.value = lead.landingPageUrl || "";
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
   updateAppointmentDetailsVisibility();
   updatePurchaseDetailsVisibility();
+  syncLeadIntelligenceVisibility();
   renderChoiceButtons();
 }
 
@@ -1583,6 +1703,25 @@ function resetLeadForm() {
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
   leadNotesInput.value = "";
+  leadLifecycleStatus.value = "new";
+  leadOwnerName.value = "";
+  leadEmail.value = "";
+  leadLossReason.value = "";
+  leadQualified.checked = false;
+  leadReturningCustomer.checked = false;
+  leadMarketingConsent.checked = false;
+  [
+    leadUtmSource,
+    leadUtmMedium,
+    leadUtmCampaign,
+    leadUtmContent,
+    leadCampaignExternalId,
+    leadAdsetExternalId,
+    leadAdExternalId,
+    leadGoogleClickId,
+    leadMetaClickId,
+    leadLandingPage,
+  ].forEach((input) => { input.value = ""; });
   formTitle.textContent = "Cadastrar lead";
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
@@ -1590,6 +1729,7 @@ function resetLeadForm() {
   closeAppointmentModal();
   updatePurchaseDetailsVisibility();
   updateAppointmentDetailsVisibility();
+  syncLeadIntelligenceVisibility();
   renderChoiceButtons();
 }
 
@@ -1631,8 +1771,40 @@ async function refreshRemoteState() {
     if (isMissingRpcError(error)) return [];
     throw error;
   });
+  const leadIntelligenceRequest = authenticatedRpc("lc_list_lead_intelligence").catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+  const adMetricsRequest = authenticatedRpc("lc_list_ad_daily_metrics").catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+  const marketingTargetsRequest = authenticatedRpc("lc_list_marketing_targets").catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+  const connectionStoreId = configurationStoreId || selectedAnalyticsStoreId;
+  const marketingConnectionsRequest = connectionStoreId
+    ? authenticatedRpc("lc_list_marketing_connections", { p_store_id: connectionStoreId }).catch((error) => {
+        if (isMissingRpcError(error)) return [];
+        throw error;
+      })
+    : Promise.resolve([]);
 
-  const [storeRows, optionRows, customCategoryRows, categoryLabelRows, leadRows, technicianRows, usageRows, avatarRows] = await Promise.all([
+  const [
+    storeRows,
+    optionRows,
+    customCategoryRows,
+    categoryLabelRows,
+    leadRows,
+    technicianRows,
+    usageRows,
+    avatarRows,
+    intelligenceRows,
+    adMetricRows,
+    targetRows,
+    connectionRows,
+  ] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     optionRowsRequest,
     customCategoryRowsRequest,
@@ -1641,13 +1813,22 @@ async function refreshRemoteState() {
     technicianRowsRequest,
     accountUsageRequest,
     avatarRowsRequest,
+    leadIntelligenceRequest,
+    adMetricsRequest,
+    marketingTargetsRequest,
+    marketingConnectionsRequest,
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
   applyOptionRows(optionRows || []);
   applyCustomCategoryRows(customCategoryRows || []);
   applyCategoryLabelRows(categoryLabelRows || []);
-  leads = (leadRows || []).map(mapLeadRow);
+  leadIntelligenceRows = intelligenceRows || [];
+  const intelligenceByLeadId = new Map(leadIntelligenceRows.map((row) => [row.lead_id, row]));
+  leads = (leadRows || []).map((row) => mapLeadRow(row, intelligenceByLeadId.get(row.id)));
+  adDailyMetrics = (adMetricRows || []).map(mapAdDailyMetricRow);
+  marketingTargets = (targetRows || []).map(mapMarketingTargetRow);
+  marketingConnections = connectionRows || [];
   technicians = (technicianRows || []).map(mapTechnicianRow);
   profileAvatars = avatarRows || [];
   applyProfileAvatars();
@@ -1778,7 +1959,10 @@ async function handleAnalyticsClientSelection() {
   const storeId = analyticsClientSelector.value;
   selectedAnalyticsStoreId = getDashboardStores().some((store) => store.id === storeId) ? storeId : "";
   syncAiChatStoreScope(selectedAnalyticsStoreId);
-  await refreshStoreConfiguration(selectedAnalyticsStoreId);
+  await Promise.all([
+    refreshStoreConfiguration(selectedAnalyticsStoreId),
+    refreshMarketingConnections(selectedAnalyticsStoreId),
+  ]);
   clearAnalyticsFilters();
   renderAll();
 }
@@ -2122,6 +2306,9 @@ function renderLeadList() {
             </div>
           </div>
           <div class="lead-tags">
+            ${renderTag(`Etapa: ${formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead))}`)}
+            ${renderTag(lead.qualified ? "Qualificado" : "")}
+            ${renderTag(lead.ownerName ? `Responsável: ${lead.ownerName}` : "")}
             ${renderTag(lead.channel)}
             ${renderTag(formatLeadContactDate(lead) ? `Contato: ${formatLeadContactDate(lead)}` : "")}
             ${renderTag(lead.campaign)}
@@ -2304,6 +2491,33 @@ function openLeadDetailsModal(id) {
       </div>
     </div>
     <div class="lead-details-section">
+      <h3>Qualificação comercial</h3>
+      <div class="lead-details-grid">
+        ${renderLeadDetailItem("Etapa", formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)))}
+        ${renderLeadDetailItem("Lead qualificado", lead.qualified ? "Sim" : "Não")}
+        ${renderLeadDetailItem("Responsável", lead.ownerName)}
+        ${renderLeadDetailItem("E-mail", lead.email)}
+        ${renderLeadDetailItem("Motivo da perda", lead.lossReason)}
+        ${renderLeadDetailItem("Cliente recorrente", lead.returningCustomer ? "Sim" : "Não")}
+        ${renderLeadDetailItem("Consentimento", lead.marketingConsent ? "Sim" : "Não")}
+      </div>
+    </div>
+    ${(lead.utmSource || lead.utmCampaign || lead.gclid || lead.fbclid || lead.adExternalId) ? `
+      <div class="lead-details-section">
+        <h3>Atribuição do anúncio</h3>
+        <div class="lead-details-grid">
+          ${renderLeadDetailItem("UTM source", lead.utmSource)}
+          ${renderLeadDetailItem("UTM medium", lead.utmMedium)}
+          ${renderLeadDetailItem("UTM campaign", lead.utmCampaign)}
+          ${renderLeadDetailItem("UTM content", lead.utmContent)}
+          ${renderLeadDetailItem("ID da campanha", lead.campaignExternalId)}
+          ${renderLeadDetailItem("ID do anúncio", lead.adExternalId)}
+          ${renderLeadDetailItem("Identificador Google", lead.gclid || lead.gbraid || lead.wbraid)}
+          ${renderLeadDetailItem("Identificador Meta", lead.fbclid || lead.fbc)}
+        </div>
+      </div>
+    ` : ""}
+    <div class="lead-details-section">
       <h3>Resultado</h3>
       <div class="lead-details-grid">
         ${renderLeadDetailItem("Visitou a loja", lead.visited)}
@@ -2339,6 +2553,18 @@ function closeLeadDetailsModal() {
   leadDetailsModal.hidden = true;
   leadDetailsContent.innerHTML = "";
   syncModalLock();
+}
+
+function formatLifecycleStatus(value) {
+  return ({
+    new: "Novo",
+    contacted: "Em atendimento",
+    qualified: "Qualificado",
+    scheduled: "Agendado",
+    visited: "Visitou",
+    won: "Ganho",
+    lost: "Perdido",
+  })[value] || "Novo";
 }
 
 function syncModalLock() {
@@ -3272,6 +3498,7 @@ function renderAdminAnalytics() {
   $("#analyticsScheduledLeads").textContent = scheduled;
   $("#analyticsBoughtLeads").textContent = bought;
   $("#analyticsConversionRate").textContent = formatPercent(bought, total);
+  renderMarketingIntelligence(filtered);
 
   analyticsSections.forEach((section) => {
     renderAnalyticsCategoryCards(section, filtered);
@@ -3280,6 +3507,193 @@ function renderAdminAnalytics() {
   renderAnalyticsChartsPanel();
   syncAnalyticsViewMode();
   updateAiContextLabel(filtered);
+}
+
+function renderMarketingIntelligence(rows) {
+  if (!marketingIntelligencePanel || !marketingFunnel) return;
+
+  const total = rows.length;
+  const qualified = rows.filter((lead) => lead.qualified || lead.lifecycleStatus === "qualified").length;
+  const scheduled = countByValue(rows, "scheduled", "Sim");
+  const visited = countByValue(rows, "visited", "Sim");
+  const bought = countByValue(rows, "bought", "Sim");
+  const revenue = rows.reduce((sum, lead) => sum + (lead.bought === "Sim" ? Number(lead.purchaseAmount || 0) : 0), 0);
+  const averageTicket = bought ? revenue / bought : 0;
+  const today = toLocalDateInput(new Date());
+  const dueAppointments = rows.filter((lead) => (
+    lead.scheduled === "Sim" && lead.scheduledVisitDate && lead.scheduledVisitDate <= today
+  ));
+  const attendedAppointments = dueAppointments.filter((lead) => lead.visited === "Sim").length;
+  const showRate = formatPercent(attendedAppointments, dueAppointments.length);
+  const closeRate = formatPercent(bought, visited);
+  const mediaRows = getFilteredAdMetrics();
+  const spend = mediaRows.reduce((sum, metric) => sum + metric.spend, 0);
+  const cpl = spend > 0 && total ? spend / total : null;
+  const cac = spend > 0 && bought ? spend / bought : null;
+  const roas = spend > 0 ? revenue / spend : null;
+  const quality = calculateLeadDataQuality(rows);
+
+  const funnelSteps = [
+    { label: "Captados", value: total, icon: "fa-users" },
+    { label: "Qualificados", value: qualified, icon: "fa-user-check" },
+    { label: "Agendados", value: scheduled, icon: "fa-calendar-check" },
+    { label: "Visitaram", value: visited, icon: "fa-store" },
+    { label: "Compraram", value: bought, icon: "fa-bag-shopping" },
+  ];
+  marketingFunnel.innerHTML = funnelSteps.map((step, index) => {
+    const previous = index ? funnelSteps[index - 1].value : total;
+    const rate = index ? formatPercent(step.value, previous) : "100%";
+    const width = total ? Math.max((step.value / total) * 100, step.value ? 7 : 0) : 0;
+    return `
+      <article class="marketing-funnel-step">
+        <div class="marketing-funnel-label">
+          <span><i class="fa-solid ${step.icon}" aria-hidden="true"></i>${step.label}</span>
+          <b>${step.value}</b>
+        </div>
+        <div class="marketing-funnel-track"><i style="width:${width.toFixed(2)}%"></i></div>
+        <small>${index ? `${rate} da etapa anterior` : "Base do período"}</small>
+      </article>
+    `;
+  }).join("");
+
+  $("#analyticsRevenue").textContent = formatCurrency(revenue);
+  $("#analyticsAverageTicket").textContent = formatCurrency(averageTicket);
+  $("#analyticsShowRate").textContent = showRate;
+  $("#analyticsShowRateHint").textContent = dueAppointments.length
+    ? `No-show ${formatPercent(dueAppointments.length - attendedAppointments, dueAppointments.length)} · ${attendedAppointments} de ${dueAppointments.length}`
+    : "Sem agendas vencidas no período";
+  $("#analyticsVisitCloseRate").textContent = closeRate;
+  $("#analyticsCpl").textContent = cpl === null ? "—" : formatCurrency(cpl);
+  $("#analyticsCac").textContent = cac === null ? "—" : formatCurrency(cac);
+  $("#analyticsRoas").textContent = roas === null ? "—" : `${formatDecimal(roas)}x`;
+  $("#analyticsDataQuality").textContent = `${quality.percent}%`;
+  $("#analyticsDataQualityHint").textContent = quality.missing
+    ? `${quality.missing} campos essenciais ausentes`
+    : "Base pronta para análise";
+  $("#analyticsRevenueHint").textContent = bought === 1 ? "1 compra no período" : `${bought} compras no período`;
+  $("#analyticsCplHint").textContent = spend > 0 ? `${formatCurrency(spend)} investidos` : "Informe o investimento";
+  marketingDataBadge.textContent = mediaRows.length ? "Mídia + dados próprios" : "Dados próprios";
+  marketingDataBadge.classList.toggle("is-connected", mediaRows.length > 0);
+
+  renderMarketingGoalProgress({ total, qualified, bought, revenue, spend, roas });
+  renderMarketingSourcePerformance(rows);
+
+  syncMarketingTargetForm();
+  renderMarketingConnectionStatus();
+}
+
+function renderMarketingGoalProgress(metrics) {
+  if (!marketingGoalSummary) return;
+  const target = marketingTargets.find((item) => item.storeId === selectedAnalyticsStoreId);
+  if (!target || ![target.leadGoal, target.qualifiedGoal, target.salesGoal, target.revenueGoal, target.monthlyBudget].some((value) => value != null)) {
+    marketingGoalSummary.innerHTML = '<span class="marketing-goal-empty"><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Defina metas mensais para acompanhar o ritmo deste cliente.</span>';
+    return;
+  }
+  const goals = [
+    { label: "Leads", value: metrics.total, target: target.leadGoal },
+    { label: "Qualificados", value: metrics.qualified, target: target.qualifiedGoal },
+    { label: "Vendas", value: metrics.bought, target: target.salesGoal },
+    { label: "Receita", value: metrics.revenue, target: target.revenueGoal, currency: true },
+    { label: "Orçamento usado", value: metrics.spend, target: target.monthlyBudget, currency: true, budget: true },
+  ].filter((item) => item.target != null);
+  marketingGoalSummary.innerHTML = goals.map((item) => {
+    const percent = item.target > 0 ? Math.round((item.value / item.target) * 100) : 0;
+    const progress = Math.min(Math.max(percent, 0), 100);
+    const isOverBudget = item.budget && percent > 100;
+    return `
+      <article class="marketing-goal-card${isOverBudget ? " is-alert" : ""}">
+        <div><span>${item.label}</span><b>${percent}%</b></div>
+        <strong>${item.currency ? formatCurrency(item.value) : item.value} <small>de ${item.currency ? formatCurrency(item.target) : item.target}</small></strong>
+        <div class="marketing-goal-track"><i style="width:${progress}%"></i></div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderMarketingSourcePerformance(rows) {
+  if (!marketingSourcePerformanceList) return;
+  const campaigns = buildAiBreakdown(rows, "campaign").slice(0, 8);
+  const mediaRows = getFilteredAdMetrics();
+  if (!campaigns.length) {
+    marketingSourcePerformanceList.innerHTML = '<div class="marketing-source-empty">Nenhuma campanha no filtro atual.</div>';
+    return;
+  }
+  marketingSourcePerformanceList.innerHTML = campaigns.map((item) => {
+    const campaignSpend = mediaRows
+      .filter((metric) => metric.campaignName === item.item)
+      .reduce((sum, metric) => sum + metric.spend, 0);
+    const campaignRoas = campaignSpend > 0 ? item.receita / campaignSpend : null;
+    return `
+      <article class="marketing-source-row">
+        <div class="marketing-source-name"><strong>${escapeHtml(item.item)}</strong><small>${item.leads} ${item.leads === 1 ? "lead" : "leads"}</small></div>
+        <span><small>Vendas</small><b>${item.compras}</b></span>
+        <span><small>Receita</small><b>${formatCurrency(item.receita)}</b></span>
+        <span><small>Investimento</small><b>${campaignSpend ? formatCurrency(campaignSpend) : "—"}</b></span>
+        <span><small>ROAS</small><b>${campaignRoas === null ? "—" : `${formatDecimal(campaignRoas)}x`}</b></span>
+        <span><small>Conversão</small><b>${item.conversao}</b></span>
+      </article>
+    `;
+  }).join("");
+}
+
+function getFilteredAdMetrics() {
+  if (!selectedAnalyticsStoreId) return [];
+  const baseRows = getAnalyticsBaseLeads();
+  const range = getAnalyticsSelectedDateRange(baseRows);
+  const selectedCampaign = analyticsCampaignFilter.value;
+  return adDailyMetrics.filter((metric) => (
+    metric.storeId === selectedAnalyticsStoreId
+    && (!range.start || metric.date >= range.start)
+    && (!range.end || metric.date <= range.end)
+    && (!selectedCampaign || metric.campaignName === selectedCampaign)
+  ));
+}
+
+function calculateLeadDataQuality(rows) {
+  if (!rows.length) return { percent: 0, missing: 0 };
+  const fields = ["phone", "contactDate", "channel", "campaign", "conclusion", "scheduled"];
+  const possible = rows.length * fields.length;
+  const completed = rows.reduce((sum, lead) => (
+    sum + fields.filter((field) => String(lead[field] || "").trim()).length
+  ), 0);
+  return {
+    percent: Math.round((completed / possible) * 100),
+    missing: possible - completed,
+  };
+}
+
+function formatDecimal(value, digits = 2) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(Number(value || 0));
+}
+
+function syncMarketingTargetForm() {
+  if (!marketingTargetsForm || marketingTargetsForm.contains(document.activeElement)) return;
+  const target = marketingTargets.find((item) => item.storeId === selectedAnalyticsStoreId);
+  marketingMonthlyBudget.value = target?.monthlyBudget == null ? "" : formatCurrencyInput(target.monthlyBudget);
+  marketingLeadGoal.value = target?.leadGoal ?? "";
+  marketingQualifiedGoal.value = target?.qualifiedGoal ?? "";
+  marketingSalesGoal.value = target?.salesGoal ?? "";
+  marketingRevenueGoal.value = target?.revenueGoal == null ? "" : formatCurrencyInput(target.revenueGoal);
+  marketingTargetRoas.value = target?.targetRoas ?? "";
+}
+
+function renderMarketingConnectionStatus() {
+  ["meta", "google"].forEach((provider) => {
+    const row = marketingConnections.find((item) => item.provider === provider);
+    const status = row?.status || "disconnected";
+    const badge = $(`#${provider}ConnectionBadge`);
+    const label = $(`#${provider}ConnectionStatus`);
+    if (!badge || !label) return;
+    badge.textContent = status === "active" ? "Conectado" : status === "error" ? "Atenção" : "Desconectado";
+    badge.classList.toggle("is-active", status === "active");
+    badge.classList.toggle("is-error", status === "error");
+    label.textContent = status === "active"
+      ? `${row.account_name || "Conta conectada"}${row.last_sync_at ? ` · ${formatDateTime(row.last_sync_at)}` : ""}`
+      : row?.last_error || "Aguardando conexão segura";
+  });
 }
 
 async function forceApplyAnalyticsFilters() {
@@ -3334,6 +3748,143 @@ async function forceApplyAnalyticsFilters() {
     analyticsApplyFiltersButton.removeAttribute("aria-busy");
     analyticsApplyFiltersButton.querySelector("span").textContent = "Aplicar filtros";
   }
+}
+
+async function handleAdMetricSubmit(event) {
+  event.preventDefault();
+  if (!selectedAnalyticsStoreId) {
+    showAppNotification("Selecione um cliente para lançar o investimento.", "error");
+    return;
+  }
+  const spend = parseCurrencyInput(adMetricSpend.value);
+  if (!adMetricDate.value || !spend || spend <= 0) {
+    adMetricMessage.textContent = "Informe a data e um investimento maior que zero.";
+    return;
+  }
+
+  try {
+    setFormBusy(adMetricForm, true);
+    await authenticatedRpc("lc_upsert_ad_daily_metric", {
+      p_payload: {
+        store_id: selectedAnalyticsStoreId,
+        metric_date: adMetricDate.value,
+        platform: adMetricPlatform.value,
+        campaign_name: adMetricCampaign.value.trim(),
+        spend,
+        impressions: Number(adMetricImpressions.value || 0),
+        reach: Number(adMetricReach.value || 0),
+        clicks: Number(adMetricClicks.value || 0),
+        currency: "BRL",
+      },
+    });
+    await refreshMarketingIntelligenceData();
+    adMetricMessage.textContent = "Investimento salvo e métricas recalculadas.";
+    adMetricMessage.classList.add("success");
+    adMetricSpend.value = "";
+    renderAdminAnalytics();
+  } catch (error) {
+    adMetricMessage.classList.remove("success");
+    adMetricMessage.textContent = readableError(error);
+  } finally {
+    setFormBusy(adMetricForm, false);
+  }
+}
+
+async function handleMarketingTargetsSubmit(event) {
+  event.preventDefault();
+  if (!selectedAnalyticsStoreId) {
+    showAppNotification("Selecione um cliente para definir metas.", "error");
+    return;
+  }
+  try {
+    setFormBusy(marketingTargetsForm, true);
+    await authenticatedRpc("lc_save_marketing_targets", {
+      p_store_id: selectedAnalyticsStoreId,
+      p_payload: {
+        monthly_budget: parseOptionalCurrency(marketingMonthlyBudget.value),
+        lead_goal: parseOptionalInteger(marketingLeadGoal.value),
+        qualified_goal: parseOptionalInteger(marketingQualifiedGoal.value),
+        sales_goal: parseOptionalInteger(marketingSalesGoal.value),
+        revenue_goal: parseOptionalCurrency(marketingRevenueGoal.value),
+        target_roas: parseOptionalNumber(marketingTargetRoas.value),
+      },
+    });
+    await refreshMarketingIntelligenceData();
+    marketingTargetsMessage.textContent = "Metas salvas para este cliente.";
+    marketingTargetsMessage.classList.add("success");
+    renderAdminAnalytics();
+  } catch (error) {
+    marketingTargetsMessage.classList.remove("success");
+    marketingTargetsMessage.textContent = readableError(error);
+  } finally {
+    setFormBusy(marketingTargetsForm, false);
+  }
+}
+
+async function refreshMarketingIntelligenceData() {
+  const [metricRows, targetRows] = await Promise.all([
+    authenticatedRpc("lc_list_ad_daily_metrics").catch((error) => {
+      if (isMissingRpcError(error)) return [];
+      throw error;
+    }),
+    authenticatedRpc("lc_list_marketing_targets").catch((error) => {
+      if (isMissingRpcError(error)) return [];
+      throw error;
+    }),
+  ]);
+  adDailyMetrics = (metricRows || []).map(mapAdDailyMetricRow);
+  marketingTargets = (targetRows || []).map(mapMarketingTargetRow);
+}
+
+async function refreshMarketingConnections(storeId) {
+  if (!storeId) {
+    marketingConnections = [];
+    return;
+  }
+  marketingConnections = await authenticatedRpc("lc_list_marketing_connections", {
+    p_store_id: storeId,
+  }).catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+}
+
+async function dispatchPendingMarketingConversions(storeId) {
+  const providers = marketingConnections
+    .filter((connection) => connection.status === "active")
+    .map((connection) => connection.provider)
+    .filter((provider) => ["meta", "google"].includes(provider));
+  if (!providers.length) return;
+
+  await Promise.allSettled(providers.map(async (provider) => {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/marketing-conversions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "x-app-session": currentProfile.sessionToken,
+      },
+      body: JSON.stringify({ store_id: storeId, provider }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Falha ao enviar conversão para ${provider}.`);
+    }
+  }));
+}
+
+function parseOptionalCurrency(value) {
+  return String(value || "").trim() ? parseCurrencyInput(value) : null;
+}
+
+function parseOptionalInteger(value) {
+  return String(value || "").trim() ? Math.max(0, Math.round(Number(value))) : null;
+}
+
+function parseOptionalNumber(value) {
+  if (!String(value || "").trim()) return null;
+  return Math.max(0, Number(String(value).replace(",", ".")) || 0);
 }
 
 function renderMetricBars(container, rows, suffix = "") {
@@ -4073,6 +4624,7 @@ function toggleAnalyticsChartsMode() {
 function syncAnalyticsViewMode() {
   if (!analyticsKpis || !analyticsBoard || !analyticsChartsPanel || !analyticsChartsButton) return;
   analyticsKpis.hidden = analyticsChartsVisible;
+  if (marketingIntelligencePanel) marketingIntelligencePanel.hidden = analyticsChartsVisible;
   analyticsBoard.hidden = analyticsChartsVisible;
   analyticsChartsPanel.hidden = !analyticsChartsVisible;
   analyticsChartsButton.classList.toggle("is-active", analyticsChartsVisible);
@@ -4473,6 +5025,11 @@ function buildLeadExportColumns(categories = customCategories) {
     { header: "Loja", value: (lead) => lead.storeName },
     { header: "Nome do lead", value: (lead) => lead.name },
     { header: "Telefone", value: (lead) => lead.phone },
+    { header: "E-mail", value: (lead) => lead.email || "" },
+    { header: "Etapa comercial", value: (lead) => formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)) },
+    { header: "Qualificado", value: (lead) => lead.qualified ? "Sim" : "Não" },
+    { header: "Responsável", value: (lead) => lead.ownerName || "" },
+    { header: "Motivo da perda", value: (lead) => lead.lossReason || "" },
     { header: "Plataforma / canal", value: (lead) => lead.channel || "Sem resposta" },
     { header: "Campanha", value: (lead) => lead.campaign || "Sem resposta" },
     { header: "Início da conversa", value: (lead) => lead.conversationStart || "Sem resposta" },
@@ -4483,6 +5040,16 @@ function buildLeadExportColumns(categories = customCategories) {
     { header: "Comprou", value: (lead) => lead.bought || "Sem resposta" },
     { header: "Valor da compra", className: "currency", value: (lead) => lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : "" },
     { header: "OS", value: (lead) => lead.serviceOrder || "" },
+    { header: "UTM source", value: (lead) => lead.utmSource || "" },
+    { header: "UTM medium", value: (lead) => lead.utmMedium || "" },
+    { header: "UTM campaign", value: (lead) => lead.utmCampaign || "" },
+    { header: "UTM content", value: (lead) => lead.utmContent || "" },
+    { header: "ID campanha", value: (lead) => lead.campaignExternalId || "" },
+    { header: "ID anúncio", value: (lead) => lead.adExternalId || "" },
+    { header: "GCLID", value: (lead) => lead.gclid || "" },
+    { header: "FBCLID", value: (lead) => lead.fbclid || "" },
+    { header: "Consentimento marketing", value: (lead) => lead.marketingConsent ? "Sim" : "Não" },
+    { header: "Cliente recorrente", value: (lead) => lead.returningCustomer ? "Sim" : "Não" },
     { header: "Inspecionado", value: (lead) => lead.inspected ? "Sim" : "Não" },
     ...categories.map((category) => ({
       header: category.name,
@@ -5680,15 +6247,18 @@ async function validateCentralAiConfiguration() {
   const timeout = setTimeout(() => controller.abort(), 12000);
 
   try {
-    if (!aiSettings.apiKey) throw new Error("Informe a chave da API antes de validar.");
-    const response = aiSettings.provider === "gemini"
-      ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(aiSettings.apiKey)}`, {
-          signal: controller.signal,
-        })
-      : await fetch("https://api.deepseek.com/models", {
-          signal: controller.signal,
-          headers: { Authorization: `Bearer ${aiSettings.apiKey}` },
-        });
+    if (!aiSettings.hasApiKey) throw new Error("Informe a chave da API antes de validar.");
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-analysis`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "x-app-session": currentProfile.sessionToken,
+      },
+      body: JSON.stringify({ action: "validate" }),
+    });
     await readAiValidationResponse(response);
   } catch (error) {
     if (isAbortError(error)) {
@@ -5710,7 +6280,7 @@ async function readAiValidationResponse(response) {
   }
 
   if (!response.ok) {
-    const message = payload?.error?.message || payload?.message || "Chave inválida ou sem permissão.";
+    const message = (typeof payload?.error === "string" ? payload.error : payload?.error?.message) || payload?.message || "Chave inválida ou sem permissão.";
     throw new Error(message);
   }
 }
@@ -5787,50 +6357,29 @@ async function handleAiChatSubmit(event) {
 
 async function requestAiAnalysis({ onChunk, signal } = {}) {
   const provider = aiSettings.provider;
-  const model = aiSettings.models[provider] || aiProviderOptions[provider]?.models[0];
-  const apiKey = aiSettings.apiKey;
   const context = buildAiLeadContext(getAnalyticsLeads());
-  const systemPrompt = `${aiSettings.systemPrompt || DEFAULT_AI_SYSTEM_PROMPT}\n\nContexto atual dos leads filtrados:\n${context}`;
   const conversationMessages = aiMessages.filter((message) => !message.isThinking && !message.isStreaming);
-  if (!apiKey) throw new Error("A IA ainda não foi configurada pelo administrador.");
+  if (!aiSettings.hasApiKey) throw new Error("A IA ainda não foi configurada pelo administrador.");
 
-  const response = provider === "gemini"
-    ? await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: conversationMessages.map((message) => ({
-              role: message.role === "assistant" ? "model" : "user",
-              parts: [{ text: message.content }],
-            })),
-            generationConfig: { temperature: 0.35 },
-          }),
-        },
-      )
-    : await fetch("https://api.deepseek.com/chat/completions", {
-        method: "POST",
-        signal,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...conversationMessages.map((message) => ({
-              role: message.role === "assistant" ? "assistant" : "user",
-              content: message.content,
-            })),
-          ],
-          stream: true,
-          temperature: 0.35,
-        }),
-      });
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-analysis`, {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-app-session": currentProfile.sessionToken,
+    },
+    body: JSON.stringify({
+      action: "chat",
+      store_id: selectedAnalyticsStoreId,
+      context,
+      messages: conversationMessages.map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      })),
+    }),
+  });
 
   const text = await readAiStream(response, (data) => {
     const chunk = provider === "gemini"
@@ -5853,7 +6402,7 @@ async function readAiResponse(response) {
   }
 
   if (!response.ok) {
-    const message = data?.error?.message || data?.message || text || "Erro ao chamar a IA.";
+    const message = (typeof data?.error === "string" ? data.error : data?.error?.message) || data?.message || text || "Erro ao chamar a IA.";
     throw new Error(message);
   }
 
@@ -5924,18 +6473,106 @@ function buildAiLeadContext(filteredLeads) {
   const visited = countByValue(filteredLeads, "visited", "Sim");
   const scheduled = countByValue(filteredLeads, "scheduled", "Sim");
 
-  return JSON.stringify({
+  const revenue = filteredLeads.reduce((sum, lead) => sum + (lead.bought === "Sim" ? Number(lead.purchaseAmount || 0) : 0), 0);
+  const qualified = filteredLeads.filter((lead) => lead.qualified || lead.lifecycleStatus === "qualified").length;
+  const mediaRows = getFilteredAdMetrics();
+  const spend = mediaRows.reduce((sum, row) => sum + row.spend, 0);
+  const quality = calculateLeadDataQuality(filteredLeads);
+
+  return {
     gerado_em: new Date().toISOString(),
     filtros: buildAnalyticsFilterSnapshot(),
     resumo: {
       leads: total,
+      qualificados: qualified,
       agendaram: scheduled,
       visitaram: visited,
       compraram: bought,
       conversao: formatPercent(bought, total),
+      taxa_agendamento: formatPercent(scheduled, total),
+      taxa_comparecimento: formatPercent(visited, scheduled),
+      fechamento_visita_compra: formatPercent(bought, visited),
+      receita: revenue,
+      ticket_medio: bought ? revenue / bought : 0,
+      investimento: spend,
+      cpl: spend > 0 && total ? spend / total : null,
+      custo_por_qualificado: spend > 0 && qualified ? spend / qualified : null,
+      custo_por_agendamento: spend > 0 && scheduled ? spend / scheduled : null,
+      custo_por_visita: spend > 0 && visited ? spend / visited : null,
+      cac: spend > 0 && bought ? spend / bought : null,
+      roas: spend > 0 ? revenue / spend : null,
+      qualidade_dos_dados: quality.percent,
+      tamanho_da_amostra: total < 30 ? "baixa" : total < 100 ? "moderada" : "robusta",
     },
-    leads: filteredLeads.map(leadToAiRecord),
-  }, null, 2);
+    rankings: {
+      canais: buildAiBreakdown(filteredLeads, "channel"),
+      campanhas: buildAiBreakdown(filteredLeads, "campaign"),
+      conclusoes: buildAiBreakdown(filteredLeads, "conclusion"),
+      motivos_de_perda: buildAiBreakdown(filteredLeads.filter((lead) => lead.lifecycleStatus === "lost"), "lossReason"),
+    },
+    serie_diaria: buildAiDailySeries(filteredLeads),
+    midia: {
+      linhas_importadas: mediaRows.length,
+      impressoes: mediaRows.reduce((sum, row) => sum + row.impressions, 0),
+      alcance: mediaRows.reduce((sum, row) => sum + row.reach, 0),
+      cliques: mediaRows.reduce((sum, row) => sum + row.clicks, 0),
+      ctr: calculateRate(
+        mediaRows.reduce((sum, row) => sum + row.clicks, 0),
+        mediaRows.reduce((sum, row) => sum + row.impressions, 0),
+      ),
+      cpc: calculateRatio(spend, mediaRows.reduce((sum, row) => sum + row.clicks, 0)),
+      cpm: calculateRatio(spend * 1000, mediaRows.reduce((sum, row) => sum + row.impressions, 0)),
+      frequencia: calculateRatio(
+        mediaRows.reduce((sum, row) => sum + row.impressions, 0),
+        mediaRows.reduce((sum, row) => sum + row.reach, 0),
+      ),
+    },
+  };
+}
+
+function calculateRatio(value, denominator) {
+  return denominator ? Number((value / denominator).toFixed(4)) : null;
+}
+
+function calculateRate(value, denominator) {
+  return denominator ? Number(((value / denominator) * 100).toFixed(2)) : null;
+}
+
+function buildAiBreakdown(rows, key) {
+  const grouped = new Map();
+  rows.forEach((lead) => {
+    const label = String(lead[key] || "Sem resposta");
+    const current = grouped.get(label) || { item: label, leads: 0, agendamentos: 0, visitas: 0, compras: 0, receita: 0 };
+    current.leads += 1;
+    if (lead.scheduled === "Sim") current.agendamentos += 1;
+    if (lead.visited === "Sim") current.visitas += 1;
+    if (lead.bought === "Sim") {
+      current.compras += 1;
+      current.receita += Number(lead.purchaseAmount || 0);
+    }
+    grouped.set(label, current);
+  });
+  return Array.from(grouped.values())
+    .sort((a, b) => b.leads - a.leads)
+    .slice(0, 20)
+    .map((item) => ({ ...item, conversao: formatPercent(item.compras, item.leads) }));
+}
+
+function buildAiDailySeries(rows) {
+  const grouped = new Map();
+  rows.forEach((lead) => {
+    const date = getLeadDateValue(lead);
+    if (!date) return;
+    const current = grouped.get(date) || { data: date, leads: 0, visitas: 0, compras: 0, receita: 0 };
+    current.leads += 1;
+    if (lead.visited === "Sim") current.visitas += 1;
+    if (lead.bought === "Sim") {
+      current.compras += 1;
+      current.receita += Number(lead.purchaseAmount || 0);
+    }
+    grouped.set(date, current);
+  });
+  return Array.from(grouped.values()).sort((a, b) => a.data.localeCompare(b.data)).slice(-120);
 }
 
 function buildAnalyticsFilterSnapshot() {
@@ -5945,6 +6582,8 @@ function buildAnalyticsFilterSnapshot() {
     canal: getSelectedOptionText(analyticsChannelFilter),
     campanha: getSelectedOptionText(analyticsCampaignFilter),
     resultado: getSelectedOptionText(analyticsConclusionFilter),
+    etapa_comercial: getSelectedOptionText(analyticsLifecycleFilter),
+    qualificacao: getSelectedOptionText(analyticsQualifiedFilter),
     visita: getSelectedOptionText(analyticsVisitedFilter),
     agendamento: getSelectedOptionText(analyticsScheduledFilter),
     compra: getSelectedOptionText(analyticsBoughtFilter),
@@ -5959,37 +6598,6 @@ function buildAnalyticsFilterSnapshot() {
   };
 }
 
-function leadToAiRecord(lead) {
-  return {
-    id: lead.id,
-    nome: lead.name,
-    telefone: lead.phone,
-    loja: lead.storeName,
-    data_do_contato: lead.contactDate || null,
-    data_do_contato_formatada: formatLeadContactDate(lead) || null,
-    canal: lead.channel || null,
-    campanha: lead.campaign || null,
-    inicio_da_conversa: lead.conversationStart || null,
-    conclusao: lead.conclusion || null,
-    agendou_visita: lead.scheduled || null,
-    visita_agendada: getScheduledVisitLabel(lead) || null,
-    data_visita_agendada: lead.scheduledVisitDate || null,
-    hora_visita_agendada: lead.scheduledVisitTime || null,
-    visitou_a_loja: lead.visited || null,
-    comprou: lead.bought || null,
-    valor_da_compra: lead.purchaseAmount,
-    valor_da_compra_formatado: lead.purchaseAmount ? formatCurrency(lead.purchaseAmount) : null,
-    os: lead.serviceOrder || null,
-    observacoes: lead.notes || null,
-    inspecionado: Boolean(lead.inspected),
-    categorias_adicionais: Object.fromEntries(
-      lead.customValueRows.map((item) => [item.categoryName, item.value]),
-    ),
-    registrado_em: lead.createdAt,
-    registrado_em_formatado: formatDateTime(lead.createdAt),
-  };
-}
-
 function renderAiMessages() {
   if (!aiChatMessages) return;
 
@@ -5998,6 +6606,11 @@ function renderAiMessages() {
       <div class="ai-empty-state">
         <strong>Como posso ajudar?</strong>
         <span>Use o recorte atual de métricas para pedir padrões, gargalos, ranking de oportunidades ou ações para melhorar conversão.</span>
+        <div class="ai-suggestion-grid">
+          <button type="button" data-ai-suggestion="Gere um diagnóstico executivo deste período. Estruture em: resumo, evidências, gargalos, oportunidades priorizadas, ações para 7 dias e nível de confiança.">Diagnóstico executivo</button>
+          <button type="button" data-ai-suggestion="Compare as campanhas por qualidade, vendas, receita e eficiência. Mostre onde aumentar, manter ou reduzir investimento e explique a evidência.">Otimizar campanhas</button>
+          <button type="button" data-ai-suggestion="Analise o funil e identifique o maior vazamento entre captação, qualificação, agendamento, visita e compra. Sugira três testes mensuráveis.">Encontrar gargalos</button>
+        </div>
       </div>
     `;
     return;
@@ -6048,6 +6661,14 @@ function renderAiMessageActions(message, index) {
 }
 
 async function handleAiMessageClick(event) {
+  const suggestionButton = event.target.closest("[data-ai-suggestion]");
+  if (suggestionButton) {
+    aiChatInput.value = suggestionButton.dataset.aiSuggestion || "";
+    autoResizeAiInput();
+    aiChatForm.requestSubmit();
+    return;
+  }
+
   const editButton = event.target.closest("[data-ai-edit-index]");
   if (editButton) {
     startAiMessageEdit(Number(editButton.dataset.aiEditIndex));
@@ -6542,6 +7163,12 @@ function getAnalyticsBaseLeads() {
   if (analyticsConclusionFilter.value) {
     result = result.filter((lead) => lead.conclusion === analyticsConclusionFilter.value);
   }
+  if (analyticsLifecycleFilter.value) {
+    result = result.filter((lead) => (lead.lifecycleStatus || inferLeadLifecycleStatus(lead)) === analyticsLifecycleFilter.value);
+  }
+  if (analyticsQualifiedFilter.value) {
+    result = result.filter((lead) => Boolean(lead.qualified) === (analyticsQualifiedFilter.value === "yes"));
+  }
   if (analyticsVisitedFilter.value) {
     result = result.filter((lead) => (lead.visited || "sem-resposta") === analyticsVisitedFilter.value);
   }
@@ -6564,6 +7191,8 @@ function clearAnalyticsFilters() {
     analyticsChannelFilter,
     analyticsCampaignFilter,
     analyticsConclusionFilter,
+    analyticsLifecycleFilter,
+    analyticsQualifiedFilter,
     analyticsVisitedFilter,
     analyticsScheduledFilter,
     analyticsBoughtFilter,
@@ -6848,7 +7477,7 @@ function mapAccountUsage(row) {
   };
 }
 
-function mapLeadRow(row) {
+function mapLeadRow(row, intelligence = null) {
   const customValueRows = normalizeCustomValueRows(row.custom_values);
   return {
     id: row.id,
@@ -6870,11 +7499,75 @@ function mapLeadRow(row) {
     serviceOrder: row.service_order || "",
     notes: row.notes || "",
     inspected: Boolean(row.inspected),
+    lifecycleStatus: intelligence?.lifecycle_status || "",
+    qualified: Boolean(intelligence?.qualified),
+    lossReason: intelligence?.loss_reason || "",
+    ownerName: intelligence?.owner_name || "",
+    email: intelligence?.email || "",
+    firstResponseAt: intelligence?.first_response_at || null,
+    qualifiedAt: intelligence?.qualified_at || null,
+    lostAt: intelligence?.lost_at || null,
+    purchasedAt: intelligence?.purchased_at || null,
+    utmSource: intelligence?.utm_source || "",
+    utmMedium: intelligence?.utm_medium || "",
+    utmCampaign: intelligence?.utm_campaign || "",
+    utmContent: intelligence?.utm_content || "",
+    utmTerm: intelligence?.utm_term || "",
+    campaignExternalId: intelligence?.campaign_external_id || "",
+    adsetExternalId: intelligence?.adset_external_id || "",
+    adExternalId: intelligence?.ad_external_id || "",
+    creativeExternalId: intelligence?.creative_external_id || "",
+    gclid: intelligence?.gclid || "",
+    gbraid: intelligence?.gbraid || "",
+    wbraid: intelligence?.wbraid || "",
+    fbclid: intelligence?.fbclid || "",
+    fbc: intelligence?.fbc || "",
+    fbp: intelligence?.fbp || "",
+    landingPageUrl: intelligence?.landing_page_url || "",
+    externalLeadId: intelligence?.external_lead_id || "",
+    marketingConsent: Boolean(intelligence?.marketing_consent),
+    returningCustomer: Boolean(intelligence?.returning_customer),
     customValueRows,
     customValues: Object.fromEntries(customValueRows.map((item) => [item.categoryId, item.value])),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapAdDailyMetricRow(row) {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    date: row.metric_date,
+    platform: row.platform,
+    campaignName: row.campaign_name || "",
+    campaignExternalId: row.campaign_external_id || "",
+    spend: Number(row.spend || 0),
+    impressions: Number(row.impressions || 0),
+    reach: Number(row.reach || 0),
+    clicks: Number(row.clicks || 0),
+    platformLeads: Number(row.platform_leads || 0),
+    platformConversions: Number(row.platform_conversions || 0),
+    source: row.source || "manual",
+  };
+}
+
+function mapMarketingTargetRow(row) {
+  return {
+    storeId: row.store_id,
+    monthlyBudget: toOptionalNumber(row.monthly_budget),
+    leadGoal: toOptionalNumber(row.lead_goal),
+    qualifiedGoal: toOptionalNumber(row.qualified_goal),
+    salesGoal: toOptionalNumber(row.sales_goal),
+    revenueGoal: toOptionalNumber(row.revenue_goal),
+    targetCpl: toOptionalNumber(row.target_cpl),
+    targetCac: toOptionalNumber(row.target_cac),
+    targetRoas: toOptionalNumber(row.target_roas),
+  };
+}
+
+function toOptionalNumber(value) {
+  return value === null || value === undefined || value === "" ? null : Number(value);
 }
 
 function applyOptionRows(rows) {
@@ -6963,6 +7656,48 @@ function buildCustomValuesPayload() {
       value: selectedCustomValues[category.id] || "",
     }))
     .filter((item) => item.value);
+}
+
+function buildLeadIntelligencePayload() {
+  let status = leadLifecycleStatus?.value || "new";
+  if (selectedValues.bought === "Sim") status = "won";
+  else if (status !== "lost" && selectedValues.visited === "Sim") status = "visited";
+  else if (status !== "lost" && selectedValues.scheduled === "Sim") status = "scheduled";
+  else if (status !== "lost" && leadQualified?.checked) status = "qualified";
+  return {
+    lifecycle_status: status,
+    qualified: Boolean(leadQualified?.checked || status === "qualified"),
+    loss_reason: status === "lost" ? leadLossReason?.value.trim() || null : null,
+    owner_name: leadOwnerName?.value.trim() || null,
+    email: leadEmail?.value.trim().toLowerCase() || null,
+    returning_customer: Boolean(leadReturningCustomer?.checked),
+    marketing_consent: Boolean(leadMarketingConsent?.checked),
+    utm_source: leadUtmSource?.value.trim() || null,
+    utm_medium: leadUtmMedium?.value.trim() || null,
+    utm_campaign: leadUtmCampaign?.value.trim() || null,
+    utm_content: leadUtmContent?.value.trim() || null,
+    campaign_external_id: leadCampaignExternalId?.value.trim() || null,
+    adset_external_id: leadAdsetExternalId?.value.trim() || null,
+    ad_external_id: leadAdExternalId?.value.trim() || null,
+    gclid: leadGoogleClickId?.value.trim() || null,
+    fbclid: leadMetaClickId?.value.trim() || null,
+    landing_page_url: leadLandingPage?.value.trim() || null,
+  };
+}
+
+function syncLeadIntelligenceVisibility() {
+  if (!leadLifecycleStatus || !leadLossReasonField) return;
+  const isLost = leadLifecycleStatus.value === "lost";
+  leadLossReasonField.hidden = !isLost;
+  leadLossReason.required = isLost;
+  if (leadLifecycleStatus.value === "qualified") leadQualified.checked = true;
+}
+
+function inferLeadLifecycleStatus(lead) {
+  if (lead?.bought === "Sim") return "won";
+  if (lead?.visited === "Sim") return "visited";
+  if (lead?.scheduled === "Sim") return "scheduled";
+  return "new";
 }
 
 function buildLeadCustomValuesPayload(lead) {

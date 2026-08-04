@@ -15,6 +15,824 @@
   --radius: 8px;
 }
 
+/* Marketing intelligence */
+.marketing-intelligence-panel {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid rgba(23, 23, 23, 0.18);
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    radial-gradient(circle at 100% 0, rgba(0, 208, 132, 0.1), transparent 32%),
+    linear-gradient(180deg, #ffffff, #f4f6f5);
+  box-shadow:
+    0 24px 58px rgba(20, 36, 30, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.marketing-intelligence-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.marketing-intelligence-heading > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.marketing-intelligence-heading > div > span,
+.marketing-data-card-heading span {
+  color: var(--green);
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing-intelligence-heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  line-height: 1.05;
+}
+
+.marketing-intelligence-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.marketing-data-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--muted);
+  padding: 0 12px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.marketing-data-badge.is-connected {
+  border-color: rgba(0, 148, 94, 0.25);
+  background: rgba(0, 208, 132, 0.1);
+  color: var(--green-dark);
+}
+
+.marketing-funnel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.marketing-funnel-step {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(23, 23, 23, 0.13);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 26px rgba(20, 36, 30, 0.07);
+}
+
+.marketing-funnel-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.marketing-funnel-label span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.marketing-funnel-label span i {
+  color: var(--green);
+}
+
+.marketing-funnel-label b {
+  color: var(--ink);
+  font-size: 1.25rem;
+}
+
+.marketing-funnel-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 23, 23, 0.08);
+}
+
+.marketing-funnel-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), #00d084);
+  box-shadow: 0 0 16px rgba(0, 208, 132, 0.28);
+}
+
+.marketing-funnel-step small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.performance-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-height: 132px;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 14px 30px rgba(20, 36, 30, 0.08);
+}
+
+.performance-card::after {
+  position: absolute;
+  inset: auto -26px -38px auto;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(47, 140, 255, 0.07);
+  content: "";
+}
+
+.performance-card.is-revenue::after {
+  background: rgba(0, 208, 132, 0.12);
+}
+
+.performance-card.is-quality::after {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.performance-card > span {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.performance-card > strong {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  color: var(--ink);
+  font-size: clamp(1.45rem, 2.3vw, 2.15rem);
+  line-height: 1;
+}
+
+.performance-card > small {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-data-manager {
+  overflow: hidden;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.marketing-goal-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.marketing-goal-empty {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 48px;
+  border: 1px dashed rgba(23, 23, 23, 0.18);
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.marketing-goal-empty i {
+  color: var(--green);
+}
+
+.marketing-goal-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.marketing-goal-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.marketing-goal-card > div:first-child b {
+  color: var(--green-dark);
+}
+
+.marketing-goal-card > strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-goal-card > strong small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.marketing-goal-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 23, 23, 0.08);
+}
+
+.marketing-goal-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.marketing-goal-card.is-alert .marketing-goal-track i {
+  background: var(--rose);
+}
+
+.marketing-source-performance {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.marketing-source-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.marketing-source-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.marketing-source-heading span {
+  color: var(--green);
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.marketing-source-heading strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.marketing-source-heading small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.marketing-source-list {
+  display: grid;
+  gap: 7px;
+}
+
+.marketing-source-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) repeat(5, minmax(82px, 0.7fr));
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.marketing-source-name,
+.marketing-source-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.marketing-source-name strong,
+.marketing-source-name small,
+.marketing-source-row > span b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-source-name strong,
+.marketing-source-row > span b {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.marketing-source-name small,
+.marketing-source-row > span small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.marketing-source-empty {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.marketing-data-manager > summary,
+.lead-attribution-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 62px;
+  padding: 0 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.marketing-data-manager > summary::-webkit-details-marker,
+.lead-attribution-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.marketing-data-manager > summary span,
+.lead-attribution-details > summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.marketing-data-manager > summary span i,
+.lead-attribution-details > summary span i {
+  color: var(--green);
+}
+
+.marketing-data-manager > summary small,
+.lead-attribution-details > summary small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 750;
+  text-align: right;
+}
+
+.marketing-data-manager[open] > summary,
+.lead-attribution-details[open] > summary {
+  border-bottom: 1px solid rgba(23, 23, 23, 0.12);
+}
+
+.marketing-data-manager-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+
+.marketing-data-card {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(23, 23, 23, 0.13);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 14px 34px rgba(20, 36, 30, 0.08);
+}
+
+.marketing-data-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.marketing-data-card-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.marketing-data-card-heading strong {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.marketing-data-card-heading > i {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(0, 208, 132, 0.1);
+  color: var(--green);
+}
+
+.marketing-form-grid,
+.lead-intelligence-grid,
+.lead-attribution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.marketing-span-two {
+  grid-column: span 2;
+}
+
+.connector-card {
+  grid-column: 1 / -1;
+}
+
+.connector-status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.connector-status-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: var(--radius);
+  background: rgba(247, 248, 248, 0.92);
+}
+
+.connector-logo {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 13px;
+  background: #eef3ff;
+  color: #1877f2;
+  font-size: 1.1rem;
+}
+
+.connector-logo.is-google {
+  background: #fff4e8;
+  color: #ea4335;
+}
+
+.connector-status-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.connector-status-row strong,
+.connector-status-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connector-status-row small,
+.connector-note {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.connector-status-row > b {
+  border-radius: 999px;
+  background: rgba(23, 23, 23, 0.08);
+  color: var(--muted);
+  padding: 7px 9px;
+  font-size: 0.68rem;
+}
+
+.connector-status-row > b.is-active {
+  background: rgba(0, 208, 132, 0.12);
+  color: var(--green-dark);
+}
+
+.connector-status-row > b.is-error {
+  background: rgba(255, 59, 107, 0.1);
+  color: var(--rose);
+}
+
+.connector-note {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Lead qualification and attribution */
+.lead-intelligence-entry {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(0, 148, 94, 0.22);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 100% 0, rgba(0, 208, 132, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 247, 244, 0.92));
+  box-shadow: 0 14px 34px rgba(20, 80, 58, 0.08);
+}
+
+.lead-intelligence-entry-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.lead-intelligence-entry-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.lead-intelligence-entry-heading > div > span {
+  color: var(--green);
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.lead-intelligence-entry-heading h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.intelligence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: rgba(0, 208, 132, 0.11);
+  color: var(--green-dark);
+  padding: 7px 10px;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.lead-intelligence-toggles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.premium-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.premium-check > input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.premium-check > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid rgba(23, 23, 23, 0.22);
+  border-radius: 9px;
+  background: #ffffff;
+  color: transparent;
+  transition: 160ms ease;
+}
+
+.premium-check > input:checked + span {
+  border-color: var(--green);
+  background: var(--green);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(0, 148, 94, 0.22);
+}
+
+.premium-check > input:focus-visible + span {
+  outline: 3px solid rgba(47, 140, 255, 0.24);
+  outline-offset: 2px;
+}
+
+.premium-check > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.premium-check strong {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.premium-check small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lead-attribution-details {
+  overflow: hidden;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.lead-attribution-details > summary {
+  min-height: 50px;
+  padding: 0 13px;
+}
+
+.lead-attribution-grid {
+  padding: 14px;
+}
+
+body.is-dark .marketing-intelligence-panel,
+body.is-dark .lead-intelligence-entry {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(circle at 100% 0, rgba(0, 208, 132, 0.12), transparent 32%),
+    linear-gradient(180deg, #292929, #1d1d1d);
+  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.42);
+}
+
+body.is-dark .marketing-funnel-step,
+body.is-dark .performance-card,
+body.is-dark .marketing-data-manager,
+body.is-dark .marketing-data-card,
+body.is-dark .premium-check,
+body.is-dark .lead-attribution-details,
+body.is-dark .connector-status-row,
+body.is-dark .marketing-data-badge,
+body.is-dark .marketing-goal-card,
+body.is-dark .marketing-source-performance,
+body.is-dark .marketing-source-row {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(17, 17, 17, 0.72);
+}
+
+body.is-dark .premium-check > span {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: #202020;
+}
+
+body.is-dark .marketing-data-manager[open] > summary,
+body.is-dark .lead-attribution-details[open] > summary {
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+}
+
+@media (max-width: 1180px) {
+  .marketing-funnel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .marketing-performance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lead-intelligence-toggles {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .marketing-intelligence-panel {
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .marketing-intelligence-heading,
+  .lead-intelligence-entry-heading,
+  .marketing-data-manager > summary,
+  .lead-attribution-details > summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .marketing-data-badge,
+  .intelligence-badge {
+    align-self: flex-start;
+  }
+
+  .marketing-data-manager > summary,
+  .lead-attribution-details > summary {
+    justify-content: center;
+    padding-block: 13px;
+  }
+
+  .marketing-data-manager > summary small,
+  .lead-attribution-details > summary small {
+    text-align: left;
+  }
+
+  .marketing-funnel,
+  .marketing-performance-grid,
+  .marketing-data-manager-body,
+  .marketing-form-grid,
+  .lead-intelligence-grid,
+  .lead-attribution-grid,
+  .connector-status-list {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-source-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .marketing-source-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .marketing-source-name {
+    grid-column: 1 / -1;
+  }
+
+  .marketing-span-two,
+  .connector-card {
+    grid-column: auto;
+  }
+
+  .connector-status-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .connector-status-row > b {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
 body.is-dark {
   color-scheme: dark;
   --bg: #080808;
@@ -164,21 +982,13 @@ body:not(.is-dark) .modal-dialog {
   gap: 14px;
 }
 
-.auth-heading-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius);
-  background: rgba(31, 111, 84, 0.12);
-  color: var(--green);
-  font-size: 1.1rem;
-}
-
-body.is-dark .auth-heading-icon {
-  background: rgba(90, 162, 242, 0.14);
-  color: var(--blue);
+.auth-heading-logo {
+  display: block;
+  flex: 0 0 60px;
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 20px rgba(0, 38, 23, 0.18));
 }
 
 .auth-heading h1 {
@@ -373,6 +1183,36 @@ h3 {
   align-items: center;
   gap: 16px;
   min-width: 0;
+}
+
+.topbar-brand-cluster {
+  position: relative;
+  display: grid;
+  flex: 0 0 68px;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+}
+
+.topbar-brand-logo {
+  display: block;
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  filter: drop-shadow(0 13px 22px rgba(0, 38, 23, 0.2));
+}
+
+.topbar-brand-cluster .topbar-avatar {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--surface);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 0.62rem;
+  box-shadow: 0 8px 18px rgba(18, 31, 26, 0.18);
 }
 
 .profile-avatar {
@@ -4621,7 +5461,17 @@ body:not(.is-dark) .ai-chat-dialog {
 .ai-chat-brand {
   display: flex;
   align-items: center;
+  gap: 16px;
   min-width: 0;
+}
+
+.ai-chat-brand-logo {
+  display: block;
+  flex: 0 0 62px;
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 26px rgba(0, 255, 49, 0.16));
 }
 
 .ai-chat-brand > div {
@@ -4753,6 +5603,40 @@ body:not(.is-dark) .ai-chat-dialog {
   max-width: 520px;
   font-size: 1rem;
   line-height: 1.4;
+}
+
+.ai-suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  width: min(100%, 720px);
+  margin-top: 8px;
+}
+
+.ai-suggestion-grid button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.88);
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 850;
+  transition: 160ms ease;
+}
+
+.ai-suggestion-grid button:hover,
+.ai-suggestion-grid button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(53, 216, 111, 0.42);
+  background: rgba(53, 216, 111, 0.12);
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .ai-suggestion-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ai-message-row {

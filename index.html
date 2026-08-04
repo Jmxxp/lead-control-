@@ -5,21 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Controle de Leads | Ótica</title>
     <meta name="description" content="Sistema de controle de leads para óticas." />
-    <meta name="theme-color" content="#008000" />
+    <meta name="theme-color" content="#002617" />
+    <meta name="application-name" content="Controle de Leads" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Controle de Leads" />
+    <meta name="msapplication-TileColor" content="#002617" />
+    <meta name="msapplication-TileImage" content="assets/app-icon-192.png?v=20260804-brand-2" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Controle de Leads | Ótica" />
     <meta property="og:description" content="Sistema de controle de leads para óticas." />
-    <meta property="og:image" content="assets/link-preview.png?v=20260616-logo-1" />
+    <meta property="og:image" content="assets/link-preview.png?v=20260804-brand-2" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="1200" />
-    <meta property="og:image:alt" content="Ícone do Controle de Leads" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:image" content="assets/link-preview.png?v=20260616-logo-1" />
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png?v=20260616-logo-1" />
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260616-logo-1" />
-    <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260616-logo-1" />
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260616-logo-1" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Logo do Controle de Leads" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="assets/link-preview.png?v=20260804-brand-2" />
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png?v=20260804-brand-2" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260804-brand-2" />
+    <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260804-brand-2" />
+    <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
+    <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
     <link rel="stylesheet" href="styles.css?v=20260716-focus-cleanup-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -30,9 +38,7 @@
       <section id="authScreen" class="auth-screen">
         <div class="auth-card">
           <div class="auth-heading">
-            <span class="auth-heading-icon" aria-hidden="true">
-              <i class="fa-solid fa-user"></i>
-            </span>
+            <img class="auth-heading-logo" src="assets/logo-source.png?v=20260804-brand-2" width="60" height="60" alt="" aria-hidden="true" />
             <div>
               <p class="eyebrow">Acesso</p>
               <h1 id="authTitle">Login</h1>
@@ -89,8 +95,11 @@
       <div id="appView" hidden>
       <header class="topbar">
         <div class="topbar-identity">
-          <div id="sessionAvatar" class="profile-avatar topbar-avatar" aria-hidden="true">
-            <i class="fa-solid fa-building"></i>
+          <div class="topbar-brand-cluster">
+            <img class="topbar-brand-logo" src="assets/logo-source.png?v=20260804-brand-2" width="68" height="68" alt="Controle de Leads" />
+            <div id="sessionAvatar" class="profile-avatar topbar-avatar" aria-hidden="true">
+              <i class="fa-solid fa-building"></i>
+            </div>
           </div>
           <div>
           <p class="eyebrow" id="sessionRole">Ótica</p>
@@ -361,6 +370,29 @@
                 </label>
 
                 <label class="field">
+                  <span><i class="fa-solid fa-route" aria-hidden="true"></i>Etapa comercial</span>
+                  <select id="analyticsLifecycleFilter">
+                    <option value="">Todas</option>
+                    <option value="new">Novo</option>
+                    <option value="contacted">Em atendimento</option>
+                    <option value="qualified">Qualificado</option>
+                    <option value="scheduled">Agendado</option>
+                    <option value="visited">Visitou</option>
+                    <option value="won">Ganho</option>
+                    <option value="lost">Perdido</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span><i class="fa-solid fa-user-check" aria-hidden="true"></i>Qualificação</span>
+                  <select id="analyticsQualifiedFilter">
+                    <option value="">Todos</option>
+                    <option value="yes">Qualificados</option>
+                    <option value="no">Não qualificados</option>
+                  </select>
+                </label>
+
+                <label class="field">
                   <span data-category-label="visited"><i class="fa-solid fa-person-walking" aria-hidden="true"></i>Visita</span>
                   <select id="analyticsVisitedFilter">
                     <option value="">Todas</option>
@@ -449,6 +481,190 @@
                   <span><i class="fa-solid fa-percent" aria-hidden="true"></i>Conversão</span>
                   <strong id="analyticsConversionRate">0%</strong>
                 </article>
+              </section>
+
+              <section id="marketingIntelligencePanel" class="marketing-intelligence-panel" aria-label="Funil e retorno do marketing">
+                <div class="marketing-intelligence-heading">
+                  <div>
+                    <span>Visão executiva</span>
+                    <h3>Funil, receita e eficiência da mídia</h3>
+                    <p>Indicadores calculados somente com o cliente e o período selecionados.</p>
+                  </div>
+                  <span id="marketingDataBadge" class="marketing-data-badge">Dados próprios</span>
+                </div>
+
+                <div id="marketingFunnel" class="marketing-funnel" aria-label="Etapas do funil comercial"></div>
+
+                <div class="marketing-performance-grid">
+                  <article class="performance-card is-revenue">
+                    <span>Receita atribuída</span>
+                    <strong id="analyticsRevenue">R$ 0,00</strong>
+                    <small id="analyticsRevenueHint">Compras no período</small>
+                  </article>
+                  <article class="performance-card">
+                    <span>Ticket médio</span>
+                    <strong id="analyticsAverageTicket">R$ 0,00</strong>
+                    <small>Receita por venda</small>
+                  </article>
+                  <article class="performance-card">
+                    <span>Comparecimento</span>
+                    <strong id="analyticsShowRate">0%</strong>
+                    <small id="analyticsShowRateHint">Visitas realizadas</small>
+                  </article>
+                  <article class="performance-card">
+                    <span>Visita → compra</span>
+                    <strong id="analyticsVisitCloseRate">0%</strong>
+                    <small>Fechamento na loja</small>
+                  </article>
+                  <article class="performance-card has-media-metric">
+                    <span>Custo por lead</span>
+                    <strong id="analyticsCpl">—</strong>
+                    <small id="analyticsCplHint">Informe o investimento</small>
+                  </article>
+                  <article class="performance-card has-media-metric">
+                    <span>Custo por venda</span>
+                    <strong id="analyticsCac">—</strong>
+                    <small>Aquisição real</small>
+                  </article>
+                  <article class="performance-card has-media-metric">
+                    <span>ROAS</span>
+                    <strong id="analyticsRoas">—</strong>
+                    <small>Receita ÷ investimento</small>
+                  </article>
+                  <article class="performance-card is-quality">
+                    <span>Qualidade dos dados</span>
+                    <strong id="analyticsDataQuality">0%</strong>
+                    <small id="analyticsDataQualityHint">Campos essenciais completos</small>
+                  </article>
+                </div>
+
+                <div id="marketingGoalSummary" class="marketing-goal-summary" aria-label="Progresso das metas"></div>
+
+                <div class="marketing-source-performance">
+                  <div class="marketing-source-heading">
+                    <div>
+                      <span>Eficiência por origem</span>
+                      <strong>Campanhas que geram resultado real</strong>
+                    </div>
+                    <small>Leads, vendas, receita e conversão</small>
+                  </div>
+                  <div id="marketingSourcePerformanceList" class="marketing-source-list"></div>
+                </div>
+
+                <details id="marketingDataManager" class="marketing-data-manager">
+                  <summary>
+                    <span><i class="fa-solid fa-sliders" aria-hidden="true"></i>Investimento, metas e integrações</span>
+                    <small>Complemente os dados para liberar CPL, CAC e ROAS</small>
+                  </summary>
+                  <div class="marketing-data-manager-body">
+                    <form id="adMetricForm" class="marketing-data-card" autocomplete="off">
+                      <div class="marketing-data-card-heading">
+                        <div>
+                          <span>Lançamento de mídia</span>
+                          <strong>Investimento diário</strong>
+                        </div>
+                        <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                      </div>
+                      <div class="marketing-form-grid">
+                        <label class="field">
+                          <span>Data</span>
+                          <input id="adMetricDate" type="date" required />
+                        </label>
+                        <label class="field">
+                          <span>Plataforma</span>
+                          <select id="adMetricPlatform">
+                            <option value="meta">Meta Ads</option>
+                            <option value="google">Google Ads</option>
+                            <option value="other">Outra</option>
+                          </select>
+                        </label>
+                        <label class="field marketing-span-two">
+                          <span>Campanha</span>
+                          <input id="adMetricCampaign" type="text" placeholder="Nome da campanha" />
+                        </label>
+                        <label class="field">
+                          <span>Investimento</span>
+                          <input id="adMetricSpend" type="text" inputmode="decimal" placeholder="0,00" required />
+                        </label>
+                        <label class="field">
+                          <span>Impressões</span>
+                          <input id="adMetricImpressions" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                        <label class="field">
+                          <span>Alcance</span>
+                          <input id="adMetricReach" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                        <label class="field">
+                          <span>Cliques</span>
+                          <input id="adMetricClicks" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                      </div>
+                      <p id="adMetricMessage" class="form-message" role="status" aria-live="polite"></p>
+                      <button class="primary-button compact-primary" type="submit">Salvar investimento</button>
+                    </form>
+
+                    <form id="marketingTargetsForm" class="marketing-data-card" autocomplete="off">
+                      <div class="marketing-data-card-heading">
+                        <div>
+                          <span>Planejamento</span>
+                          <strong>Metas mensais</strong>
+                        </div>
+                        <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+                      </div>
+                      <div class="marketing-form-grid">
+                        <label class="field">
+                          <span>Orçamento</span>
+                          <input id="marketingMonthlyBudget" type="text" inputmode="decimal" placeholder="0,00" />
+                        </label>
+                        <label class="field">
+                          <span>Meta de leads</span>
+                          <input id="marketingLeadGoal" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                        <label class="field">
+                          <span>Meta de qualificados</span>
+                          <input id="marketingQualifiedGoal" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                        <label class="field">
+                          <span>Meta de vendas</span>
+                          <input id="marketingSalesGoal" type="number" min="0" step="1" placeholder="0" />
+                        </label>
+                        <label class="field">
+                          <span>Meta de receita</span>
+                          <input id="marketingRevenueGoal" type="text" inputmode="decimal" placeholder="0,00" />
+                        </label>
+                        <label class="field">
+                          <span>ROAS desejado</span>
+                          <input id="marketingTargetRoas" type="number" min="0" step="0.1" placeholder="3,0" />
+                        </label>
+                      </div>
+                      <p id="marketingTargetsMessage" class="form-message" role="status" aria-live="polite"></p>
+                      <button class="primary-button compact-primary" type="submit">Salvar metas</button>
+                    </form>
+
+                    <article class="marketing-data-card connector-card">
+                      <div class="marketing-data-card-heading">
+                        <div>
+                          <span>Conversões offline</span>
+                          <strong>Conectores de anúncios</strong>
+                        </div>
+                        <i class="fa-solid fa-link" aria-hidden="true"></i>
+                      </div>
+                      <div class="connector-status-list">
+                        <div class="connector-status-row">
+                          <span class="connector-logo is-meta"><i class="fa-brands fa-meta" aria-hidden="true"></i></span>
+                          <div><strong>Meta Conversions API</strong><small id="metaConnectionStatus">Aguardando conexão segura</small></div>
+                          <b id="metaConnectionBadge">Desconectado</b>
+                        </div>
+                        <div class="connector-status-row">
+                          <span class="connector-logo is-google"><i class="fa-brands fa-google" aria-hidden="true"></i></span>
+                          <div><strong>Google Data Manager</strong><small id="googleConnectionStatus">Aguardando conexão segura</small></div>
+                          <b id="googleConnectionBadge">Desconectado</b>
+                        </div>
+                      </div>
+                      <p class="connector-note">A estrutura de eventos e retorno de compras já está preparada. A ativação exige as credenciais OAuth das contas de anúncio.</p>
+                    </article>
+                  </div>
+                </details>
               </section>
 
               <section id="analyticsChartsPanel" class="analytics-charts-panel" aria-label="Gráficos das subcategorias" hidden></section>
@@ -788,6 +1004,75 @@
                 </label>
               </div>
 
+              <section class="lead-intelligence-entry lead-entry" aria-labelledby="leadIntelligenceTitle">
+                <div class="lead-intelligence-entry-heading">
+                  <div>
+                    <span>Qualificação comercial</span>
+                    <h3 id="leadIntelligenceTitle">Etapa e responsável</h3>
+                  </div>
+                  <span class="intelligence-badge"><i class="fa-solid fa-sparkles" aria-hidden="true"></i> Inteligência</span>
+                </div>
+                <div class="lead-intelligence-grid">
+                  <label class="field">
+                    <span>Etapa do lead</span>
+                    <select id="leadLifecycleStatus">
+                      <option value="new">Novo</option>
+                      <option value="contacted">Em atendimento</option>
+                      <option value="qualified">Qualificado</option>
+                      <option value="scheduled">Agendado</option>
+                      <option value="visited">Visitou</option>
+                      <option value="won">Ganho</option>
+                      <option value="lost">Perdido</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Responsável</span>
+                    <input id="leadOwnerName" type="text" maxlength="160" placeholder="Quem está atendendo" />
+                  </label>
+                  <label class="field">
+                    <span>E-mail</span>
+                    <input id="leadEmail" type="email" maxlength="320" placeholder="lead@exemplo.com" />
+                  </label>
+                  <label id="leadLossReasonField" class="field" hidden>
+                    <span>Motivo da perda</span>
+                    <input id="leadLossReason" type="text" maxlength="300" placeholder="Ex.: preço, sem retorno, concorrência" />
+                  </label>
+                </div>
+                <div class="lead-intelligence-toggles">
+                  <label class="premium-check">
+                    <input id="leadQualified" type="checkbox" />
+                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                    <div><strong>Lead qualificado</strong><small>Tem perfil e intenção de compra</small></div>
+                  </label>
+                  <label class="premium-check">
+                    <input id="leadReturningCustomer" type="checkbox" />
+                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                    <div><strong>Cliente recorrente</strong><small>Já comprou anteriormente</small></div>
+                  </label>
+                  <label class="premium-check">
+                    <input id="leadMarketingConsent" type="checkbox" />
+                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                    <div><strong>Consentimento de marketing</strong><small>Autorizou contato e mensuração</small></div>
+                  </label>
+                </div>
+
+                <details class="lead-attribution-details">
+                  <summary><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i> Atribuição avançada do anúncio</span><small>UTMs e identificadores opcionais</small></summary>
+                  <div class="lead-attribution-grid">
+                    <label class="field"><span>utm_source</span><input id="leadUtmSource" type="text" placeholder="facebook, google..." /></label>
+                    <label class="field"><span>utm_medium</span><input id="leadUtmMedium" type="text" placeholder="paid_social, cpc..." /></label>
+                    <label class="field"><span>utm_campaign</span><input id="leadUtmCampaign" type="text" placeholder="Nome técnico da campanha" /></label>
+                    <label class="field"><span>utm_content</span><input id="leadUtmContent" type="text" placeholder="Criativo ou variação" /></label>
+                    <label class="field"><span>ID da campanha</span><input id="leadCampaignExternalId" type="text" placeholder="ID na plataforma" /></label>
+                    <label class="field"><span>ID do conjunto</span><input id="leadAdsetExternalId" type="text" placeholder="Ad set / grupo" /></label>
+                    <label class="field"><span>ID do anúncio</span><input id="leadAdExternalId" type="text" placeholder="ID do anúncio" /></label>
+                    <label class="field"><span>GCLID / GBRAID / WBRAID</span><input id="leadGoogleClickId" type="text" placeholder="Identificador Google" /></label>
+                    <label class="field"><span>FBCLID / FBC</span><input id="leadMetaClickId" type="text" placeholder="Identificador Meta" /></label>
+                    <label class="field marketing-span-two"><span>Página de entrada</span><input id="leadLandingPage" type="url" placeholder="https://..." /></label>
+                  </div>
+                </details>
+              </section>
+
             <div class="choice-section lead-entry">
               <div class="section-title">
                 <h3>Plataforma / canal</h3>
@@ -1001,6 +1286,7 @@
       <section class="modal-dialog ai-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="aiChatTitle">
         <div class="ai-chat-header">
           <div class="ai-chat-brand">
+            <img class="ai-chat-brand-logo" src="assets/logo-source.png?v=20260804-brand-2" width="62" height="62" alt="" aria-hidden="true" />
             <div>
               <p class="eyebrow">Inteligência artificial</p>
               <h2 id="aiChatTitle">Análise dos leads</h2>
