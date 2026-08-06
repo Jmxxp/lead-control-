@@ -1,0 +1,2922 @@
+.auth-security-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(22, 133, 95, 0.2);
+  border-radius: var(--radius);
+  background: rgba(22, 133, 95, 0.07);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.auth-security-note i {
+  color: var(--green);
+}
+
+.module-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 250px;
+  padding: 5px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 14px;
+  background: rgba(236, 239, 237, 0.86);
+  box-shadow:
+    inset 0 1px 2px rgba(20, 35, 29, 0.06),
+    0 8px 24px rgba(20, 35, 29, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.module-switcher-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.module-switcher-button:hover {
+  color: var(--ink);
+}
+
+.module-switcher-button.is-active {
+  background: var(--surface);
+  color: var(--green-dark);
+  box-shadow:
+    0 7px 18px rgba(20, 35, 29, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.module-switcher-button:active {
+  transform: scale(0.98);
+}
+
+body.is-dark .module-switcher {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(8, 10, 9, 0.72);
+}
+
+body.is-dark .module-switcher-button.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #56d4a7;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.prospection-view {
+  --prospection-green: #16855f;
+  --prospection-green-strong: #0e6c4c;
+  --prospection-mint: #2fc49a;
+  --prospection-blue: #2f80ed;
+  --prospection-amber: #d48616;
+  --prospection-red: #c43d59;
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.prospection-view[hidden] {
+  display: none;
+}
+
+.prospection-loading-card,
+.prospection-error-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 180px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.prospection-loading-icon,
+.prospection-hero-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(22, 133, 95, 0.14), rgba(47, 128, 237, 0.11));
+  color: var(--prospection-green);
+  font-size: 1.2rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.prospection-upgrade-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
+  align-items: center;
+  gap: clamp(28px, 5vw, 76px);
+  min-height: min(720px, calc(100vh - 155px));
+  padding: clamp(38px, 6vw, 88px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--prospection-green) 14%, transparent), transparent 36%),
+    radial-gradient(circle at 88% 82%, color-mix(in srgb, var(--prospection-blue) 12%, transparent), transparent 32%),
+    var(--surface);
+  box-shadow: var(--shadow);
+  isolation: isolate;
+}
+
+.prospection-upgrade-glow {
+  position: absolute;
+  z-index: -1;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.prospection-upgrade-glow.is-one {
+  top: -100px;
+  left: 22%;
+  background: var(--prospection-mint);
+}
+
+.prospection-upgrade-glow.is-two {
+  right: -90px;
+  bottom: -120px;
+  background: var(--prospection-blue);
+}
+
+.prospection-upgrade-hero {
+  display: grid;
+  max-width: 760px;
+}
+
+.prospection-upgrade-icon {
+  position: relative;
+  display: grid;
+  width: 82px;
+  height: 82px;
+  margin-bottom: 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--prospection-green) 38%, var(--line));
+  border-radius: 24px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--prospection-green) 18%, var(--surface)), color-mix(in srgb, var(--prospection-blue) 9%, var(--surface)));
+  color: var(--prospection-green);
+  box-shadow: 0 22px 50px color-mix(in srgb, var(--prospection-green) 20%, transparent);
+  font-size: 1.7rem;
+}
+
+.prospection-upgrade-icon b {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 3px solid var(--surface);
+  border-radius: 11px;
+  background: var(--prospection-green);
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+.prospection-upgrade-hero h2 {
+  max-width: 780px;
+  margin: 8px 0 16px;
+  color: var(--text);
+  font-size: clamp(2rem, 4vw, 4.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.prospection-upgrade-hero > p:not(.eyebrow) {
+  max-width: 680px;
+  color: var(--muted);
+  font-size: clamp(0.92rem, 1.3vw, 1.08rem);
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.prospection-upgrade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 28px 0 16px;
+}
+
+.prospection-upgrade-actions .prospection-button {
+  min-height: 48px;
+  padding-inline: 18px;
+}
+
+.prospection-upgrade-actions .prospection-button.is-archive {
+  border-color: color-mix(in srgb, var(--prospection-blue) 42%, var(--line));
+  background: linear-gradient(135deg, var(--prospection-blue), #2367bd);
+  color: #fff;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--prospection-blue) 24%, transparent);
+}
+
+.prospection-archive-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: 680px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--prospection-blue) 30%, var(--line));
+  border-radius: 12px;
+  color: color-mix(in srgb, var(--prospection-blue) 80%, var(--text));
+  background: color-mix(in srgb, var(--prospection-blue) 8%, var(--surface));
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.prospection-upgrade-hero > small {
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.prospection-upgrade-hero > small strong {
+  color: var(--prospection-green);
+}
+
+.prospection-upgrade-features {
+  display: grid;
+  gap: 10px;
+}
+
+.prospection-upgrade-features article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
+  box-shadow: 0 12px 28px rgba(10, 22, 18, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+.prospection-upgrade-features article > i {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--prospection-green) 12%, var(--surface));
+  color: var(--prospection-green);
+}
+
+.prospection-upgrade-features article > div {
+  display: grid;
+  gap: 4px;
+}
+
+.prospection-upgrade-features strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.prospection-upgrade-features span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+@media (max-width: 920px) {
+  .prospection-upgrade-shell {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: clamp(28px, 6vw, 52px);
+  }
+
+  .prospection-upgrade-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .prospection-upgrade-shell {
+    padding: 24px 18px;
+    border-radius: 14px;
+  }
+
+  .prospection-upgrade-hero h2 {
+    font-size: clamp(1.75rem, 11vw, 2.55rem);
+  }
+
+  .prospection-upgrade-actions,
+  .prospection-upgrade-actions .prospection-button,
+  .prospection-upgrade-features {
+    width: 100%;
+  }
+
+  .prospection-upgrade-features {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prospection-loading-card h2,
+.prospection-error-card h2 {
+  margin: 0 0 6px;
+}
+
+.prospection-loading-card > div > span,
+.prospection-error-card > div > span {
+  color: var(--muted);
+}
+
+.prospection-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid rgba(22, 133, 95, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(47, 196, 154, 0.15), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 247, 0.94));
+  box-shadow:
+    0 24px 62px rgba(19, 48, 37, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.prospection-hero-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prospection-hero-copy h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.45rem);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-hero-copy > span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.prospection-hero-actions,
+.prospection-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.prospection-period-field {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.prospection-period-field select,
+.prospection-view input,
+.prospection-view textarea,
+.prospection-view select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.prospection-view textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.prospection-view input:focus,
+.prospection-view textarea:focus,
+.prospection-view select:focus {
+  border-color: rgba(22, 133, 95, 0.55);
+  box-shadow: 0 0 0 4px rgba(22, 133, 95, 0.11);
+}
+
+.prospection-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--prospection-green);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 850;
+  box-shadow: 0 12px 28px rgba(22, 133, 95, 0.2);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.prospection-button:hover {
+  background: var(--prospection-green-strong);
+  box-shadow: 0 15px 32px rgba(22, 133, 95, 0.25);
+  transform: translateY(-1px);
+}
+
+.prospection-button.is-secondary {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.prospection-button.is-quiet {
+  min-height: 36px;
+  padding: 0 11px;
+  border-color: rgba(22, 133, 95, 0.18);
+  background: rgba(22, 133, 95, 0.08);
+  color: var(--prospection-green-strong);
+  box-shadow: none;
+}
+
+.prospection-button.is-danger {
+  border-color: rgba(196, 61, 89, 0.18);
+  background: rgba(196, 61, 89, 0.08);
+  color: var(--prospection-red);
+  box-shadow: none;
+}
+
+.prospection-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.prospection-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.prospection-metric {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 122px;
+  padding: 17px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 15px;
+  background: linear-gradient(150deg, var(--surface), var(--surface-soft));
+  box-shadow: 0 16px 38px rgba(18, 37, 29, 0.09);
+}
+
+.prospection-metric::after {
+  position: absolute;
+  right: -22px;
+  bottom: -32px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--metric-color, var(--prospection-green)) 10%, transparent);
+  content: "";
+}
+
+.prospection-metric i {
+  color: var(--metric-color, var(--prospection-green));
+  font-size: 0.9rem;
+}
+
+.prospection-metric span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-metric strong {
+  font-size: clamp(1.45rem, 2vw, 2.05rem);
+  line-height: 1;
+}
+
+.prospection-metric small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.prospection-dashboard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.7fr);
+  align-items: start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.prospection-panel {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: 0 20px 48px rgba(18, 37, 29, 0.1);
+}
+
+.prospection-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 17px;
+}
+
+.prospection-panel-heading > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.prospection-panel-heading h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.prospection-panel-heading span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.prospection-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.prospection-account-card {
+  display: grid;
+  gap: 14px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(150deg, var(--surface), var(--surface-soft));
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.prospection-account-card:hover {
+  border-color: rgba(22, 133, 95, 0.3);
+  box-shadow: 0 14px 32px rgba(18, 37, 29, 0.09);
+  transform: translateY(-1px);
+}
+
+.prospection-account-card-header,
+.prospection-record-header,
+.prospection-config-row-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prospection-account-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.prospection-account-icon {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--account-color, var(--prospection-green)) 12%, var(--surface));
+  color: var(--account-color, var(--prospection-green));
+}
+
+.prospection-account-identity > div {
+  min-width: 0;
+}
+
+.prospection-account-identity strong,
+.prospection-account-identity span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-account-identity span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.prospection-account-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prospection-account-stat {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.07);
+}
+
+.prospection-account-stat strong {
+  font-size: 1rem;
+}
+
+.prospection-account-stat span {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.prospection-progress {
+  display: grid;
+  gap: 7px;
+}
+
+.prospection-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.prospection-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.14);
+}
+
+.prospection-progress-track i {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--prospection-green), var(--prospection-mint));
+  box-shadow: 0 0 16px rgba(47, 196, 154, 0.35);
+}
+
+.prospection-account-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prospection-ranking {
+  display: grid;
+  gap: 9px;
+}
+
+.prospection-ranking-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+}
+
+.prospection-ranking-row:last-child {
+  border-bottom: 0;
+}
+
+.prospection-ranking-position {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(22, 133, 95, 0.09);
+  color: var(--prospection-green-strong);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.prospection-ranking-row:first-child .prospection-ranking-position {
+  background: rgba(212, 134, 22, 0.15);
+  color: var(--prospection-amber);
+}
+
+.prospection-ranking-name {
+  min-width: 0;
+}
+
+.prospection-ranking-name strong,
+.prospection-ranking-name span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-ranking-name span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.prospection-ranking-value {
+  text-align: right;
+}
+
+.prospection-ranking-value strong,
+.prospection-ranking-value span {
+  display: block;
+}
+
+.prospection-ranking-value span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.prospection-mini-chart {
+  display: grid;
+  grid-template-columns: repeat(var(--chart-columns, 7), minmax(3px, 1fr));
+  align-items: end;
+  gap: 4px;
+  min-height: 180px;
+  min-width: 0;
+  overflow: hidden;
+  padding-top: 15px;
+}
+
+.prospection-chart-column {
+  display: grid;
+  grid-template-rows: minmax(100px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  height: 100%;
+}
+
+.prospection-chart-bar-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.prospection-chart-bar {
+  width: min(22px, 68%);
+  min-height: 3px;
+  height: var(--height, 3%);
+  border-radius: 7px 7px 3px 3px;
+  background: linear-gradient(180deg, var(--prospection-mint), var(--prospection-green));
+  box-shadow: 0 5px 16px rgba(22, 133, 95, 0.2);
+}
+
+.prospection-chart-column span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 750;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-workspace {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.76fr) minmax(0, 1.5fr);
+  align-items: stretch;
+  gap: 18px;
+  min-width: 0;
+  height: min(780px, calc(100vh - 250px));
+  min-height: 620px;
+}
+
+.prospection-form-panel,
+.prospection-list-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: 0 22px 52px rgba(18, 37, 29, 0.11);
+}
+
+.prospection-form {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  padding-right: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.prospection-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.prospection-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.prospection-option-section {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid rgba(128, 128, 128, 0.16);
+  border-radius: 12px;
+  background: rgba(128, 128, 128, 0.045);
+}
+
+.prospection-option-section > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.prospection-choice-grid {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.prospection-choice {
+  position: relative;
+}
+
+.prospection-choice input {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.prospection-choice span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.prospection-choice input:checked + span {
+  border-color: rgba(22, 133, 95, 0.35);
+  background: rgba(22, 133, 95, 0.1);
+  color: var(--prospection-green-strong);
+  box-shadow: 0 7px 18px rgba(22, 133, 95, 0.09);
+}
+
+.prospection-probability-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot-color, var(--prospection-blue));
+}
+
+.prospection-form-message {
+  min-height: 18px;
+  margin: 0;
+  color: var(--prospection-red);
+  font-size: 0.73rem;
+  font-weight: 750;
+}
+
+.prospection-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(130px, 0.4fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.prospection-records {
+  display: grid;
+  gap: 11px;
+  min-height: 0;
+  padding: 2px 7px 22px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.prospection-record-card {
+  display: grid;
+  gap: 11px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--probability-color, var(--prospection-blue));
+  border-radius: 13px;
+  background: linear-gradient(150deg, var(--surface), var(--surface-soft));
+  box-shadow: 0 10px 24px rgba(18, 37, 29, 0.07);
+}
+
+.prospection-record-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.prospection-record-header span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.prospection-record-meta,
+.prospection-record-tags,
+.prospection-record-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.prospection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(47, 128, 237, 0.08);
+  color: #2367b4;
+  font-size: 0.63rem;
+  font-weight: 800;
+}
+
+.prospection-chip.is-returned {
+  background: rgba(22, 133, 95, 0.1);
+  color: var(--prospection-green-strong);
+}
+
+.prospection-chip.is-purchased {
+  background: rgba(212, 134, 22, 0.12);
+  color: #9a5e0b;
+}
+
+.prospection-access-badges {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.prospection-chip.is-prospec {
+  border: 1px solid color-mix(in srgb, var(--prospection-blue) 38%, var(--line));
+  background: color-mix(in srgb, var(--prospection-blue) 12%, var(--surface));
+  color: var(--prospection-blue);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--prospection-blue) 12%, transparent);
+  letter-spacing: 0.035em;
+}
+
+.prospection-record-notes {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.prospection-record-actions {
+  padding-top: 4px;
+  border-top: 1px solid rgba(128, 128, 128, 0.13);
+}
+
+.prospection-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.prospection-empty i {
+  margin-bottom: 6px;
+  color: rgba(22, 133, 95, 0.5);
+  font-size: 1.4rem;
+}
+
+.prospection-empty strong {
+  color: var(--ink);
+}
+
+.prospection-empty span {
+  font-size: 0.78rem;
+}
+
+.prospection-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.prospection-calendar-day {
+  display: grid;
+  min-height: 74px;
+  align-content: space-between;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid rgba(128, 128, 128, 0.14);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--day-color, var(--surface)) var(--day-strength, 8%), var(--surface));
+}
+
+.prospection-calendar-day.is-empty {
+  border-color: transparent;
+  background: transparent;
+}
+
+.prospection-calendar-day span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.prospection-calendar-day strong {
+  font-size: 0.9rem;
+}
+
+.prospection-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  padding: 28px;
+  overflow-y: auto;
+  place-items: center;
+  background: rgba(16, 20, 18, 0.52);
+  backdrop-filter: blur(12px);
+}
+
+.prospection-dialog-backdrop[hidden] {
+  display: none;
+}
+
+.prospection-dialog {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 40px 110px rgba(0, 0, 0, 0.32);
+}
+
+.prospection-dialog.is-wide {
+  width: min(1120px, 100%);
+}
+
+.prospection-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.prospection-dialog-header h2 {
+  margin: 0;
+}
+
+.prospection-dialog-body {
+  display: grid;
+  gap: 18px;
+  max-height: calc(100vh - 160px);
+  padding: 22px 24px 28px;
+  overflow-y: auto;
+}
+
+.prospection-dialog-close {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.prospection-purchase-grid,
+.prospection-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prospection-config-list {
+  display: grid;
+  gap: 12px;
+}
+
+.prospection-config-row {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.prospection-inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+
+.prospection-managed-items {
+  display: grid;
+  gap: 8px;
+}
+
+.prospection-managed-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+form.prospection-managed-item {
+  grid-template-columns: minmax(140px, 1fr) auto auto;
+}
+
+.prospection-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.prospection-report-table th,
+.prospection-report-table td {
+  padding: 11px 9px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  text-align: left;
+}
+
+.prospection-report-table th {
+  color: var(--muted);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.prospection-report-table td:last-child,
+.prospection-report-table th:last-child {
+  text-align: right;
+}
+
+body.is-dark .prospection-hero,
+body.is-dark .prospection-panel,
+body.is-dark .prospection-form-panel,
+body.is-dark .prospection-list-panel,
+body.is-dark .prospection-dialog,
+body.is-dark .prospection-loading-card,
+body.is-dark .prospection-error-card {
+  border-color: rgba(255, 255, 255, 0.13);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(47, 196, 154, 0.1), transparent 34%),
+    linear-gradient(145deg, #171a18, #0e100f);
+  box-shadow: 0 24px 62px rgba(0, 0, 0, 0.38);
+}
+
+body.is-dark .prospection-metric,
+body.is-dark .prospection-account-card,
+body.is-dark .prospection-record-card,
+body.is-dark .prospection-config-row {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(145deg, #191c1a, #111312);
+}
+
+@media (max-width: 1120px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .module-switcher {
+    order: 3;
+    width: 100%;
+  }
+
+  .prospection-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .prospection-dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-workspace {
+    grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+
+@media (max-width: 780px) {
+  .prospection-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .prospection-hero-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .prospection-hero-actions > * {
+    flex: 1 1 150px;
+  }
+
+  .prospection-workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .prospection-form-panel,
+  .prospection-list-panel {
+    min-height: 620px;
+  }
+
+  .prospection-list-toolbar,
+  .prospection-purchase-grid,
+  .prospection-config-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .module-switcher {
+    min-width: 0;
+  }
+
+  .module-switcher-button {
+    padding: 0 10px;
+    font-size: 0.75rem;
+  }
+
+  .module-switcher-button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prospection-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-hero,
+  .prospection-panel,
+  .prospection-form-panel,
+  .prospection-list-panel {
+    padding: 17px;
+    border-radius: 15px;
+  }
+
+  .prospection-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-hero-copy h2 {
+    overflow: visible;
+    font-size: 1.55rem;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .prospection-hero-copy > span {
+    overflow-wrap: anywhere;
+  }
+
+  .prospection-hero-actions {
+    display: grid;
+    grid-column: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .prospection-hero-actions > *,
+  .prospection-period-field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .prospection-hero-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .prospection-account-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  form.prospection-managed-item {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-dialog-backdrop {
+    padding: 12px;
+  }
+
+  .prospection-dialog {
+    max-height: calc(100vh - 24px);
+    border-radius: 18px;
+  }
+
+  .prospection-dialog-header,
+  .prospection-dialog-body {
+    padding-right: 17px;
+    padding-left: 17px;
+  }
+}
+
+/* Prospec layout parity: compact hierarchy, aligned identities and dense workspace. */
+.app-shell {
+  width: min(1560px, 100%);
+  padding: 18px;
+}
+
+#appView > .topbar {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) auto minmax(250px, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 82px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  overflow: visible;
+  border-radius: 10px;
+}
+
+#appView .topbar-identity {
+  gap: 12px;
+}
+
+#appView .topbar-identity > div:last-child {
+  min-width: 0;
+}
+
+#appView .topbar .eyebrow {
+  margin-bottom: 4px;
+  font-size: 0.64rem;
+}
+
+#appView .topbar h1 {
+  overflow: hidden;
+  max-width: 440px;
+  font-size: clamp(1.38rem, 2vw, 1.9rem);
+  line-height: 1.04;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#appView .topbar-brand-cluster {
+  flex-basis: 52px;
+  width: 52px;
+  height: 52px;
+}
+
+#appView .topbar-brand-logo {
+  width: 52px;
+  height: 52px;
+  filter: drop-shadow(0 8px 14px rgba(0, 38, 23, 0.16));
+}
+
+#appView .topbar-brand-cluster .topbar-avatar {
+  right: -3px;
+  bottom: -3px;
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+  border-radius: 7px;
+  font-size: 0.5rem;
+}
+
+#appView .module-switcher {
+  min-width: 218px;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 10px;
+  box-shadow: inset 0 1px 2px rgba(20, 35, 29, 0.05);
+}
+
+#appView .module-switcher-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 0.74rem;
+}
+
+#appView .module-switcher-button.is-active {
+  box-shadow: 0 4px 12px rgba(20, 35, 29, 0.1);
+}
+
+#appView .topbar-actions {
+  gap: 7px;
+  flex-wrap: nowrap;
+}
+
+#appView .topbar-status,
+#appView .today-card,
+#appView .topbar-actions .topbar-button {
+  min-height: 40px;
+  height: 40px;
+}
+
+#appView .topbar-actions .topbar-button {
+  flex-basis: 40px;
+  width: 40px;
+  min-width: 40px;
+  border-radius: 8px;
+}
+
+#appView .today-card {
+  padding: 0 12px;
+  font-size: 0.75rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+}
+
+.management-card,
+.technician-card {
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.management-card .management-profile,
+.technician-card .management-profile {
+  align-items: center;
+}
+
+.management-card .management-avatar,
+.technician-card .management-avatar {
+  align-self: center;
+  width: 50px;
+  height: 50px;
+  padding: 4px;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.management-card .management-avatar img,
+.technician-card .management-avatar img {
+  border-radius: 6px;
+  object-fit: contain;
+  object-position: center;
+}
+
+.management-card .card-actions > button,
+.management-card .card-actions > a,
+.technician-card .card-actions > button,
+.technician-card .card-actions > a {
+  min-height: 36px;
+}
+
+.prospection-view {
+  gap: 14px;
+}
+
+.prospection-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 9px 26px rgba(18, 37, 29, 0.08);
+}
+
+.prospection-section-heading,
+.prospection-section-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.prospection-section-heading {
+  gap: 12px;
+}
+
+.prospection-section-heading > div {
+  min-width: 0;
+}
+
+.prospection-section-heading h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: clamp(1.12rem, 1.6vw, 1.45rem);
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-section-heading > div > span {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-section-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prospection-account-icon {
+  flex-basis: 44px;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--account-color, var(--prospection-green)) 24%, transparent);
+  border-radius: 10px;
+}
+
+.prospection-account-icon.has-image {
+  padding: 3px;
+  background: #fff;
+}
+
+.prospection-account-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  object-fit: contain;
+  object-position: center;
+}
+
+.prospection-period-field {
+  min-width: 142px;
+  gap: 3px;
+  font-size: 0.6rem;
+}
+
+.prospection-period-field select,
+.prospection-view input,
+.prospection-view textarea,
+.prospection-view select {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.prospection-view textarea {
+  min-height: 72px;
+}
+
+.prospection-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.74rem;
+  box-shadow: 0 7px 18px rgba(22, 133, 95, 0.16);
+}
+
+.prospection-button.is-quiet {
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+.prospection-today-counter {
+  display: grid;
+  min-width: 56px;
+  min-height: 38px;
+  place-items: center;
+  align-content: center;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.prospection-today-counter strong,
+.prospection-today-counter span {
+  line-height: 1;
+}
+
+.prospection-today-counter strong {
+  font-size: 0.95rem;
+}
+
+.prospection-today-counter span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prospection-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prospection-overview-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 22px rgba(18, 37, 29, 0.07);
+}
+
+.prospection-overview-card > span {
+  color: var(--prospection-green);
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.prospection-overview-card small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.prospection-overview-card strong {
+  color: var(--ink);
+  font-size: 0.69rem;
+}
+
+.prospection-overview-card strong i {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 4px 2px;
+  border-radius: 50%;
+  background: var(--prospection-mint);
+}
+
+.prospection-dashboard-layout {
+  grid-template-columns: minmax(0, 1.45fr) minmax(310px, 0.7fr);
+  gap: 14px;
+}
+
+.prospection-panel,
+.prospection-form-panel,
+.prospection-list-panel {
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(18, 37, 29, 0.09);
+}
+
+.prospection-panel-heading {
+  margin-bottom: 12px;
+}
+
+.prospection-panel-heading > div {
+  gap: 3px;
+}
+
+.prospection-panel-heading h3 {
+  font-size: 1rem;
+}
+
+.prospection-panel-heading span {
+  font-size: 0.7rem;
+}
+
+.prospection-account-card {
+  gap: 11px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.prospection-account-card-header,
+.prospection-record-header,
+.prospection-config-row-header {
+  align-items: center;
+}
+
+.prospection-account-stats {
+  gap: 6px;
+}
+
+.prospection-account-stat {
+  padding: 8px;
+  border-radius: 7px;
+}
+
+.prospection-workspace {
+  grid-template-columns: minmax(360px, 1fr) minmax(520px, 2.15fr);
+  gap: 18px;
+  height: min(790px, calc(100vh - 190px));
+  min-height: 630px;
+}
+
+.prospection-form-panel,
+.prospection-list-panel {
+  min-height: 0;
+}
+
+.prospection-form {
+  gap: 9px;
+}
+
+.prospection-field {
+  gap: 5px;
+  font-size: 0.69rem;
+}
+
+.prospection-field-grid {
+  gap: 8px;
+}
+
+.prospection-option-section,
+.prospection-tag-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.17);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.04);
+}
+
+.prospection-tag-picker {
+  gap: 10px;
+}
+
+.prospection-picker-title,
+.prospection-manager-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prospection-manager-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prospection-manager-heading > div > span,
+.prospection-manager-heading > div > small {
+  display: block;
+}
+
+.prospection-picker-title > span,
+.prospection-manager-heading span {
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.prospection-picker-title small,
+.prospection-manager-heading small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.prospection-tag-group {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, 0.14);
+}
+
+.prospection-tag-group > strong {
+  color: var(--muted);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.prospection-choice-grid {
+  gap: 5px;
+}
+
+.prospection-choice span {
+  min-height: 31px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 0.65rem;
+}
+
+.prospection-list-toolbar {
+  grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(120px, 0.34fr));
+  gap: 8px;
+  margin: 0 -16px 12px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.prospection-records {
+  gap: 8px;
+  padding: 1px 6px 16px 1px;
+}
+
+.prospection-record-card {
+  gap: 8px;
+  padding: 12px;
+  border-left-width: 3px;
+  border-radius: 8px;
+  box-shadow: 0 5px 14px rgba(18, 37, 29, 0.055);
+}
+
+.prospection-record-header h3 {
+  font-size: 0.88rem;
+}
+
+.prospection-chip {
+  min-height: 23px;
+  padding: 0 7px;
+  font-size: 0.59rem;
+}
+
+.prospection-dialog-backdrop {
+  padding: 22px;
+  background: rgba(9, 12, 11, 0.58);
+  backdrop-filter: blur(16px) saturate(0.88);
+}
+
+.prospection-dialog {
+  width: min(860px, 100%);
+  max-height: calc(100vh - 44px);
+  border-radius: 12px;
+  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.38);
+}
+
+.prospection-dialog.is-wide {
+  width: min(1260px, 100%);
+}
+
+.prospection-dialog-header {
+  padding: 16px 18px;
+}
+
+.prospection-dialog-header .eyebrow {
+  margin-bottom: 4px;
+  font-size: 0.64rem;
+}
+
+.prospection-dialog-header h2 {
+  font-size: clamp(1.16rem, 1.8vw, 1.48rem);
+}
+
+.prospection-dialog-body {
+  gap: 14px;
+  max-height: calc(100vh - 118px);
+  padding: 16px 18px 20px;
+}
+
+.prospection-dialog-close {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.prospection-config-list {
+  gap: 14px;
+}
+
+.prospection-config-row {
+  gap: 14px;
+  padding: 16px;
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.prospection-config-row-header {
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.prospection-config-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.prospection-config-grid .config-save-button {
+  grid-column: 1 / span 2;
+}
+
+.prospection-config-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.prospection-category-manager,
+.prospection-professional-manager {
+  min-width: 0;
+  padding: 13px;
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.prospection-category-list,
+.prospection-tag-editor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.prospection-category-card {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.prospection-category-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.prospection-category-header > form {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prospection-drag-handle {
+  display: grid;
+  width: 24px;
+  color: var(--muted);
+  place-items: center;
+  font-size: 0.72rem;
+}
+
+.prospection-order-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.prospection-icon-action {
+  display: grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 0.7rem;
+}
+
+.prospection-icon-action:hover {
+  border-color: rgba(22, 133, 95, 0.35);
+  color: var(--prospection-green);
+}
+
+.prospection-icon-action.is-danger {
+  border-color: rgba(196, 61, 89, 0.2);
+  color: var(--prospection-red);
+}
+
+.prospection-icon-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.prospection-tag-editor-row {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.prospection-inline-form.is-tag-form {
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, 0.14);
+}
+
+.prospection-empty.is-compact {
+  min-height: 110px;
+}
+
+body.is-dark .prospection-section-header,
+body.is-dark .prospection-overview-card,
+body.is-dark .prospection-category-card,
+body.is-dark .prospection-config-row {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: linear-gradient(145deg, #191c1a, #111312);
+}
+
+body.is-dark .prospection-list-toolbar,
+body.is-dark .prospection-category-manager,
+body.is-dark .prospection-professional-manager,
+body.is-dark .prospection-tag-editor-row,
+body.is-dark .prospection-today-counter {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+@media (max-width: 1160px) {
+  #appView > .topbar {
+    grid-template-columns: minmax(250px, 1fr) auto;
+  }
+
+  #appView .module-switcher {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .prospection-config-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-workspace {
+    grid-template-columns: minmax(320px, 0.9fr) minmax(440px, 1.4fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .prospection-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prospection-section-actions {
+    justify-content: flex-start;
+  }
+
+  .prospection-overview-grid,
+  .prospection-config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-config-grid .config-save-button {
+    grid-column: 1 / -1;
+  }
+
+  .prospection-workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .prospection-form-panel,
+  .prospection-list-panel {
+    min-height: 620px;
+  }
+}
+
+@media (max-width: 620px) {
+  #appView > .topbar {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  #appView .topbar-actions {
+    grid-row: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  #appView .module-switcher {
+    grid-row: 3;
+  }
+
+  #appView .topbar-status {
+    width: auto;
+  }
+
+  #appView .topbar h1 {
+    font-size: 1.3rem;
+  }
+
+  .prospection-overview-grid,
+  .prospection-config-grid,
+  .prospection-list-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-section-heading > div > span {
+    white-space: normal;
+  }
+
+  .prospection-section-actions > *,
+  .prospection-period-field {
+    flex: 1 1 140px;
+  }
+
+  .prospection-dialog-backdrop {
+    padding: 8px;
+  }
+
+  .prospection-dialog {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+  }
+
+  .prospection-dialog.is-wide {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+  }
+
+  .prospection-dialog-body {
+    max-height: calc(100vh - 92px);
+    padding: 13px;
+  }
+
+  .prospection-category-header,
+  .prospection-tag-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-config-row,
+  .prospection-category-manager,
+  .prospection-professional-manager,
+  .prospection-category-card {
+    min-width: 0;
+    padding: 10px;
+  }
+
+  .prospection-category-header > form {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .prospection-order-actions {
+    justify-content: flex-end;
+  }
+
+  .prospection-inline-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* O módulo usa o stylesheet original do Prospec; estas regras só fazem a ponte
+   com o shell do Controle de Leads e preservam a hierarquia original. */
+body.is-prospections-module #appView > .topbar {
+  display: grid !important;
+}
+
+body.is-prospections-module .prospection-view {
+  display: block;
+  color: var(--text);
+}
+
+/* Gestão de Prospecções segue a linguagem do Controle de Leads. Somente a
+   operação do cliente recebe o stylesheet azul original. */
+.prospection-management-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.prospection-management-header {
+  margin: 0;
+}
+
+.prospection-management-aside {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.prospection-dialog-backdrop .admin-settings-panel {
+  width: min(1260px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.38);
+}
+
+.prospection-dialog-backdrop .admin-settings-header {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.prospection-dialog-backdrop .admin-settings-header h2 {
+  margin: 0;
+  font-size: clamp(1.16rem, 1.8vw, 1.48rem);
+}
+
+.prospection-dialog-backdrop .admin-settings-header .icon-button {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+}
+
+.prospection-dialog-backdrop .admin-settings-panel > .prospection-config-list {
+  padding: 16px 18px 20px;
+}
+
+.prospection-operation-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--account-color, var(--primary));
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+
+.prospection-operation-context .prospection-account-identity > div {
+  display: grid;
+  gap: 2px;
+}
+
+.prospection-operation-context .prospection-account-identity small,
+.prospection-operation-context .prospection-account-identity span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.prospection-operation-context .prospection-account-identity strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.prospection-operation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.prospection-operation-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.prospection-account-icon.has-image {
+  padding: 4px;
+  background: var(--logo-background, #ffffff);
+}
+
+.prospection-color-field {
+  align-content: start;
+}
+
+.prospection-color-control {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 4px 9px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.prospection-view .prospection-color-control input[type="color"] {
+  width: 38px;
+  min-width: 38px;
+  height: 30px;
+  min-height: 30px;
+  padding: 2px;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.prospection-color-control code {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+}
+
+body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+body.is-prospections-module .prospection-view .store-settings-fields .config-save-button {
+  grid-column: 1 / span 2;
+  width: auto;
+  min-height: 40px;
+}
+
+.prospection-insight-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.25fr) repeat(2, minmax(135px, 0.8fr)) minmax(160px, 1.05fr) auto;
+  align-items: end;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.prospection-insight-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--account-color) 34%, var(--line));
+  border-left: 4px solid var(--account-color);
+  border-radius: 10px;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--account-color) 10%, var(--surface)), var(--surface));
+}
+
+.prospection-insight-identity .prospection-account-identity small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.prospection-scope-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--account-color) 30%, var(--line));
+  border-radius: 999px;
+  color: var(--account-color);
+  font-size: 0.64rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.prospection-date-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prospection-date-shortcuts .prospection-button {
+  min-height: 34px;
+  padding: 7px 12px;
+}
+
+.prospection-date-shortcuts .prospection-button.is-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.prospection-insight-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.prospection-insight-filters .prospection-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.prospection-insight-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.prospection-insight-kpis article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+
+.prospection-insight-kpis i {
+  grid-row: span 2;
+  color: var(--primary);
+  font-size: 0.88rem;
+}
+
+.prospection-insight-kpis span,
+.prospection-insight-kpis small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-insight-kpis strong {
+  grid-column: 1 / -1;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 1.12rem;
+}
+
+.prospection-insight-kpis small {
+  grid-column: 1 / -1;
+}
+
+.prospection-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(420px, 1.2fr);
+  gap: 12px;
+}
+
+.prospection-funnel {
+  display: grid;
+  gap: 13px;
+}
+
+.prospection-funnel > div {
+  display: grid;
+  gap: 6px;
+}
+
+.prospection-funnel > div > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+}
+
+.prospection-funnel em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.prospection-funnel > div > i {
+  display: block;
+  overflow: hidden;
+  height: 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+.prospection-funnel b {
+  display: block;
+  width: var(--funnel-width);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--funnel-color);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--funnel-color) 35%, transparent);
+}
+
+.prospection-performance-table {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.prospection-performance-head,
+.prospection-performance-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.35fr) repeat(3, minmax(74px, 0.55fr)) minmax(110px, 0.85fr) minmax(100px, 0.75fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.prospection-performance-head {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.prospection-performance-row {
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.prospection-performance-row > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prospection-performance-row b {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 0.64rem;
+}
+
+.prospection-performance-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.prospection-performance-row .is-bonus {
+  color: var(--green);
+}
+
+.prospection-performance-table.is-interactive .prospection-performance-head,
+.prospection-performance-table.is-interactive .prospection-performance-row {
+  grid-template-columns: minmax(160px, 1.3fr) repeat(3, minmax(70px, 0.5fr)) minmax(108px, 0.8fr) minmax(96px, 0.7fr) minmax(84px, 0.62fr);
+}
+
+.prospection-performance-row .prospection-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 0.62rem;
+}
+
+.prospection-professional-records {
+  scroll-margin-top: 18px;
+}
+
+.prospection-employee-prospect-list {
+  display: grid;
+  gap: 7px;
+  max-height: 380px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.prospection-employee-prospect-list > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(150px, 0.65fr);
+  align-items: center;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.prospection-employee-prospect-list > article > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prospection-employee-prospect-list strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-employee-prospect-list span,
+.prospection-employee-prospect-list small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-account-card.is-locked {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+.prospection-account-card.is-locked .prospection-account-stats,
+.prospection-account-card.is-locked .prospection-progress {
+  filter: grayscale(1);
+  opacity: 0.58;
+}
+
+.prospection-chip.is-locked {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prospection-bonus-records {
+  display: grid;
+  gap: 7px;
+}
+
+.prospection-bonus-record {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.45fr) minmax(90px, 0.55fr) minmax(125px, 0.75fr) minmax(125px, 0.75fr);
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.prospection-bonus-record.is-eligible {
+  border-left-color: var(--green);
+}
+
+.prospection-bonus-record > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prospection-bonus-record span,
+.prospection-bonus-record small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.59rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-bonus-record strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.73rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .prospection-insight-filters,
+  .prospection-insight-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .prospection-insight-filters .prospection-button {
+    width: 100%;
+  }
+
+  body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .prospection-operation-context,
+  .prospection-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prospection-operation-actions,
+  .prospection-section-actions {
+    justify-content: flex-start;
+  }
+
+  .prospection-insight-filters,
+  .prospection-insight-kpis,
+  .prospection-insight-grid,
+  .prospection-dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-performance-table {
+    overflow-x: auto;
+  }
+
+  .prospection-performance-head,
+  .prospection-performance-row {
+    min-width: 720px;
+  }
+
+  .prospection-bonus-record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-insight-identity {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .prospection-employee-prospect-list > article {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .prospection-bonus-record {
+    grid-template-columns: 1fr;
+  }
+}
+
+body.is-prospections-module .prospection-view > .topbar {
+  display: grid;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.is-prospections-module #appView .prospection-view > .topbar h1 {
+  overflow: visible;
+  max-width: none;
+  margin-bottom: 0;
+  font-size: clamp(1.9rem, 3.6vw, 2.85rem);
+  line-height: 1;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+body.is-prospections-module #appView .prospection-view > .topbar .eyebrow {
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+}
+
+.prospection-view .tag-category-group {
+  display: grid;
+  gap: 6px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+}
+
+.prospection-view .tag-category-group:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.prospection-view .tag-category-group > small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+body.is-prospections-module .prospection-dialog-backdrop {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body.is-prospections-module .prospection-view .admin-settings-panel .prospection-config-row {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.is-prospections-module .prospection-view .store-settings-fields .config-save-button {
+  grid-column: 1 / span 2;
+}
+
+body.is-prospections-module .prospection-view .store-managers-grid.prospection-config-columns {
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+}
+
+body.is-prospections-module .prospection-view .prospection-category-card,
+body.is-prospections-module .prospection-view .prospection-tag-editor-row,
+body.is-prospections-module .prospection-view .prospection-managed-item {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+body.is-prospections-module .prospection-view .prospection-icon-action {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+body.is-prospections-module .prospection-view .prospection-icon-action.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+}
+
+@media (max-width: 1080px) {
+  body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid,
+  body.is-prospections-module .prospection-view .store-managers-grid.prospection-config-columns {
+    grid-template-columns: 1fr;
+  }
+
+  body.is-prospections-module .prospection-view .store-settings-fields .config-save-button {
+    grid-column: auto;
+  }
+}

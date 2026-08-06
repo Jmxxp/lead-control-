@@ -9,6 +9,7 @@ const BACKUP_HANDLE_STORE = "directory-handles";
 const BACKUP_MANIFEST_STORE = "backup-manifests";
 const BACKUP_ROOT_FOLDER = "Controle de Leads";
 const BACKUP_SCHEDULE_HOUR = 20;
+const SYSTEM_MODULE_STORAGE_PREFIX = "lead-control-module";
 
 const LEGACY_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
 const LEGACY_MULTI_STORE_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
@@ -55,6 +56,8 @@ let optionRecords = createDefaultOptionRecords();
 let currentProfile = null;
 let activeStoreContext = null;
 let activeTechnicianContext = null;
+let activeSystemModule = "leads";
+let leadModuleSnapshot = null;
 let accountUsage = null;
 let companyWorkspaceSection = "clients";
 let selectedAnalyticsStoreId = "";
@@ -68,6 +71,12 @@ let marketingConnections = [];
 let technicians = [];
 let profileAvatars = [];
 let customCategories = [];
+let legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pending: 0, accounts: [] };
+let pendingLegalTerms = null;
+let legalTermsGateResolve = null;
+let legalSignatureHasInk = false;
+let legalSignatureDrawing = false;
+let currentLegalDocument = null;
 let pendingUnsavedAction = null;
 const dirtyOptionKeys = new Set();
 const dirtyOptionValues = new Map();
@@ -120,6 +129,10 @@ const authScreen = $("#authScreen");
 const appView = $("#appView");
 const adminView = $("#adminView");
 const storeView = $("#storeView");
+const prospectionView = $("#prospectionView");
+const appMainTitle = $("#appMainTitle");
+const moduleLeadsButton = $("#moduleLeadsButton");
+const moduleProspectionsButton = $("#moduleProspectionsButton");
 const sessionRole = $("#sessionRole");
 const sessionAvatar = $("#sessionAvatar");
 const appNotification = $("#appNotification");
@@ -128,14 +141,9 @@ const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
 const settingsButton = $("#settingsButton");
 const loginForm = $("#loginForm");
-const signupForm = $("#signupForm");
 const authMessage = $("#authMessage");
-const authTitle = $("#authTitle");
 const loginNick = $("#loginNick");
 const loginPassword = $("#loginPassword");
-const signupName = $("#signupName");
-const signupNick = $("#signupNick");
-const signupPassword = $("#signupPassword");
 const storeForm = $("#storeForm");
 const storeName = $("#storeName");
 const storeNick = $("#storeNick");
@@ -154,6 +162,7 @@ const technicianPassword = $("#technicianPassword");
 const technicianAvatar = $("#technicianAvatar");
 const technicianAvatarPreview = $("#technicianAvatarPreview");
 const technicianStoreLimit = $("#technicianStoreLimit");
+const technicianProspectionLimit = $("#technicianProspectionLimit");
 const technicianMessage = $("#technicianMessage");
 const technicianEmptyState = $("#technicianEmptyState");
 const technicianList = $("#technicianList");
@@ -192,6 +201,13 @@ const managedAccountAvatar = $("#managedAccountAvatar");
 const managedAccountAvatarPreview = $("#managedAccountAvatarPreview");
 const managedAccountLimitField = $("#managedAccountLimitField");
 const managedAccountLimit = $("#managedAccountLimit");
+const managedAccountProspectionLimitField = $("#managedAccountProspectionLimitField");
+const managedAccountProspectionLimit = $("#managedAccountProspectionLimit");
+const managedAccountProspectionLimitHelp = $("#managedAccountProspectionLimitHelp");
+const managedAccountProspectionField = $("#managedAccountProspectionField");
+const managedAccountProspectionAccess = $("#managedAccountProspectionAccess");
+const managedAccountProspectionHelp = $("#managedAccountProspectionHelp");
+const managedAccountProspectionStatus = $("#managedAccountProspectionStatus");
 const managedAccountMessage = $("#managedAccountMessage");
 const clientCapacityPanel = $("#clientCapacityPanel");
 const clientCapacityEyebrow = $("#clientCapacityEyebrow");
@@ -218,6 +234,17 @@ const backupRunNow = $("#backupRunNow");
 const backupClientsTitle = $("#backupClientsTitle");
 const backupClientList = $("#backupClientList");
 const backupMessage = $("#backupMessage");
+const legalTermsNavButton = $("#legalTermsNavButton");
+const legalAdminCenter = $("#legalAdminCenter");
+const legalActiveVersion = $("#legalActiveVersion");
+const legalTotalAccounts = $("#legalTotalAccounts");
+const legalAcceptedAccounts = $("#legalAcceptedAccounts");
+const legalPendingAccounts = $("#legalPendingAccounts");
+const legalAcceptanceSearch = $("#legalAcceptanceSearch");
+const legalAcceptanceRoleFilter = $("#legalAcceptanceRoleFilter");
+const legalAcceptanceStatusFilter = $("#legalAcceptanceStatusFilter");
+const legalAcceptanceList = $("#legalAcceptanceList");
+const legalAcceptanceEmpty = $("#legalAcceptanceEmpty");
 const analyticsClientPicker = $("#analyticsClientPicker");
 const analyticsClientSelect = $("#analyticsClientSelect");
 const analyticsClientSelectTrigger = $("#analyticsClientSelectTrigger");
@@ -313,6 +340,29 @@ const aiValidateKeyButton = $("#aiValidateKeyButton");
 const aiKeyStatus = $("#aiKeyStatus");
 const aiSystemPrompt = $("#aiSystemPrompt");
 const aiSettingsMessage = $("#aiSettingsMessage");
+const legalTermsModal = $("#legalTermsModal");
+const legalTermsTitle = $("#legalTermsTitle");
+const legalTermsVersion = $("#legalTermsVersion");
+const legalTermsContent = $("#legalTermsContent");
+const legalTermsForm = $("#legalTermsForm");
+const legalTermsLogout = $("#legalTermsLogout");
+const legalTermsRetry = $("#legalTermsRetry");
+const legalSignerName = $("#legalSignerName");
+const legalSignerRole = $("#legalSignerRole");
+const legalSignerCpf = $("#legalSignerCpf");
+const legalSignatureCanvas = $("#legalSignatureCanvas");
+const legalSignatureClear = $("#legalSignatureClear");
+const legalConfirmRead = $("#legalConfirmRead");
+const legalConfirmAuthority = $("#legalConfirmAuthority");
+const legalConfirmEvidence = $("#legalConfirmEvidence");
+const legalTermsMessage = $("#legalTermsMessage");
+const legalDocumentModal = $("#legalDocumentModal");
+const legalDocumentTitle = $("#legalDocumentTitle");
+const legalDocumentSubtitle = $("#legalDocumentSubtitle");
+const legalDocumentContent = $("#legalDocumentContent");
+const legalDocumentEvidence = $("#legalDocumentEvidence");
+const legalDocumentClose = $("#legalDocumentClose");
+const legalDocumentDownload = $("#legalDocumentDownload");
 const form = $("#leadForm");
 const formTitle = $("#formTitle");
 const submitButton = $("#submitButton");
@@ -453,16 +503,13 @@ async function init() {
 }
 
 function bindEvents() {
-  $$("[data-auth-tab]").forEach((tab) => {
-    tab.addEventListener("click", () => setAuthTab(tab.dataset.authTab));
-  });
-
   $$("[data-toggle-password]").forEach((button) => {
     button.addEventListener("click", () => togglePassword(button));
   });
 
   loginForm.addEventListener("submit", handleLogin);
-  signupForm.addEventListener("submit", handleAdminSignup);
+  moduleLeadsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("leads")));
+  moduleProspectionsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("prospections")));
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
   settingsButton.addEventListener("click", openSettingsModal);
@@ -480,6 +527,7 @@ function bindEvents() {
     if (event.target === managedAccountModal) closeManagedAccountModal();
   });
   managedAccountForm.addEventListener("submit", handleManagedAccountSubmit);
+  managedAccountProspectionAccess.addEventListener("change", syncManagedAccountProspectionToggle);
   storeForm.addEventListener("submit", handleCreateStore);
   storeTechnician.addEventListener("input", syncStoreCreationAvailability);
   technicianForm.addEventListener("submit", handleCreateTechnician);
@@ -494,6 +542,23 @@ function bindEvents() {
   companyWorkspaceButtons.forEach((button) => {
     button.addEventListener("click", () => setCompanyWorkspaceSection(button.dataset.companySection));
   });
+  [legalAcceptanceSearch, legalAcceptanceRoleFilter, legalAcceptanceStatusFilter].forEach((element) => {
+    element?.addEventListener("input", renderLegalAcceptanceList);
+  });
+  legalAcceptanceList?.addEventListener("click", handleLegalAcceptanceListClick);
+  legalTermsForm?.addEventListener("submit", handleLegalTermsSubmit);
+  legalTermsLogout?.addEventListener("click", handleLegalTermsLogout);
+  legalTermsRetry?.addEventListener("click", () => window.location.reload());
+  legalSignerCpf?.addEventListener("input", () => {
+    legalSignerCpf.value = formatCpfInput(legalSignerCpf.value);
+  });
+  legalSignatureClear?.addEventListener("click", clearLegalSignature);
+  legalDocumentClose?.addEventListener("click", closeLegalDocumentModal);
+  legalDocumentDownload?.addEventListener("click", downloadCurrentLegalDocument);
+  legalDocumentModal?.addEventListener("click", (event) => {
+    if (event.target === legalDocumentModal) closeLegalDocumentModal();
+  });
+  bindLegalSignatureCanvas();
   analyticsClientSelector.addEventListener("input", () => {
     handleAnalyticsClientSelection().catch((error) => showAppNotification(readableError(error), "error"));
   });
@@ -749,32 +814,6 @@ function isSupabaseReady() {
   return Boolean(supabaseClient);
 }
 
-async function handleAdminSignup(event) {
-  event.preventDefault();
-  clearAuthMessage();
-
-  const username = normalizeNick(signupNick.value);
-  if (!username) {
-    showAuthMessage("Digite um nick válido.");
-    return;
-  }
-
-  try {
-    setFormBusy(signupForm, true);
-    const row = firstRow(await rpc("lc_create_admin", {
-      p_full_name: signupName.value.trim(),
-      p_nick: username,
-      p_password: signupPassword.value,
-    }));
-    signupForm.reset();
-    await openProfile(profileFromSessionRow(row));
-  } catch (error) {
-    showAuthMessage(readableError(error));
-  } finally {
-    setFormBusy(signupForm, false);
-  }
-}
-
 async function handleLogin(event) {
   event.preventDefault();
   clearAuthMessage();
@@ -826,6 +865,9 @@ async function openProfile(profile) {
   loadAiChatSessions();
 
   authScreen.hidden = true;
+  appView.hidden = true;
+  const legalAccessGranted = await ensureLegalTermsAcceptance();
+  if (!legalAccessGranted) return;
   appView.hidden = false;
   await refreshRemoteState();
 
@@ -838,10 +880,258 @@ async function openProfile(profile) {
 
   if (profile.role === "admin" || profile.role === "technician") {
     showAdminDashboard();
+  } else {
+    showStoreDashboard();
+  }
+
+  const preferredModule = localStorage.getItem(getSystemModuleStorageKey()) || "leads";
+  if (preferredModule === "prospections") {
+    await setSystemModule("prospections", { persist: false });
+  } else {
+    updateSystemModuleControls();
+  }
+}
+
+async function ensureLegalTermsAcceptance() {
+  if (!currentProfile) return true;
+
+  let response;
+  try {
+    response = firstRow(await authenticatedRpc("lc_get_required_legal_terms"));
+  } catch (error) {
+    return showBlockedLegalTermsGate(error);
+  }
+
+  if (!response?.required || !response.terms) return true;
+  pendingLegalTerms = response.terms;
+  legalTermsModal.classList.remove("is-unavailable");
+  legalTermsRetry.hidden = true;
+  legalTermsForm.hidden = false;
+  legalTermsForm.reset();
+  legalSignerName.value = currentProfile.fullName || "";
+  legalTermsTitle.textContent = response.terms.title || "Termos de Uso e Privacidade";
+  legalTermsVersion.textContent = `Versão ${response.terms.version || "vigente"} · aceite necessário para continuar`;
+  legalTermsContent.innerHTML = renderLegalTermsMarkup(response.terms.content || "");
+  legalTermsMessage.textContent = "";
+  legalTermsModal.hidden = false;
+  document.body.classList.add("is-legal-gated");
+  syncModalLock();
+
+  requestAnimationFrame(() => {
+    initializeLegalSignatureCanvas();
+    legalTermsContent.focus();
+  });
+
+  return new Promise((resolve) => {
+    legalTermsGateResolve = resolve;
+  });
+}
+
+function showBlockedLegalTermsGate(error) {
+  pendingLegalTerms = null;
+  legalTermsModal.classList.add("is-unavailable");
+  legalTermsRetry.hidden = false;
+  legalTermsForm.hidden = true;
+  legalTermsTitle.textContent = "Acesso bloqueado";
+  legalTermsVersion.textContent = "Os Termos de Uso precisam estar disponíveis e assinados antes de entrar.";
+  legalTermsContent.innerHTML = `<div class="legal-gate-error">
+    <span><i class="fa-solid fa-lock"></i></span>
+    <div><h3>Sistema protegido pelos Termos de Uso</h3><p>Nenhum módulo, dado ou ferramenta foi liberado para esta conta.</p><p>Peça ao administrador para concluir a configuração dos Termos e tente entrar novamente.</p></div>
+  </div>`;
+  legalTermsMessage.textContent = readableError(error);
+  legalTermsModal.hidden = false;
+  document.body.classList.add("is-legal-gated");
+  syncModalLock();
+  requestAnimationFrame(() => legalTermsContent.focus());
+
+  return new Promise((resolve) => {
+    legalTermsGateResolve = resolve;
+  });
+}
+
+function renderLegalTermsMarkup(content) {
+  const lines = String(content || "").replace(/\r/g, "").split("\n");
+  const output = [];
+  let listOpen = false;
+  const closeList = () => {
+    if (!listOpen) return;
+    output.push("</ul>");
+    listOpen = false;
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      return;
+    }
+    if (line.startsWith("## ")) {
+      closeList();
+      output.push(`<h3>${escapeHtml(line.slice(3))}</h3>`);
+      return;
+    }
+    if (line.startsWith("- ")) {
+      if (!listOpen) {
+        output.push("<ul>");
+        listOpen = true;
+      }
+      output.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+      return;
+    }
+    closeList();
+    output.push(`<p>${escapeHtml(line)}</p>`);
+  });
+  closeList();
+  return output.join("");
+}
+
+function bindLegalSignatureCanvas() {
+  if (!legalSignatureCanvas) return;
+  legalSignatureCanvas.addEventListener("pointerdown", startLegalSignatureStroke);
+  legalSignatureCanvas.addEventListener("pointermove", continueLegalSignatureStroke);
+  legalSignatureCanvas.addEventListener("pointerup", endLegalSignatureStroke);
+  legalSignatureCanvas.addEventListener("pointercancel", endLegalSignatureStroke);
+  legalSignatureCanvas.addEventListener("pointerleave", (event) => {
+    if (legalSignatureDrawing && event.buttons === 0) endLegalSignatureStroke(event);
+  });
+}
+
+function initializeLegalSignatureCanvas() {
+  if (!legalSignatureCanvas) return;
+  const rect = legalSignatureCanvas.getBoundingClientRect();
+  const pixelRatio = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  legalSignatureCanvas.width = Math.max(1, Math.round(rect.width * pixelRatio));
+  legalSignatureCanvas.height = Math.max(1, Math.round(rect.height * pixelRatio));
+  const context = legalSignatureCanvas.getContext("2d");
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, rect.width, rect.height);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = 3.4;
+  context.strokeStyle = "#102a43";
+  context.shadowColor = "rgba(16, 42, 67, 0.16)";
+  context.shadowBlur = 0.6;
+  legalSignatureHasInk = false;
+  legalSignatureDrawing = false;
+  legalSignatureCanvas.classList.remove("has-ink", "has-error");
+}
+
+function legalSignaturePoint(event) {
+  const rect = legalSignatureCanvas.getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+
+function startLegalSignatureStroke(event) {
+  if (legalTermsModal.hidden) return;
+  event.preventDefault();
+  legalSignatureDrawing = true;
+  legalSignatureCanvas.setPointerCapture?.(event.pointerId);
+  const point = legalSignaturePoint(event);
+  const context = legalSignatureCanvas.getContext("2d");
+  context.beginPath();
+  context.moveTo(point.x, point.y);
+  context.lineTo(point.x + 0.1, point.y + 0.1);
+  context.stroke();
+  legalSignatureHasInk = true;
+  legalSignatureCanvas.classList.add("has-ink");
+  legalSignatureCanvas.classList.remove("has-error");
+}
+
+function continueLegalSignatureStroke(event) {
+  if (!legalSignatureDrawing) return;
+  event.preventDefault();
+  const point = legalSignaturePoint(event);
+  const context = legalSignatureCanvas.getContext("2d");
+  context.lineTo(point.x, point.y);
+  context.stroke();
+}
+
+function endLegalSignatureStroke(event) {
+  if (!legalSignatureDrawing) return;
+  legalSignatureDrawing = false;
+  try { legalSignatureCanvas.releasePointerCapture?.(event.pointerId); } catch {}
+}
+
+function clearLegalSignature() {
+  initializeLegalSignatureCanvas();
+  legalSignatureCanvas.focus?.();
+}
+
+function formatCpfInput(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 11);
+  return digits
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1-$2");
+}
+
+function isValidCpf(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  const calculate = (length) => {
+    let sum = 0;
+    for (let index = 0; index < length; index += 1) sum += Number(digits[index]) * (length + 1 - index);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  return calculate(9) === Number(digits[9]) && calculate(10) === Number(digits[10]);
+}
+
+async function handleLegalTermsSubmit(event) {
+  event.preventDefault();
+  legalTermsMessage.textContent = "";
+
+  if (!pendingLegalTerms) return;
+  if (!isValidCpf(legalSignerCpf.value)) {
+    legalTermsMessage.textContent = "Informe um CPF válido para identificar o responsável.";
+    legalSignerCpf.focus();
+    return;
+  }
+  if (!legalSignatureHasInk) {
+    legalTermsMessage.textContent = "Faça sua assinatura no campo indicado.";
+    legalSignatureCanvas.classList.add("has-error");
+    return;
+  }
+  if (![legalConfirmRead, legalConfirmAuthority, legalConfirmEvidence].every((input) => input.checked)) {
+    legalTermsMessage.textContent = "Confirme as três declarações para continuar.";
     return;
   }
 
-  showStoreDashboard();
+  try {
+    setFormBusy(legalTermsForm, true);
+    await authenticatedRpc("lc_accept_legal_terms", {
+      p_signer_name: legalSignerName.value.trim(),
+      p_signer_role: legalSignerRole.value.trim(),
+      p_signer_cpf: legalSignerCpf.value,
+      p_signature_data_url: legalSignatureCanvas.toDataURL("image/png"),
+      p_user_agent: navigator.userAgent,
+      p_client_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      p_client_timestamp: new Date().toISOString(),
+    });
+    legalTermsModal.hidden = true;
+    document.body.classList.remove("is-legal-gated");
+    pendingLegalTerms = null;
+    syncModalLock();
+    const resolveGate = legalTermsGateResolve;
+    legalTermsGateResolve = null;
+    resolveGate?.(true);
+  } catch (error) {
+    legalTermsMessage.textContent = readableError(error);
+  } finally {
+    setFormBusy(legalTermsForm, false);
+  }
+}
+
+async function handleLegalTermsLogout() {
+  legalTermsModal.hidden = true;
+  document.body.classList.remove("is-legal-gated");
+  pendingLegalTerms = null;
+  syncModalLock();
+  const resolveGate = legalTermsGateResolve;
+  legalTermsGateResolve = null;
+  resolveGate?.(false);
+  await handleLogout();
 }
 
 function showAdminDashboard() {
@@ -852,7 +1142,7 @@ function showAdminDashboard() {
   clientWalletSearch.value = "";
   syncAiChatStoreScope("");
   const isTechnician = currentProfile.role === "technician";
-  sessionRole.textContent = `${isTechnician ? "Empresa" : "Admin"} · ${currentProfile.fullName || currentProfile.username}`;
+  sessionRole.textContent = `${isTechnician ? "Agência" : "Admin"} · ${currentProfile.fullName || currentProfile.username}`;
   storeForm.hidden = false;
   technicianForm.hidden = isTechnician;
   technicianListPanel.hidden = isTechnician;
@@ -872,7 +1162,7 @@ function showStoreDashboard() {
     name: currentProfile.storeName || currentProfile.username,
     username: currentProfile.username,
   };
-  sessionRole.textContent = `Loja · ${activeStoreContext?.name || currentProfile.username}`;
+  sessionRole.textContent = `Cliente · ${activeStoreContext?.name || currentProfile.username}`;
   backAdminButton.hidden = true;
   settingsButton.hidden = true;
   appointmentMonitorToggle.hidden = false;
@@ -905,6 +1195,7 @@ async function handleLogout() {
     leads = [];
     technicians = [];
     profileAvatars = [];
+    legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pending: 0, accounts: [] };
     aiChats = [];
     activeAiChatId = null;
     aiChatStoreScopeId = "";
@@ -929,23 +1220,153 @@ function showAuth() {
   closeSettingsModal();
   closeManagedAccountModal();
   closeAiChat();
+  window.ProspectionsModule?.deactivate?.();
+  activeSystemModule = "leads";
+  setProspectionVisualMode(false);
+  leadModuleSnapshot = null;
   settingsButton.hidden = true;
   authScreen.hidden = false;
   appView.hidden = true;
   adminView.hidden = true;
   storeView.hidden = true;
+  prospectionView.hidden = true;
+  if (legalTermsModal) legalTermsModal.hidden = true;
+  if (legalDocumentModal) legalDocumentModal.hidden = true;
+  pendingLegalTerms = null;
+  legalTermsModal?.classList.remove("is-unavailable");
+  if (legalTermsRetry) legalTermsRetry.hidden = true;
+  if (legalTermsForm) legalTermsForm.hidden = false;
+  currentLegalDocument = null;
+  document.body.classList.remove("is-legal-gated");
+  appMainTitle.textContent = "Controle de Leads";
+  syncModalLock();
+  updateSystemModuleControls();
 }
 
-function setAuthTab(tabName) {
-  const isLogin = tabName === "login";
-  loginForm.hidden = !isLogin;
-  signupForm.hidden = isLogin;
-  authTitle.textContent = isLogin ? "Login" : "Criar admin";
-  clearAuthMessage();
+function getSystemModuleStorageKey() {
+  return `${SYSTEM_MODULE_STORAGE_PREFIX}:${currentProfile?.id || "anonymous"}`;
+}
 
-  $$("[data-auth-tab]").forEach((tab) => {
-    tab.classList.toggle("is-active", tab.dataset.authTab === tabName);
-  });
+function updateSystemModuleControls() {
+  const isLeads = activeSystemModule === "leads";
+  const prospectionsAllowed = canUseProspections();
+  moduleLeadsButton.classList.toggle("is-active", isLeads);
+  moduleProspectionsButton.classList.toggle("is-active", !isLeads);
+  moduleProspectionsButton.classList.toggle("is-locked", !prospectionsAllowed);
+  moduleProspectionsButton.disabled = !currentProfile;
+  moduleLeadsButton.setAttribute("aria-selected", String(isLeads));
+  moduleProspectionsButton.setAttribute("aria-selected", String(!isLeads));
+  moduleProspectionsButton.setAttribute("aria-disabled", "false");
+  moduleProspectionsButton.title = prospectionsAllowed
+    ? "Abrir Prospecções"
+    : "Conhecer Prospecções e solicitar upgrade";
+}
+
+function canUseProspections() {
+  if (!currentProfile) return false;
+  if (["admin", "technician"].includes(currentProfile.role)) {
+    return activeStoreContext ? activeStoreContext.prospectionEnabled !== false : true;
+  }
+  const profileStore = stores.find((store) => store.id === currentProfile.storeId);
+  return Boolean(profileStore?.prospectionEnabled ?? currentProfile.prospectionEnabled);
+}
+
+function setProspectionVisualMode(enabled, operation = false) {
+  const stylesheet = document.querySelector("#prospecOriginalStyles");
+  if (stylesheet) stylesheet.disabled = !(enabled && operation);
+  document.body.classList.toggle("is-prospections-module", enabled);
+  document.body.classList.toggle("is-prospections-operation", enabled && operation);
+}
+
+function captureLeadModuleSnapshot() {
+  return {
+    adminViewHidden: adminView.hidden,
+    storeViewHidden: storeView.hidden,
+    sessionRoleText: sessionRole.textContent,
+    backAdminHidden: backAdminButton.hidden,
+    settingsHidden: settingsButton.hidden,
+    appointmentToggleHidden: appointmentMonitorToggle.hidden,
+    appointmentPanelHidden: appointmentMonitorPanel.hidden,
+  };
+}
+
+function restoreLeadModuleSnapshot() {
+  const fallbackShowsAdmin = ["admin", "technician"].includes(currentProfile?.role);
+  const snapshot = leadModuleSnapshot || {};
+  adminView.hidden = snapshot.adminViewHidden ?? !fallbackShowsAdmin;
+  storeView.hidden = snapshot.storeViewHidden ?? fallbackShowsAdmin;
+  sessionRole.textContent = snapshot.sessionRoleText || sessionRole.textContent;
+  backAdminButton.hidden = snapshot.backAdminHidden ?? true;
+  settingsButton.hidden = snapshot.settingsHidden ?? currentProfile?.role !== "admin";
+  appointmentMonitorToggle.hidden = snapshot.appointmentToggleHidden ?? currentProfile?.role !== "store";
+  appointmentMonitorPanel.hidden = snapshot.appointmentPanelHidden ?? true;
+}
+
+async function setSystemModule(moduleName, { persist = true } = {}) {
+  if (!currentProfile) return;
+  const nextModule = moduleName === "prospections" ? "prospections" : "leads";
+
+  if (nextModule === activeSystemModule) {
+    updateSystemModuleControls();
+    return;
+  }
+
+  if (nextModule === "prospections" && !window.ProspectionsModule?.activate) {
+    showAppNotification("O módulo de Prospecções não foi carregado. Atualize a página.", "error");
+    return;
+  }
+
+  if (nextModule === "prospections") {
+    setProspectionVisualMode(true, false);
+    leadModuleSnapshot = captureLeadModuleSnapshot();
+    activeSystemModule = "prospections";
+    updateSystemModuleControls();
+    appMainTitle.textContent = "Controle de Prospecções";
+    adminView.hidden = true;
+    storeView.hidden = true;
+    prospectionView.hidden = false;
+    appointmentMonitorToggle.hidden = true;
+    appointmentMonitorPanel.hidden = true;
+    backAdminButton.hidden = true;
+    closeAiChat();
+
+    try {
+      await window.ProspectionsModule.activate({
+        profile: { ...currentProfile },
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+        prospectionAccessGranted: canUseProspections(),
+        initialStoreId: activeStoreContext?.id || currentProfile.storeId || "",
+        initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
+        rpc: authenticatedRpc,
+        notify: showAppNotification,
+        setOperationMode: (isOperation) => setProspectionVisualMode(true, Boolean(isOperation)),
+        openLeadsForStore: async (storeId) => {
+          await setSystemModule("leads");
+          if (["admin", "technician"].includes(currentProfile?.role) && storeId) {
+            await openStoreAsAdmin(storeId);
+          }
+        },
+        openStoreAccess: (storeId) => openManagedAccountModal("store", storeId),
+      });
+      renderCurrentSessionAvatar();
+    } catch (error) {
+      window.ProspectionsModule?.renderFatalError?.(readableError(error));
+      showAppNotification(readableError(error), "error");
+    }
+  } else {
+    setProspectionVisualMode(false);
+    activeSystemModule = "leads";
+    updateSystemModuleControls();
+    window.ProspectionsModule?.deactivate?.();
+    prospectionView.hidden = true;
+    appMainTitle.textContent = "Controle de Leads";
+    restoreLeadModuleSnapshot();
+    leadModuleSnapshot = null;
+    renderCurrentSessionAvatar();
+  }
+
+  if (persist) localStorage.setItem(getSystemModuleStorageKey(), activeSystemModule);
 }
 
 async function handleCreateStore(event) {
@@ -962,7 +1383,7 @@ async function handleCreateStore(event) {
 
   const technicianId = getStoreCreationTechnicianId();
   if (!technicianId) {
-    showStoreMessage("Selecione a empresa responsável por esta loja.");
+    showStoreMessage("Selecione a agência responsável por este cliente.");
     return;
   }
 
@@ -1004,13 +1425,19 @@ async function handleCreateTechnician(event) {
 
   const username = normalizeNick(technicianNick.value);
   const storeLimit = Number.parseInt(technicianStoreLimit.value, 10);
+  const prospectionLimit = Number.parseInt(technicianProspectionLimit.value, 10);
   if (!username) {
-    showTechnicianMessage("Digite um login válido para a empresa.");
+    showTechnicianMessage("Digite um login válido para a agência.");
     return;
   }
 
   if (!Number.isInteger(storeLimit) || storeLimit < 0) {
     showTechnicianMessage("Informe um limite de clientes válido.");
+    return;
+  }
+
+  if (!Number.isInteger(prospectionLimit) || prospectionLimit < 0 || prospectionLimit > storeLimit) {
+    showTechnicianMessage("A franquia de Prospecções deve ficar entre zero e o limite total de clientes.");
     return;
   }
 
@@ -1023,6 +1450,10 @@ async function handleCreateTechnician(event) {
       p_password: technicianPassword.value,
       p_store_limit: storeLimit,
     }));
+    await authenticatedRpc("lc_set_technician_prospection_limit", {
+      p_technician_id: createdTechnician.id,
+      p_limit: prospectionLimit,
+    });
     if (avatarUrl && createdTechnician?.id) {
       await authenticatedRpc("lc_set_profile_avatar", {
         p_account_type: "technician",
@@ -1035,7 +1466,8 @@ async function handleCreateTechnician(event) {
     setAvatarFileName(technicianAvatar);
     await refreshRemoteState();
     technicianStoreLimit.value = "5";
-    showTechnicianMessage("Empresa criada.", "success");
+    technicianProspectionLimit.value = "0";
+    showTechnicianMessage("Agência criada.", "success");
     renderAll();
   } catch (error) {
     showTechnicianMessage(readableError(error));
@@ -1131,6 +1563,12 @@ function handleManagementListClick(event) {
     return;
   }
 
+  const deleteButton = event.target.closest("[data-account-delete]");
+  if (deleteButton) {
+    confirmDeleteManagedAccount(deleteButton.dataset.accountDelete, deleteButton.dataset.accountId);
+    return;
+  }
+
   const technicianButton = event.target.closest("[data-technician-login]");
   if (technicianButton && currentProfile?.role === "admin") {
     guardUnsavedOptions(() => openTechnicianAsAdmin(technicianButton.dataset.technicianLogin));
@@ -1140,6 +1578,49 @@ function handleManagementListClick(event) {
   const button = event.target.closest("[data-store-login]");
   if (!button || !["admin", "technician"].includes(currentProfile?.role)) return;
   guardUnsavedOptions(() => openStoreAsAdmin(button.dataset.storeLogin).catch((error) => showAppNotification(readableError(error), "error")));
+}
+
+function confirmDeleteManagedAccount(type, id) {
+  const isStore = type === "store";
+  const canDelete = isStore ? canManageStoreAccount(id) : currentProfile?.role === "admin";
+  if (!canDelete) return;
+  const record = isStore
+    ? stores.find((store) => store.id === id)
+    : technicians.find((technician) => technician.id === id);
+  if (!record) return;
+
+  const name = isStore ? record.name : record.fullName || record.username;
+  openConfirmModal({
+    eyebrow: isStore ? "Excluir cliente" : "Excluir agência",
+    title: `Excluir ${name}?`,
+    message: isStore
+      ? "O acesso será desativado e o cliente sairá da carteira. Os dados históricos serão preservados no banco."
+      : "A agência só poderá ser excluída depois que todos os clientes ativos forem removidos ou transferidos.",
+    confirmText: "Excluir",
+    action: () => deleteManagedAccount(type, id),
+  });
+}
+
+async function deleteManagedAccount(type, id) {
+  try {
+    if (type === "store") {
+      await authenticatedRpc("lc_delete_store_account", { p_store_id: id });
+    } else {
+      await authenticatedRpc("lc_delete_agency_account", { p_agency_id: id });
+    }
+    await refreshRemoteState();
+    if (activeSystemModule === "prospections") {
+      await window.ProspectionsModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+        prospectionAccessGranted: canUseProspections(),
+      });
+    }
+    renderAll();
+    showAppNotification(type === "store" ? "Cliente excluído" : "Agência excluída");
+  } catch (error) {
+    showAppNotification(readableError(error), "error");
+  }
 }
 
 function openManagedAccountModal(type, id) {
@@ -1154,14 +1635,14 @@ function openManagedAccountModal(type, id) {
 
   managedAccountType.value = type;
   managedAccountId.value = id;
-  managedAccountTitle.textContent = type === "store" ? "Editar loja" : "Editar empresa";
-  managedAccountNameLabel.textContent = type === "store" ? "Nome da loja" : "Nome da empresa";
+  managedAccountTitle.textContent = type === "store" ? "Editar cliente" : "Editar agência";
+  managedAccountNameLabel.textContent = type === "store" ? "Nome do cliente" : "Nome da agência";
   managedAccountName.value = type === "store" ? record.name : record.fullName || record.username;
   const canAssignCompany = type === "store" && currentProfile?.role === "admin";
   managedAccountTechnicianField.hidden = !canAssignCompany;
   managedAccountTechnician.required = canAssignCompany;
   managedAccountTechnician.innerHTML = canAssignCompany
-    ? '<option value="">Selecione a empresa</option>' + technicians
+    ? '<option value="">Selecione a agência</option>' + technicians
         .map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)} · ${technician.storeCount}/${technician.storeLimit}</option>`)
         .join("")
     : "";
@@ -1175,6 +1656,32 @@ function openManagedAccountModal(type, id) {
   managedAccountLimitField.hidden = type !== "technician";
   managedAccountLimit.required = type === "technician";
   managedAccountLimit.value = type === "technician" ? String(record.storeLimit ?? 0) : "";
+  managedAccountProspectionLimitField.hidden = type !== "technician";
+  managedAccountProspectionLimit.required = type === "technician";
+  managedAccountProspectionLimit.value = type === "technician" ? String(record.prospectionStoreLimit ?? 0) : "";
+  if (type === "technician" && managedAccountProspectionLimitHelp) {
+    const activeAccesses = record.prospectionStoreCount ?? 0;
+    managedAccountProspectionLimitHelp.textContent = activeAccesses > 0
+      ? `${activeAccesses} cliente${activeAccesses === 1 ? " está" : "s estão"} com acesso. Se o novo limite for menor, a agência escolherá quais clientes desativar.`
+      : "Defina quantos clientes desta agência podem usar Prospecções.";
+  }
+  managedAccountProspectionField.hidden = type !== "store";
+  managedAccountProspectionAccess.checked = type === "store" && Boolean(record.prospectionEnabled);
+  if (type === "store") {
+    const agency = technicians.find((technician) => technician.id === record.technicianId);
+    const inUse = agency?.prospectionStoreCount ?? accountUsage?.prospectionStoreCount ?? 0;
+    const limit = agency?.prospectionStoreLimit ?? accountUsage?.prospectionStoreLimit ?? 0;
+    const excess = Math.max(0, inUse - limit);
+    const hasAvailableLicense = inUse < limit;
+    managedAccountProspectionAccess.disabled = !record.prospectionEnabled && !hasAvailableLicense;
+    managedAccountProspectionAccess.dataset.quotaLocked = String(managedAccountProspectionAccess.disabled);
+    managedAccountProspectionHelp.textContent = excess > 0
+      ? `${inUse} acessos ativos para ${limit} licenças. Desative ${excess} cliente${excess === 1 ? "" : "s"} para regularizar o plano.`
+      : !record.prospectionEnabled && !hasAvailableLicense
+        ? `${inUse} de ${limit} licenças em uso. Desative outro cliente antes de liberar este acesso.`
+        : `${inUse} de ${limit} licenças da agência em uso. Este acesso não altera o limite de clientes Leads.`;
+  }
+  syncManagedAccountProspectionToggle();
   clearManagedAccountMessage();
   managedAccountModal.hidden = false;
   syncModalLock();
@@ -1192,6 +1699,13 @@ function closeManagedAccountModal() {
   managedAccountTechnician.required = false;
   managedAccountLimitField.hidden = true;
   managedAccountLimit.required = false;
+  managedAccountProspectionLimitField.hidden = true;
+  managedAccountProspectionLimit.required = false;
+  managedAccountProspectionField.hidden = true;
+  managedAccountProspectionAccess.checked = false;
+  managedAccountProspectionAccess.disabled = false;
+  delete managedAccountProspectionAccess.dataset.quotaLocked;
+  syncManagedAccountProspectionToggle();
   clearManagedAccountMessage();
   syncModalLock();
 }
@@ -1209,6 +1723,7 @@ async function handleManagedAccountSubmit(event) {
   const username = normalizeNick(managedAccountNick.value);
   const password = managedAccountPassword.value;
   const storeLimit = Number.parseInt(managedAccountLimit.value, 10);
+  const prospectionLimit = Number.parseInt(managedAccountProspectionLimit.value, 10);
 
   if (!managedAccountName.value.trim()) {
     showManagedAccountMessage("Digite o nome.");
@@ -1226,7 +1741,7 @@ async function handleManagedAccountSubmit(event) {
   }
 
   if (type === "store" && currentProfile?.role === "admin" && !managedAccountTechnician.value) {
-    showManagedAccountMessage("Selecione a empresa responsável pela loja.");
+    showManagedAccountMessage("Selecione a agência responsável pelo cliente.");
     return;
   }
 
@@ -1235,10 +1750,24 @@ async function handleManagedAccountSubmit(event) {
     return;
   }
 
+  if (type === "technician" && (!Number.isInteger(prospectionLimit) || prospectionLimit < 0 || prospectionLimit > storeLimit)) {
+    showManagedAccountMessage("A franquia de Prospecções deve ficar entre zero e o limite total de clientes.");
+    return;
+  }
+
   try {
     setFormBusy(managedAccountForm, true);
     const newAvatarUrl = await avatarFileToDataUrl(managedAccountAvatar.files?.[0]);
     if (type === "store") {
+      const storeRecord = stores.find((store) => store.id === id);
+      const wantsProspections = managedAccountProspectionAccess.checked;
+      if (storeRecord?.prospectionEnabled && !wantsProspections) {
+        await authenticatedRpc("lc_set_store_prospection_access", {
+          p_store_id: id,
+          p_enabled: false,
+        });
+        storeRecord.prospectionEnabled = false;
+      }
       await authenticatedRpc("lc_update_store_account", {
         p_store_id: id,
         p_name: managedAccountName.value.trim(),
@@ -1246,6 +1775,12 @@ async function handleManagedAccountSubmit(event) {
         p_password: password || null,
         p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedAccountTechnician.value,
       });
+      if (wantsProspections) {
+        await authenticatedRpc("lc_set_store_prospection_access", {
+          p_store_id: id,
+          p_enabled: true,
+        });
+      }
     } else if (type === "technician") {
       await authenticatedRpc("lc_update_technician_account", {
         p_technician_id: id,
@@ -1253,6 +1788,10 @@ async function handleManagedAccountSubmit(event) {
         p_nick: username,
         p_password: password || null,
         p_store_limit: storeLimit,
+      });
+      await authenticatedRpc("lc_set_technician_prospection_limit", {
+        p_technician_id: id,
+        p_limit: prospectionLimit,
       });
     }
 
@@ -1265,6 +1804,13 @@ async function handleManagedAccountSubmit(event) {
     }
 
     await refreshRemoteState();
+    if (activeSystemModule === "prospections") {
+      await window.ProspectionsModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+        prospectionAccessGranted: canUseProspections(),
+      });
+    }
     renderAll();
     closeManagedAccountModal();
     showAppNotification("Atualizado");
@@ -1272,7 +1818,20 @@ async function handleManagedAccountSubmit(event) {
     showManagedAccountMessage(readableError(error));
   } finally {
     setFormBusy(managedAccountForm, false);
+    if (!managedAccountModal.hidden && managedAccountType.value === "store") {
+      managedAccountProspectionAccess.disabled = managedAccountProspectionAccess.dataset.quotaLocked === "true";
+      syncManagedAccountProspectionToggle();
+    }
   }
+}
+
+function syncManagedAccountProspectionToggle() {
+  if (!managedAccountProspectionStatus) return;
+  const enabled = managedAccountProspectionAccess.checked;
+  const unavailable = managedAccountProspectionAccess.disabled && !enabled;
+  managedAccountProspectionStatus.textContent = unavailable ? "Sem licença" : enabled ? "Ativo" : "Desativado";
+  managedAccountProspectionStatus.classList.toggle("is-enabled", enabled);
+  managedAccountProspectionStatus.classList.toggle("is-unavailable", unavailable);
 }
 
 async function openStoreAsAdmin(storeId) {
@@ -1281,7 +1840,7 @@ async function openStoreAsAdmin(storeId) {
   if (!store || (currentProfile.role === "technician" && store.technicianId !== currentProfile.id)) return;
 
   activeStoreContext = store;
-  sessionRole.textContent = `${currentProfile.role === "technician" ? "Empresa" : "Admin"} · ${store.name}`;
+  sessionRole.textContent = `${currentProfile.role === "technician" ? "Agência" : "Admin"} · ${store.name}`;
   backAdminButton.hidden = false;
   appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
@@ -1308,7 +1867,7 @@ function openTechnicianAsAdmin(technicianId) {
   clientWalletSearch.value = "";
   syncAiChatStoreScope("");
   analyticsStoreFilter.value = "";
-  sessionRole.textContent = `Empresa · ${technician.fullName || technician.username}`;
+  sessionRole.textContent = `Agência · ${technician.fullName || technician.username}`;
   backAdminButton.hidden = false;
   adminView.hidden = false;
   storeView.hidden = true;
@@ -1350,9 +1909,9 @@ function returnToAdmin() {
   adminView.hidden = false;
   storeView.hidden = true;
   if (currentProfile.role === "technician") {
-    sessionRole.textContent = `Empresa · ${currentProfile.fullName || currentProfile.username}`;
+    sessionRole.textContent = `Agência · ${currentProfile.fullName || currentProfile.username}`;
   } else if (activeTechnicianContext) {
-    sessionRole.textContent = `Empresa · ${activeTechnicianContext.fullName || activeTechnicianContext.username}`;
+    sessionRole.textContent = `Agência · ${activeTechnicianContext.fullName || activeTechnicianContext.username}`;
   } else {
     sessionRole.textContent = `Admin · ${currentProfile.fullName || currentProfile.username}`;
   }
@@ -1420,12 +1979,6 @@ async function handleLeadSubmit(event) {
   }
 
   const intelligencePayload = buildLeadIntelligencePayload();
-  if (intelligencePayload.lifecycle_status === "lost" && !intelligencePayload.loss_reason) {
-    showFormMessage("Informe o motivo da perda do lead.");
-    leadLossReason.focus();
-    return;
-  }
-
   try {
     setFormBusy(form, true);
     try {
@@ -1497,23 +2050,8 @@ function editLead(id) {
   purchaseAmountInput.value = lead.purchaseAmount ? formatCurrencyInput(lead.purchaseAmount) : "";
   serviceOrderInput.value = lead.serviceOrder || "";
   leadNotesInput.value = lead.notes || "";
-  leadLifecycleStatus.value = lead.lifecycleStatus || inferLeadLifecycleStatus(lead);
-  leadOwnerName.value = lead.ownerName || "";
-  leadEmail.value = lead.email || "";
-  leadLossReason.value = lead.lossReason || "";
-  leadQualified.checked = Boolean(lead.qualified);
-  leadReturningCustomer.checked = Boolean(lead.returningCustomer);
-  leadMarketingConsent.checked = Boolean(lead.marketingConsent);
-  leadUtmSource.value = lead.utmSource || "";
-  leadUtmMedium.value = lead.utmMedium || "";
-  leadUtmCampaign.value = lead.utmCampaign || "";
-  leadUtmContent.value = lead.utmContent || "";
-  leadCampaignExternalId.value = lead.campaignExternalId || "";
-  leadAdsetExternalId.value = lead.adsetExternalId || "";
-  leadAdExternalId.value = lead.adExternalId || "";
-  leadGoogleClickId.value = lead.gclid || lead.gbraid || lead.wbraid || "";
-  leadMetaClickId.value = lead.fbclid || lead.fbc || "";
-  leadLandingPage.value = lead.landingPageUrl || "";
+  if (leadLifecycleStatus) leadLifecycleStatus.value = lead.lifecycleStatus || inferLeadLifecycleStatus(lead);
+  if (leadOwnerName) leadOwnerName.value = lead.ownerName || "";
   formTitle.textContent = "Editar lead";
   submitButton.textContent = "Atualizar lead";
   cancelEditButton.hidden = false;
@@ -1703,13 +2241,8 @@ function resetLeadForm() {
   purchaseAmountInput.value = "";
   serviceOrderInput.value = "";
   leadNotesInput.value = "";
-  leadLifecycleStatus.value = "new";
-  leadOwnerName.value = "";
-  leadEmail.value = "";
-  leadLossReason.value = "";
-  leadQualified.checked = false;
-  leadReturningCustomer.checked = false;
-  leadMarketingConsent.checked = false;
+  if (leadLifecycleStatus) leadLifecycleStatus.value = "new";
+  if (leadOwnerName) leadOwnerName.value = "";
   [
     leadUtmSource,
     leadUtmMedium,
@@ -1721,7 +2254,7 @@ function resetLeadForm() {
     leadGoogleClickId,
     leadMetaClickId,
     leadLandingPage,
-  ].forEach((input) => { input.value = ""; });
+  ].filter(Boolean).forEach((input) => { input.value = ""; });
   formTitle.textContent = "Cadastrar lead";
   submitButton.textContent = "Salvar lead";
   cancelEditButton.hidden = true;
@@ -1751,6 +2284,18 @@ async function refreshRemoteState() {
         throw error;
       })
     : Promise.resolve([]);
+
+  const prospectionEntitlementsRequest = authenticatedRpc("lc_get_prospection_entitlements").catch((error) => {
+    if (isMissingRpcError(error)) return null;
+    throw error;
+  });
+
+  const legalAcceptanceRequest = currentProfile.role === "admin"
+    ? authenticatedRpc("lc_list_legal_acceptances").catch((error) => {
+        if (isMissingRpcError(error)) return null;
+        throw error;
+      })
+    : Promise.resolve(null);
 
   const optionRowsRequest = configurationStoreId
     ? authenticatedRpc("lc_list_options", { p_store_id: configurationStoreId })
@@ -1804,6 +2349,8 @@ async function refreshRemoteState() {
     adMetricRows,
     targetRows,
     connectionRows,
+    entitlementRows,
+    legalAcceptanceRows,
   ] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     optionRowsRequest,
@@ -1817,6 +2364,8 @@ async function refreshRemoteState() {
     adMetricsRequest,
     marketingTargetsRequest,
     marketingConnectionsRequest,
+    prospectionEntitlementsRequest,
+    legalAcceptanceRequest,
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
@@ -1830,9 +2379,20 @@ async function refreshRemoteState() {
   marketingTargets = (targetRows || []).map(mapMarketingTargetRow);
   marketingConnections = connectionRows || [];
   technicians = (technicianRows || []).map(mapTechnicianRow);
+  applyProspectionEntitlements(entitlementRows);
+  applyLegalAcceptanceOverview(legalAcceptanceRows);
   profileAvatars = avatarRows || [];
   applyProfileAvatars();
   accountUsage = currentProfile.role === "technician" ? mapAccountUsage(firstRow(usageRows)) : null;
+  if (accountUsage) {
+    const entitlementProfile = normalizeProspectionEntitlements(entitlementRows)?.profile || {};
+    accountUsage.prospectionStoreLimit = Number(entitlementProfile.prospection_store_limit || 0);
+    accountUsage.prospectionStoreCount = Number(entitlementProfile.prospection_store_count || 0);
+  }
+
+  if (currentProfile.role === "store") {
+    currentProfile.prospectionEnabled = Boolean(stores.find((store) => store.id === currentProfile.storeId)?.prospectionEnabled);
+  }
 
   if (selectedAnalyticsStoreId && !getDashboardStores().some((store) => store.id === selectedAnalyticsStoreId)) {
     selectedAnalyticsStoreId = "";
@@ -1879,6 +2439,7 @@ async function refreshStoreConfiguration(storeId) {
 }
 
 function renderAll() {
+  updateSystemModuleControls();
   renderConfiguredCategoryLabels();
   renderChoiceButtons();
   renderCustomChoiceButtons();
@@ -1910,10 +2471,13 @@ function renderAdminDashboard() {
   const selectedLeads = selectedStore ? leads.filter((lead) => lead.storeId === selectedStore.id) : [];
   const isAnalytics = companyWorkspaceSection === "analytics";
   const isBackups = companyWorkspaceSection === "backups";
+  const isLegal = companyWorkspaceSection === "legal" && isRootAdmin;
   const isClients = companyWorkspaceSection === "clients";
 
   clientManagementArea.hidden = !isClients;
   backupCenter.hidden = !isBackups;
+  legalAdminCenter.hidden = !isLegal;
+  legalTermsNavButton.hidden = !isRootAdmin;
   analyticsClientPicker.hidden = !isAnalytics;
   if (!isAnalytics) setAnalyticsClientDropdown(false);
   analyticsSelectionEmpty.hidden = !isAnalytics || Boolean(selectedStore);
@@ -1924,7 +2488,7 @@ function renderAdminDashboard() {
     button.classList.toggle("is-active", button.dataset.companySection === companyWorkspaceSection);
   });
 
-  storeForm.hidden = isAnalytics;
+  storeForm.hidden = !isClients;
   technicianForm.hidden = !isRootAdmin;
   technicianListPanel.hidden = !isRootAdmin;
   settingsButton.hidden = !isRootAdmin;
@@ -1946,13 +2510,157 @@ function renderAdminDashboard() {
   renderAnalyticsFilters();
   renderAdminAnalytics();
   renderBackupCenter();
+  if (isLegal) renderLegalAdminCenter();
   renderCurrentSessionAvatar();
 }
 
 function setCompanyWorkspaceSection(section) {
-  if (!["clients", "analytics", "backups"].includes(section)) return;
+  if (!["clients", "analytics", "backups", "legal"].includes(section)) return;
+  if (section === "legal" && (currentProfile?.role !== "admin" || activeTechnicianContext)) return;
   companyWorkspaceSection = section;
   renderAll();
+  if (section === "legal") refreshLegalAcceptanceOverview();
+}
+
+async function refreshLegalAcceptanceOverview() {
+  try {
+    const data = await authenticatedRpc("lc_list_legal_acceptances");
+    applyLegalAcceptanceOverview(data);
+    if (companyWorkspaceSection === "legal") renderLegalAdminCenter();
+  } catch (error) {
+    if (!isMissingRpcError(error)) showAppNotification(readableError(error), "error");
+  }
+}
+
+function applyLegalAcceptanceOverview(data) {
+  const value = firstRow(data);
+  if (!value || typeof value !== "object") {
+    legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pending: 0, accounts: [] };
+    return;
+  }
+  legalAcceptanceOverview = {
+    activeVersion: value.active_version || "",
+    total: Number(value.total || 0),
+    accepted: Number(value.accepted || 0),
+    pending: Number(value.pending || 0),
+    accounts: Array.isArray(value.accounts) ? value.accounts : [],
+  };
+}
+
+function renderLegalAdminCenter() {
+  if (!legalAdminCenter || legalAdminCenter.hidden) return;
+  legalActiveVersion.textContent = legalAcceptanceOverview.activeVersion
+    ? `Versão ${legalAcceptanceOverview.activeVersion}`
+    : "Migração pendente";
+  legalTotalAccounts.textContent = String(legalAcceptanceOverview.total);
+  legalAcceptedAccounts.textContent = String(legalAcceptanceOverview.accepted);
+  legalPendingAccounts.textContent = String(legalAcceptanceOverview.pending);
+  renderLegalAcceptanceList();
+}
+
+function renderLegalAcceptanceList() {
+  if (!legalAcceptanceList) return;
+  const search = normalizeSearchText(legalAcceptanceSearch?.value || "");
+  const role = legalAcceptanceRoleFilter?.value || "all";
+  const status = legalAcceptanceStatusFilter?.value || "all";
+  const rows = legalAcceptanceOverview.accounts.filter((account) => {
+    const matchesSearch = !search || [account.account_name, account.agency_name, account.signer_name, account.login]
+      .some((value) => normalizeSearchText(value || "").includes(search));
+    const matchesRole = role === "all" || account.account_role === role;
+    const matchesStatus = status === "all" || account.status === status;
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  legalAcceptanceEmpty.hidden = rows.length > 0;
+  legalAcceptanceList.innerHTML = rows.map((account) => {
+    const isAccepted = account.status === "accepted";
+    const isOutdated = account.status === "outdated";
+    const statusLabel = isAccepted ? "Assinado" : isOutdated ? "Nova versão pendente" : "Aguardando assinatura";
+    const roleLabel = account.account_role === "admin" ? "Admin" : account.account_role === "technician" ? "Agência" : "Cliente";
+    return `<article class="legal-acceptance-card is-${escapeHtml(account.status || "pending")}">
+      <div class="legal-account-identity">
+        <span><i class="fa-solid ${account.account_role === "admin" ? "fa-shield-halved" : account.account_role === "technician" ? "fa-building" : "fa-store"}"></i></span>
+        <div><small>${roleLabel}</small><strong>${escapeHtml(account.account_name || "Conta")}</strong><em>@${escapeHtml(account.login || "—")}${account.account_role === "store" && account.agency_name ? ` · ${escapeHtml(account.agency_name)}` : ""}</em></div>
+      </div>
+      <div class="legal-acceptance-status">
+        <span class="legal-status-chip is-${escapeHtml(account.status || "pending")}"><i class="fa-solid ${isAccepted ? "fa-circle-check" : isOutdated ? "fa-rotate" : "fa-clock"}"></i>${statusLabel}</span>
+        ${account.accepted_at ? `<strong>${formatDateTime(account.accepted_at)}</strong><small>Versão ${escapeHtml(account.terms_version || "—")} · CPF final ${escapeHtml(account.signer_cpf_last4 || "—")}</small>` : `<strong>Primeiro acesso pendente</strong><small>O sistema bloqueará o uso até o aceite.</small>`}
+      </div>
+      <div class="legal-acceptance-signer">
+        <span>Responsável</span><strong>${escapeHtml(account.signer_name || "Não informado")}</strong><small>${escapeHtml(account.signer_role || "—")}</small>
+      </div>
+      <button class="secondary-button" type="button" data-legal-acceptance-id="${escapeHtml(account.acceptance_id || "")}"${account.acceptance_id ? "" : " disabled"}>
+        <i class="fa-solid fa-file-shield"></i>Ver documento
+      </button>
+    </article>`;
+  }).join("");
+}
+
+async function handleLegalAcceptanceListClick(event) {
+  const button = event.target.closest("[data-legal-acceptance-id]");
+  if (!button?.dataset.legalAcceptanceId) return;
+  try {
+    button.disabled = true;
+    const documentData = firstRow(await authenticatedRpc("lc_get_legal_acceptance_document", {
+      p_acceptance_id: button.dataset.legalAcceptanceId,
+    }));
+    openLegalDocumentModal(documentData);
+  } catch (error) {
+    showAppNotification(readableError(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function openLegalDocumentModal(documentData) {
+  if (!documentData) return;
+  currentLegalDocument = documentData;
+  legalDocumentTitle.textContent = documentData.terms_title || "Termo assinado";
+  legalDocumentSubtitle.textContent = `${documentData.account_name || "Conta"} · versão ${documentData.terms_version || "—"}`;
+  legalDocumentContent.innerHTML = renderLegalTermsMarkup(documentData.terms_snapshot || "");
+  const signatureUrl = String(documentData.signature_data_url || "").startsWith("data:image/png;base64,")
+    ? documentData.signature_data_url
+    : "";
+  legalDocumentEvidence.innerHTML = `<div class="legal-evidence-seal"><i class="fa-solid fa-shield-halved"></i><div><span>Integridade verificada</span><strong>Documento vinculado à sessão autenticada</strong></div></div>
+    <dl>
+      <div><dt>Conta</dt><dd>${escapeHtml(documentData.account_name || "—")}</dd></div>
+      <div><dt>Tipo</dt><dd>${documentData.account_role === "admin" ? "Admin" : documentData.account_role === "technician" ? "Agência" : "Cliente"}</dd></div>
+      <div><dt>Agência</dt><dd>${escapeHtml(documentData.agency_name || "—")}</dd></div>
+      <div><dt>Responsável</dt><dd>${escapeHtml(documentData.signer_name || "—")}</dd></div>
+      <div><dt>Cargo</dt><dd>${escapeHtml(documentData.signer_role || "—")}</dd></div>
+      <div><dt>CPF</dt><dd>***.***.***-${escapeHtml(documentData.signer_cpf_last4 || "••••")}</dd></div>
+      <div><dt>Aceite</dt><dd>${formatDateTime(documentData.accepted_at)}</dd></div>
+      <div><dt>IP registrado</dt><dd>${escapeHtml(documentData.ip_address || "Não disponível")}</dd></div>
+    </dl>
+    <div class="legal-signature-proof"><span>Assinatura eletrônica</span>${signatureUrl ? `<img src="${signatureUrl}" alt="Assinatura de ${escapeHtml(documentData.signer_name || "responsável")}" />` : "<strong>Imagem indisponível</strong>"}<small>Hash da assinatura · ${escapeHtml(documentData.signature_hash || "—")}</small></div>
+    <div class="legal-hash-proof"><span>Hash da evidência</span><code>${escapeHtml(documentData.evidence_hash || "—")}</code></div>`;
+  legalDocumentModal.hidden = false;
+  syncModalLock();
+}
+
+function closeLegalDocumentModal() {
+  if (!legalDocumentModal) return;
+  legalDocumentModal.hidden = true;
+  currentLegalDocument = null;
+  legalDocumentContent.innerHTML = "";
+  legalDocumentEvidence.innerHTML = "";
+  syncModalLock();
+}
+
+function downloadCurrentLegalDocument() {
+  if (!currentLegalDocument) return;
+  const documentData = currentLegalDocument;
+  const signatureUrl = String(documentData.signature_data_url || "").startsWith("data:image/png;base64,") ? documentData.signature_data_url : "";
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(documentData.terms_title || "Termo assinado")}</title><style>body{font:15px/1.6 Arial,sans-serif;color:#182033;max-width:900px;margin:40px auto;padding:0 32px}h1{font-size:28px}h2{font-size:18px;margin-top:28px}p,li{color:#3f4858}.proof{margin-top:36px;padding:24px;border:1px solid #ccd5e2;border-radius:16px}.proof img{display:block;width:320px;max-height:140px;object-fit:contain;border-bottom:1px solid #ccd5e2}.hash{font:11px monospace;overflow-wrap:anywhere;color:#526071}@media print{body{margin:0;max-width:none}}</style></head><body><p>CONTROLE DE LEADS E PROSPECÇÕES · EVIDÊNCIA ELETRÔNICA</p><h1>${escapeHtml(documentData.terms_title || "Termo assinado")}</h1><p>Versão ${escapeHtml(documentData.terms_version || "—")} · aceita em ${escapeHtml(formatDateTime(documentData.accepted_at))}</p>${renderLegalTermsMarkup(documentData.terms_snapshot || "")}<section class="proof"><h2>Comprovante de aceite</h2><p><strong>Conta:</strong> ${escapeHtml(documentData.account_name || "—")}<br><strong>Responsável:</strong> ${escapeHtml(documentData.signer_name || "—")} · ${escapeHtml(documentData.signer_role || "—")}<br><strong>CPF:</strong> ***.***.***-${escapeHtml(documentData.signer_cpf_last4 || "••••")}<br><strong>IP:</strong> ${escapeHtml(documentData.ip_address || "Não disponível")}</p>${signatureUrl ? `<img src="${signatureUrl}" alt="Assinatura eletrônica">` : ""}<p class="hash"><strong>Hash da evidência:</strong> ${escapeHtml(documentData.evidence_hash || "—")}</p><p class="hash"><strong>Hash do documento:</strong> ${escapeHtml(documentData.terms_hash || "—")}</p></section></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `termo-assinado-${normalizeNick(documentData.account_name || "conta")}-${String(documentData.accepted_at || "").slice(0, 10) || "data"}.html`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showAppNotification("Comprovante baixado.");
 }
 
 async function handleAnalyticsClientSelection() {
@@ -2084,6 +2792,7 @@ function renderAnalyticsClientOptions() {
             <strong>${escapeHtml(store.name)}</strong>
             <small>@${escapeHtml(store.username)} · ${leadCount} ${leadCount === 1 ? "lead" : "leads"}</small>
           </span>
+          ${store.prospectionEnabled ? `<span class="analytics-prospec-badge"><i class="fa-solid fa-phone"></i>PROSPEC</span>` : ""}
           <span class="analytics-client-option-status" aria-hidden="true">
             <i class="fa-solid ${isSelected ? "fa-check" : "fa-chevron-right"}"></i>
           </span>
@@ -2170,10 +2879,10 @@ function renderStoreCreationContext() {
   storeTechnicianField.hidden = !isRootAdmin;
   storeTechnician.required = isRootAdmin;
   storeFormEyebrow.textContent = isRootAdmin ? "Operação assistida" : "Sua carteira";
-  storeFormTitle.textContent = isRootAdmin ? "Criar cliente para empresa" : "Criar novo cliente";
+  storeFormTitle.textContent = isRootAdmin ? "Criar cliente para agência" : "Criar novo cliente";
 
   if (isRootAdmin) {
-    storeTechnician.innerHTML = '<option value="">Selecione a empresa</option>' + technicians
+    storeTechnician.innerHTML = '<option value="">Selecione a agência</option>' + technicians
       .map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)} · ${technician.storeCount}/${technician.storeLimit}</option>`)
       .join("");
     storeTechnician.value = technicians.some((technician) => technician.id === currentSelection) ? currentSelection : "";
@@ -2191,7 +2900,7 @@ function syncStoreCreationAvailability() {
 
   submitButton.disabled = !hasCapacity;
   if (!context) {
-    submitButton.textContent = "Selecione uma empresa";
+    submitButton.textContent = "Selecione uma agência";
   } else if (!hasCapacity) {
     submitButton.textContent = "Limite de clientes atingido";
   } else {
@@ -2229,7 +2938,7 @@ function renderStoreList() {
   storeEmptyState.hidden = dashboardStores.length > 0;
   storeEmptyTitle.textContent = search ? "Nenhum cliente encontrado." : "Nenhuma loja cadastrada ainda.";
   storeEmptyText.textContent = search
-    ? "Tente buscar por outro nome, login ou empresa responsável."
+    ? "Tente buscar por outro nome, login ou agência responsável."
     : "Crie o primeiro acesso para começar a receber leads.";
   storeList.innerHTML = dashboardStores
     .map(
@@ -2244,6 +2953,10 @@ function renderStoreList() {
             <div class="management-stats">
               <span><strong>${store.leadsCount}</strong> leads</span>
               <span><strong>${store.salesCount}</strong> compras</span>
+              <span class="feature-plan-badge ${store.prospectionEnabled ? "is-enabled" : "is-leads-only"}">
+                <i class="fa-solid ${store.prospectionEnabled ? "fa-phone" : "fa-user-group"}" aria-hidden="true"></i>
+                ${store.prospectionEnabled ? "PROSPEC · Duplo acesso" : "Somente Leads"}
+              </span>
             </div>
             </div>
           </div>
@@ -2256,6 +2969,7 @@ function renderStoreList() {
             </button>
             ${canEnterStore ? `<button class="mini-button" type="button" data-store-login="${store.id}">Gerenciar</button>` : ""}
             ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar acesso</button>` : ""}
+            ${canManageStoreAccount(store.id) ? `<button class="mini-button danger" type="button" data-account-delete="store" data-account-id="${store.id}">Excluir</button>` : ""}
           </div>
         </article>
       `,
@@ -2269,8 +2983,10 @@ function renderTechnicianList() {
 
   technicianEmptyState.hidden = technicians.length > 0;
   technicianList.innerHTML = technicians
-    .map((technician) => `
-      <article class="lead-card technician-card">
+    .map((technician) => {
+      const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
+      return `
+      <article class="lead-card technician-card${prospectionExcess > 0 ? " has-plan-overage" : ""}">
         <div class="management-profile">
           ${renderProfileAvatar(technician.avatarUrl, technician.fullName || technician.username, "building")}
           <div class="technician-card-main">
@@ -2281,14 +2997,21 @@ function renderTechnicianList() {
             <span>${technician.storeLimit > technician.storeCount ? `${technician.storeLimit - technician.storeCount} vagas` : "Limite atingido"}</span>
           </div>
           <div class="technician-usage-track" aria-hidden="true"><i style="width:${getCapacityPercent(technician.storeCount, technician.storeLimit)}%"></i></div>
+          <div class="technician-usage-row is-prospection-plan">
+            <span><i class="fa-solid fa-phone" aria-hidden="true"></i>${technician.prospectionStoreCount} de ${technician.prospectionStoreLimit} com Prospecções</span>
+            <span class="${prospectionExcess > 0 ? "plan-adjustment" : ""}">${prospectionExcess > 0 ? `${prospectionExcess} acesso${prospectionExcess === 1 ? "" : "s"} para ajustar` : `${technician.prospectionStoreLimit - technician.prospectionStoreCount} licenças livres`}</span>
+          </div>
+          <div class="technician-usage-track is-prospection-plan" aria-hidden="true"><i style="width:${getCapacityPercent(technician.prospectionStoreCount, technician.prospectionStoreLimit)}%"></i></div>
           </div>
         </div>
         <div class="card-actions">
           <button class="secondary-button" type="button" data-technician-login="${technician.id}">Acessar</button>
           <button class="mini-button" type="button" data-account-edit="technician" data-account-id="${technician.id}">Editar plano</button>
+          <button class="mini-button danger" type="button" data-account-delete="technician" data-account-id="${technician.id}">Excluir</button>
         </div>
       </article>
-    `)
+    `;
+    })
     .join("");
 }
 
@@ -2307,7 +3030,6 @@ function renderLeadList() {
           </div>
           <div class="lead-tags">
             ${renderTag(`Etapa: ${formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead))}`)}
-            ${renderTag(lead.qualified ? "Qualificado" : "")}
             ${renderTag(lead.ownerName ? `Responsável: ${lead.ownerName}` : "")}
             ${renderTag(lead.channel)}
             ${renderTag(formatLeadContactDate(lead) ? `Contato: ${formatLeadContactDate(lead)}` : "")}
@@ -2494,12 +3216,7 @@ function openLeadDetailsModal(id) {
       <h3>Qualificação comercial</h3>
       <div class="lead-details-grid">
         ${renderLeadDetailItem("Etapa", formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)))}
-        ${renderLeadDetailItem("Lead qualificado", lead.qualified ? "Sim" : "Não")}
         ${renderLeadDetailItem("Responsável", lead.ownerName)}
-        ${renderLeadDetailItem("E-mail", lead.email)}
-        ${renderLeadDetailItem("Motivo da perda", lead.lossReason)}
-        ${renderLeadDetailItem("Cliente recorrente", lead.returningCustomer ? "Sim" : "Não")}
-        ${renderLeadDetailItem("Consentimento", lead.marketingConsent ? "Sim" : "Não")}
       </div>
     </div>
     ${(lead.utmSource || lead.utmCampaign || lead.gclid || lead.fbclid || lead.adExternalId) ? `
@@ -5493,7 +6210,7 @@ async function runBackup({ manual = false } = {}) {
     const exportedLeads = exportedStores.reduce((total, result) => total + result.exported, 0);
     const currentStores = results.filter((result) => result.exported === 0).length;
     const summary = exportedLeads
-      ? `${exportedLeads} ${exportedLeads === 1 ? "lead novo ou alterado" : "leads novos ou alterados"} em ${exportedStores.length} ${exportedStores.length === 1 ? "empresa" : "empresas"}.`
+      ? `${exportedLeads} ${exportedLeads === 1 ? "lead novo ou alterado" : "leads novos ou alterados"} em ${exportedStores.length} ${exportedStores.length === 1 ? "cliente" : "clientes"}.`
       : "Nenhuma diferença encontrada. Todos os backups já estavam atualizados.";
     showBackupMessage(`${summary}${currentStores && exportedLeads ? ` ${currentStores} sem alterações.` : ""}`, "success");
     renderAll();
@@ -5521,7 +6238,7 @@ async function backupStoreLeads(store, storeRows, now) {
     const categories = getLeadCategoriesForExport(storeRows);
     const workbook = buildLegacyLeadsExcelWorkbook(changedRows, store, {
       scopeLabel: isFirstBackup
-        ? "Primeiro backup completo desta empresa"
+        ? "Primeiro backup completo deste cliente"
         : "Backup incremental: somente leads novos ou alterados",
       categories,
     });
@@ -5609,7 +6326,7 @@ async function getBackupStoreDirectory(rootHandle, store, date) {
 
 function getBackupOwnerLabel() {
   if (currentProfile?.role === "technician") {
-    return currentProfile.fullName || currentProfile.username || "Empresa B2B";
+    return currentProfile.fullName || currentProfile.username || "Agência B2B";
   }
   return currentProfile?.fullName || currentProfile?.username || "Administrador";
 }
@@ -5751,7 +6468,7 @@ function renderBackupCenter() {
   backupChooseDirectory.innerHTML = hasDirectory
     ? '<i class="fa-solid fa-plug-circle-check" aria-hidden="true"></i> Trocar ou reconectar HD'
     : '<i class="fa-solid fa-hard-drive" aria-hidden="true"></i> Escolher HD ou pasta';
-  backupClientsTitle.textContent = `${storesForBackup.length} ${storesForBackup.length === 1 ? "empresa preparada" : "empresas preparadas"}`;
+  backupClientsTitle.textContent = `${storesForBackup.length} ${storesForBackup.length === 1 ? "cliente preparado" : "clientes preparados"}`;
   backupClientList.innerHTML = storesForBackup.length
     ? storesForBackup.map((store) => {
         const storeManifest = backupManifest.stores[store.id];
@@ -5767,7 +6484,7 @@ function renderBackupCenter() {
           </article>
         `;
       }).join("")
-    : '<div class="empty-state"><strong>Nenhuma empresa nesta carteira.</strong><span>Cadastre um cliente antes de iniciar os backups.</span></div>';
+    : '<div class="empty-state"><strong>Nenhum cliente nesta carteira.</strong><span>Cadastre um cliente antes de iniciar os backups.</span></div>';
 }
 
 function showBackupMessage(message, type = "") {
@@ -6121,7 +6838,7 @@ async function handleAiSettingsSubmit(event) {
     });
     renderAiSettingsForm();
     renderAdminAiSettingsForm();
-    showAiSettingsMessage("Configuração central salva para todas as empresas.", "success");
+    showAiSettingsMessage("Configuração central salva para todas as agências.", "success");
   } catch (error) {
     showAiSettingsMessage(readableError(error));
   } finally {
@@ -6177,7 +6894,7 @@ async function handleAdminAiSettingsSubmit(event) {
     });
     renderAdminAiSettingsForm();
     renderAiSettingsForm();
-    showAdminAiSettingsMessage("IA salva. As empresas B2B já usarão esta configuração.", "success");
+    showAdminAiSettingsMessage("IA salva. As agências já usarão esta configuração.", "success");
   } catch (error) {
     showAdminAiSettingsMessage(readableError(error));
   } finally {
@@ -7342,6 +8059,7 @@ function mapStoreRow(row) {
     salesCount: Number(row.sales_count || 0),
     technicianId: row.technician_id || null,
     technicianName: row.technician_name || "",
+    prospectionEnabled: true,
     avatarUrl: "",
   };
 }
@@ -7355,8 +8073,40 @@ function mapTechnicianRow(row) {
     isActive: row.is_active !== false,
     storeLimit: Number(row.store_limit || 0),
     storeCount: Number(row.store_count || 0),
+    prospectionStoreLimit: 0,
+    prospectionStoreCount: 0,
     avatarUrl: "",
   };
+}
+
+function normalizeProspectionEntitlements(data) {
+  const value = firstRow(data);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value;
+}
+
+function applyProspectionEntitlements(data) {
+  const entitlements = normalizeProspectionEntitlements(data);
+  if (!entitlements) {
+    stores.forEach((store) => { store.prospectionEnabled = true; });
+    technicians.forEach((technician) => {
+      technician.prospectionStoreLimit = technician.storeLimit;
+      technician.prospectionStoreCount = technician.storeCount;
+    });
+    return;
+  }
+
+  const storeAccess = new Map((entitlements.stores || []).map((row) => [row.store_id, row.prospection_enabled === true]));
+  stores.forEach((store) => {
+    store.prospectionEnabled = storeAccess.get(store.id) === true;
+  });
+
+  const agencyAccess = new Map((entitlements.technicians || []).map((row) => [row.technician_id, row]));
+  technicians.forEach((technician) => {
+    const access = agencyAccess.get(technician.id) || {};
+    technician.prospectionStoreLimit = Number(access.prospection_store_limit || 0);
+    technician.prospectionStoreCount = Number(access.prospection_store_count || 0);
+  });
 }
 
 function applyProfileAvatars() {
@@ -7474,6 +8224,8 @@ function mapAccountUsage(row) {
     technicianId: row.technician_id,
     storeLimit: Number(row.store_limit || 0),
     storeCount: Number(row.store_count || 0),
+    prospectionStoreLimit: 0,
+    prospectionStoreCount: 0,
   };
 }
 
@@ -7659,38 +8411,33 @@ function buildCustomValuesPayload() {
 }
 
 function buildLeadIntelligencePayload() {
+  const existingLead = leads.find((lead) => lead.id === editingIdInput.value) || {};
   let status = leadLifecycleStatus?.value || "new";
   if (selectedValues.bought === "Sim") status = "won";
-  else if (status !== "lost" && selectedValues.visited === "Sim") status = "visited";
-  else if (status !== "lost" && selectedValues.scheduled === "Sim") status = "scheduled";
-  else if (status !== "lost" && leadQualified?.checked) status = "qualified";
+  const qualifiedStatuses = new Set(["qualified", "scheduled", "visited", "won"]);
   return {
     lifecycle_status: status,
-    qualified: Boolean(leadQualified?.checked || status === "qualified"),
-    loss_reason: status === "lost" ? leadLossReason?.value.trim() || null : null,
+    qualified: qualifiedStatuses.has(status),
+    loss_reason: status === "lost" ? existingLead.lossReason || null : null,
     owner_name: leadOwnerName?.value.trim() || null,
-    email: leadEmail?.value.trim().toLowerCase() || null,
-    returning_customer: Boolean(leadReturningCustomer?.checked),
-    marketing_consent: Boolean(leadMarketingConsent?.checked),
-    utm_source: leadUtmSource?.value.trim() || null,
-    utm_medium: leadUtmMedium?.value.trim() || null,
-    utm_campaign: leadUtmCampaign?.value.trim() || null,
-    utm_content: leadUtmContent?.value.trim() || null,
-    campaign_external_id: leadCampaignExternalId?.value.trim() || null,
-    adset_external_id: leadAdsetExternalId?.value.trim() || null,
-    ad_external_id: leadAdExternalId?.value.trim() || null,
-    gclid: leadGoogleClickId?.value.trim() || null,
-    fbclid: leadMetaClickId?.value.trim() || null,
-    landing_page_url: leadLandingPage?.value.trim() || null,
+    email: existingLead.email || null,
+    returning_customer: Boolean(existingLead.returningCustomer),
+    marketing_consent: Boolean(existingLead.marketingConsent),
+    utm_source: existingLead.utmSource || null,
+    utm_medium: existingLead.utmMedium || null,
+    utm_campaign: existingLead.utmCampaign || null,
+    utm_content: existingLead.utmContent || null,
+    campaign_external_id: existingLead.campaignExternalId || null,
+    adset_external_id: existingLead.adsetExternalId || null,
+    ad_external_id: existingLead.adExternalId || null,
+    gclid: existingLead.gclid || existingLead.gbraid || existingLead.wbraid || null,
+    fbclid: existingLead.fbclid || existingLead.fbc || null,
+    landing_page_url: existingLead.landingPageUrl || null,
   };
 }
 
 function syncLeadIntelligenceVisibility() {
-  if (!leadLifecycleStatus || !leadLossReasonField) return;
-  const isLost = leadLifecycleStatus.value === "lost";
-  leadLossReasonField.hidden = !isLost;
-  leadLossReason.required = isLost;
-  if (leadLifecycleStatus.value === "qualified") leadQualified.checked = true;
+  if (!leadLifecycleStatus) return;
 }
 
 function inferLeadLifecycleStatus(lead) {
@@ -8126,6 +8873,7 @@ function toggleTheme() {
 function setTheme(theme) {
   const isDark = theme === "dark";
   document.body.classList.toggle("is-dark", isDark);
+  document.body.classList.toggle("is-dark-mode", isDark);
   localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
   const label = isDark ? "Modo claro" : "Modo escuro";
   themeToggle.setAttribute("aria-label", label);

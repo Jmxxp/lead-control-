@@ -2,3 +2,6 @@
 .env.*
 node_modules/
 .DS_Store
+
+# Projeto-fonte local usado na integração de Prospecções.
+/prospec/

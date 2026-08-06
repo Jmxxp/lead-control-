@@ -28,10 +28,13 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260716-focus-cleanup-1" />
+    <link rel="stylesheet" href="styles.css?v=20260805-governance-4" />
+    <link rel="stylesheet" href="prospections.css?v=20260805-governance-4" />
+    <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260716-focus-cleanup-1" defer></script>
+    <script src="app.js?v=20260805-governance-4" defer></script>
+    <script src="prospections.js?v=20260805-governance-4" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -43,11 +46,6 @@
               <p class="eyebrow">Acesso</p>
               <h1 id="authTitle">Login</h1>
             </div>
-          </div>
-
-          <div class="auth-tabs" role="tablist" aria-label="Acesso">
-            <button class="auth-tab is-active" type="button" data-auth-tab="login">Login</button>
-            <button class="auth-tab" type="button" data-auth-tab="signup">Criar admin</button>
           </div>
 
           <form id="loginForm" class="auth-form">
@@ -67,27 +65,6 @@
             <button class="primary-button" type="submit">Entrar</button>
           </form>
 
-          <form id="signupForm" class="auth-form" hidden>
-            <label class="field">
-              <span>Nome do admin</span>
-              <input id="signupName" type="text" placeholder="Seu nome" required />
-            </label>
-            <label class="field">
-              <span>Nick</span>
-              <input id="signupNick" type="text" placeholder="ex: admin" required />
-            </label>
-            <label class="field">
-              <span>Senha</span>
-              <div class="password-field">
-                <input id="signupPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
-                <button class="password-toggle" type="button" data-toggle-password="signupPassword" aria-label="Mostrar senha" title="Mostrar senha">
-                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
-                </button>
-              </div>
-            </label>
-            <button class="primary-button" type="submit">Criar cadastro admin</button>
-          </form>
-
           <p id="authMessage" class="form-message" role="status" aria-live="polite"></p>
         </div>
       </section>
@@ -103,8 +80,18 @@
           </div>
           <div>
           <p class="eyebrow" id="sessionRole">Ótica</p>
-          <h1>Controle de Leads</h1>
+          <h1 id="appMainTitle">Controle de Leads</h1>
           </div>
+        </div>
+        <div id="moduleSwitcher" class="module-switcher" role="tablist" aria-label="Módulo do sistema">
+          <button id="moduleLeadsButton" class="module-switcher-button is-active" type="button" role="tab" aria-selected="true" data-system-module="leads">
+            <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+            <span>Leads</span>
+          </button>
+          <button id="moduleProspectionsButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" data-system-module="prospections">
+            <i class="fa-solid fa-phone" aria-hidden="true"></i>
+            <span>Prospecções</span>
+          </button>
         </div>
         <div class="topbar-actions">
           <div class="topbar-status" aria-label="Resumo do dia">
@@ -136,7 +123,7 @@
 
       <main>
         <section id="adminView" class="admin-view" hidden>
-          <nav id="companyWorkspaceNav" class="company-workspace-nav" aria-label="Áreas da empresa">
+          <nav id="companyWorkspaceNav" class="company-workspace-nav" aria-label="Áreas da conta">
             <button class="company-nav-button is-active" type="button" data-company-section="clients">
               <i class="fa-solid fa-users-gear" aria-hidden="true"></i>
               <span><strong>Meus clientes</strong><small>Cadastros e acessos</small></span>
@@ -149,6 +136,10 @@
               <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
               <span><strong>Central de backups</strong><small>Excel automático e manual</small></span>
             </button>
+            <button id="legalTermsNavButton" class="company-nav-button" type="button" data-company-section="legal" hidden>
+              <i class="fa-solid fa-file-signature" aria-hidden="true"></i>
+              <span><strong>Termos assinados</strong><small>Documentos e auditoria</small></span>
+            </button>
           </nav>
 
           <section id="backupCenter" class="backup-center" hidden>
@@ -159,7 +150,7 @@
               <div class="backup-hero-copy">
                 <p class="eyebrow">Proteção de dados B2B</p>
                 <h2>Central de backups</h2>
-                <span>Exporte cada empresa separadamente para o seu HD, com pastas por ano, mês e semana.</span>
+                <span>Exporte cada cliente separadamente para o seu HD, com pastas por ano, mês e semana.</span>
               </div>
               <span id="backupSupportBadge" class="backup-status-badge">Verificando navegador</span>
             </div>
@@ -210,7 +201,7 @@
             <section class="backup-clients-panel" aria-label="Clientes incluídos no backup">
               <div class="panel-heading align-start">
                 <div>
-                  <p class="eyebrow">Empresas incluídas</p>
+                  <p class="eyebrow">Clientes incluídos</p>
                   <h3 id="backupClientsTitle">Carteira preparada para backup</h3>
                 </div>
               </div>
@@ -218,6 +209,56 @@
             </section>
 
             <p id="backupMessage" class="form-message backup-message" role="status" aria-live="polite"></p>
+          </section>
+
+          <section id="legalAdminCenter" class="legal-admin-center" hidden>
+            <header class="legal-admin-hero">
+              <span class="legal-admin-hero-icon" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+              <div>
+                <p class="eyebrow">Governança e auditoria</p>
+                <h2>Termos de Uso assinados</h2>
+                <span>Acompanhe cada conta, a versão aceita e a evidência eletrônica vinculada.</span>
+              </div>
+              <span id="legalActiveVersion" class="legal-version-badge">Versão vigente</span>
+            </header>
+
+            <div class="legal-summary-grid" aria-label="Resumo dos termos">
+              <article><i class="fa-solid fa-users"></i><span>Contas obrigadas</span><strong id="legalTotalAccounts">0</strong></article>
+              <article class="is-accepted"><i class="fa-solid fa-circle-check"></i><span>Assinados</span><strong id="legalAcceptedAccounts">0</strong></article>
+              <article class="is-pending"><i class="fa-solid fa-clock"></i><span>Pendentes</span><strong id="legalPendingAccounts">0</strong></article>
+            </div>
+
+            <section class="legal-acceptance-panel" aria-label="Aceites por conta">
+              <div class="legal-acceptance-toolbar">
+                <label class="legal-search-field">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <input id="legalAcceptanceSearch" type="search" placeholder="Buscar cliente, agência ou responsável" aria-label="Buscar termos assinados" />
+                </label>
+                <label class="field">
+                  <span>Tipo de conta</span>
+                  <select id="legalAcceptanceRoleFilter">
+                    <option value="all">Todas</option>
+                    <option value="admin">Admin</option>
+                    <option value="store">Clientes</option>
+                    <option value="technician">Agências</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Situação</span>
+                  <select id="legalAcceptanceStatusFilter">
+                    <option value="all">Todas</option>
+                    <option value="accepted">Assinados</option>
+                    <option value="pending">Pendentes</option>
+                    <option value="outdated">Versão anterior</option>
+                  </select>
+                </label>
+              </div>
+              <div id="legalAcceptanceList" class="legal-acceptance-list"></div>
+              <div id="legalAcceptanceEmpty" class="empty-state" hidden>
+                <strong>Nenhum aceite encontrado.</strong>
+                <span>Ajuste os filtros ou aguarde o primeiro acesso da conta.</span>
+              </div>
+            </section>
           </section>
 
           <section id="analyticsClientPicker" class="analytics-client-picker" hidden>
@@ -755,9 +796,9 @@
               </div>
 
               <label id="storeTechnicianField" class="field">
-                <span>Empresa responsável</span>
+                <span>Agência responsável</span>
                 <select id="storeTechnician">
-                  <option value="">Selecione a empresa</option>
+                  <option value="">Selecione a agência</option>
                 </select>
               </label>
 
@@ -805,22 +846,22 @@
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">B2B</p>
-                  <h2>Criar empresa</h2>
+                  <h2>Criar agência</h2>
                 </div>
               </div>
 
               <label class="field">
-                <span>Nome da empresa</span>
-                <input id="technicianName" type="text" placeholder="Agência ou empresa de tráfego" required />
+                <span>Nome da agência</span>
+                <input id="technicianName" type="text" placeholder="Nome da agência de marketing" required />
               </label>
 
               <label class="field">
-                <span>Login da empresa</span>
+                <span>Login da agência</span>
                 <input id="technicianNick" type="text" placeholder="ex: agencia-prime" required />
               </label>
 
               <label class="field">
-                <span>Senha da empresa</span>
+                <span>Senha da agência</span>
                 <div class="password-field">
                   <input id="technicianPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
                   <button class="password-toggle" type="button" data-toggle-password="technicianPassword" aria-label="Mostrar senha" title="Mostrar senha">
@@ -832,11 +873,17 @@
               <label class="field">
                 <span>Limite de clientes</span>
                 <input id="technicianStoreLimit" type="number" min="0" max="9999" step="1" value="5" required />
-                <small class="field-help">Quantidade máxima de lojas que esta empresa poderá cadastrar.</small>
+                <small class="field-help">Quantidade máxima de clientes que esta agência poderá cadastrar.</small>
+              </label>
+
+              <label class="field">
+                <span>Clientes com Prospecções</span>
+                <input id="technicianProspectionLimit" type="number" min="0" max="9999" step="1" value="0" required />
+                <small class="field-help">Franquia adicional: quantos clientes desta agência poderão usar Leads + Prospecções.</small>
               </label>
 
               <div class="field avatar-field">
-                <span>Imagem da empresa</span>
+                <span>Imagem da agência</span>
                 <div class="avatar-upload-row">
                   <div id="technicianAvatarPreview" class="profile-avatar avatar-preview"><i class="fa-solid fa-building"></i></div>
                   <div class="avatar-upload-control">
@@ -852,19 +899,19 @@
               </div>
 
               <p id="technicianMessage" class="form-message" role="status" aria-live="polite"></p>
-              <button class="primary-button" type="submit">Criar empresa</button>
+              <button class="primary-button" type="submit">Criar agência</button>
             </form>
 
-            <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Empresas cadastradas">
+            <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Agências cadastradas">
               <div class="panel-heading align-start">
                 <div>
                   <p class="eyebrow">Seus clientes B2B</p>
-                  <h2>Empresas de tráfego</h2>
+                  <h2>Agências</h2>
                 </div>
               </div>
 
               <div id="technicianEmptyState" class="empty-state">
-                <strong>Nenhuma empresa cadastrada ainda.</strong>
+                <strong>Nenhuma agência cadastrada ainda.</strong>
                 <span>Crie o primeiro acesso e defina o limite de clientes.</span>
               </div>
 
@@ -1010,7 +1057,7 @@
                     <span>Qualificação comercial</span>
                     <h3 id="leadIntelligenceTitle">Etapa e responsável</h3>
                   </div>
-                  <span class="intelligence-badge"><i class="fa-solid fa-sparkles" aria-hidden="true"></i> Inteligência</span>
+                  <span class="intelligence-badge"><i class="fa-solid fa-route" aria-hidden="true"></i> Fluxo comercial</span>
                 </div>
                 <div class="lead-intelligence-grid">
                   <label class="field">
@@ -1029,48 +1076,7 @@
                     <span>Responsável</span>
                     <input id="leadOwnerName" type="text" maxlength="160" placeholder="Quem está atendendo" />
                   </label>
-                  <label class="field">
-                    <span>E-mail</span>
-                    <input id="leadEmail" type="email" maxlength="320" placeholder="lead@exemplo.com" />
-                  </label>
-                  <label id="leadLossReasonField" class="field" hidden>
-                    <span>Motivo da perda</span>
-                    <input id="leadLossReason" type="text" maxlength="300" placeholder="Ex.: preço, sem retorno, concorrência" />
-                  </label>
                 </div>
-                <div class="lead-intelligence-toggles">
-                  <label class="premium-check">
-                    <input id="leadQualified" type="checkbox" />
-                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
-                    <div><strong>Lead qualificado</strong><small>Tem perfil e intenção de compra</small></div>
-                  </label>
-                  <label class="premium-check">
-                    <input id="leadReturningCustomer" type="checkbox" />
-                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
-                    <div><strong>Cliente recorrente</strong><small>Já comprou anteriormente</small></div>
-                  </label>
-                  <label class="premium-check">
-                    <input id="leadMarketingConsent" type="checkbox" />
-                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
-                    <div><strong>Consentimento de marketing</strong><small>Autorizou contato e mensuração</small></div>
-                  </label>
-                </div>
-
-                <details class="lead-attribution-details">
-                  <summary><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i> Atribuição avançada do anúncio</span><small>UTMs e identificadores opcionais</small></summary>
-                  <div class="lead-attribution-grid">
-                    <label class="field"><span>utm_source</span><input id="leadUtmSource" type="text" placeholder="facebook, google..." /></label>
-                    <label class="field"><span>utm_medium</span><input id="leadUtmMedium" type="text" placeholder="paid_social, cpc..." /></label>
-                    <label class="field"><span>utm_campaign</span><input id="leadUtmCampaign" type="text" placeholder="Nome técnico da campanha" /></label>
-                    <label class="field"><span>utm_content</span><input id="leadUtmContent" type="text" placeholder="Criativo ou variação" /></label>
-                    <label class="field"><span>ID da campanha</span><input id="leadCampaignExternalId" type="text" placeholder="ID na plataforma" /></label>
-                    <label class="field"><span>ID do conjunto</span><input id="leadAdsetExternalId" type="text" placeholder="Ad set / grupo" /></label>
-                    <label class="field"><span>ID do anúncio</span><input id="leadAdExternalId" type="text" placeholder="ID do anúncio" /></label>
-                    <label class="field"><span>GCLID / GBRAID / WBRAID</span><input id="leadGoogleClickId" type="text" placeholder="Identificador Google" /></label>
-                    <label class="field"><span>FBCLID / FBC</span><input id="leadMetaClickId" type="text" placeholder="Identificador Meta" /></label>
-                    <label class="field marketing-span-two"><span>Página de entrada</span><input id="leadLandingPage" type="url" placeholder="https://..." /></label>
-                  </div>
-                </details>
               </section>
 
             <div class="choice-section lead-entry">
@@ -1278,6 +1284,17 @@
           </section>
         </section>
         </section>
+
+        <section id="prospectionView" class="prospection-view" aria-label="Módulo de Prospecções" hidden>
+          <div class="prospection-loading-card" role="status">
+            <span class="prospection-loading-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
+            <div>
+              <p class="eyebrow">Prospecções</p>
+              <h2>Preparando o módulo</h2>
+              <span>Carregando dados e permissões da sua conta.</span>
+            </div>
+          </div>
+        </section>
       </main>
       </div>
     </div>
@@ -1429,7 +1446,7 @@
             <div>
               <p class="eyebrow">IA central do sistema</p>
               <h3>Configuração B2B</h3>
-              <span>Empresas recebem esta configuração automaticamente ao entrar, sem preencher a chave manualmente.</span>
+              <span>Agências recebem esta configuração automaticamente ao entrar, sem preencher a chave manualmente.</span>
             </div>
           </div>
 
@@ -1518,9 +1535,9 @@
           </label>
 
           <label id="managedAccountTechnicianField" class="field" hidden>
-            <span>Empresa responsável</span>
+            <span>Agência responsável</span>
             <select id="managedAccountTechnician">
-              <option value="">Selecione a empresa</option>
+              <option value="">Selecione a agência</option>
             </select>
             <small class="field-help">Use este campo para atribuir ou transferir a loja.</small>
           </label>
@@ -1543,8 +1560,29 @@
           <label id="managedAccountLimitField" class="field" hidden>
             <span>Limite de clientes</span>
             <input id="managedAccountLimit" type="number" min="0" max="9999" step="1" />
-            <small class="field-help">Novos cadastros serão bloqueados quando a empresa atingir este total.</small>
+            <small class="field-help">Novos cadastros serão bloqueados quando a agência atingir este total.</small>
           </label>
+
+          <label id="managedAccountProspectionLimitField" class="field" hidden>
+            <span>Clientes com Prospecções</span>
+            <input id="managedAccountProspectionLimit" type="number" min="0" max="9999" step="1" />
+            <small id="managedAccountProspectionLimitHelp" class="field-help">Ao reduzir o plano, os acessos atuais permanecem ativos até a agência escolher quais clientes desativar. Novas liberações ficam bloqueadas enquanto houver excesso.</small>
+          </label>
+
+          <div id="managedAccountProspectionField" class="feature-access-card" hidden>
+            <div class="feature-access-copy">
+              <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
+              <div>
+                <strong>Leads + Prospecções</strong>
+                <span id="managedAccountProspectionHelp">Libere o módulo adicional para este cliente.</span>
+              </div>
+            </div>
+            <label class="feature-access-toggle">
+              <input id="managedAccountProspectionAccess" type="checkbox" />
+              <span aria-hidden="true"></span>
+              <em id="managedAccountProspectionStatus">Ativo</em>
+            </label>
+          </div>
 
           <p id="managedAccountMessage" class="form-message" role="status" aria-live="polite"></p>
           <div class="modal-actions">
@@ -1679,6 +1717,85 @@
           </button>
         </div>
         <div id="leadDetailsContent" class="lead-details-content"></div>
+      </section>
+    </div>
+
+    <div id="legalTermsModal" class="modal-backdrop legal-terms-backdrop" hidden>
+      <section class="legal-terms-dialog" role="dialog" aria-modal="true" aria-labelledby="legalTermsTitle">
+        <header class="legal-terms-header">
+          <span class="legal-terms-header-icon" aria-hidden="true"><i class="fa-solid fa-file-signature"></i></span>
+          <div>
+            <p class="eyebrow">Aceite obrigatório</p>
+            <h2 id="legalTermsTitle">Termos de Uso e Privacidade</h2>
+            <span id="legalTermsVersion">Leia o documento completo para continuar.</span>
+          </div>
+          <div class="legal-terms-header-actions">
+            <button id="legalTermsRetry" class="secondary-button" type="button" hidden><i class="fa-solid fa-rotate"></i>Carregar termos</button>
+            <button id="legalTermsLogout" class="ghost-button" type="button"><i class="fa-solid fa-right-from-bracket"></i>Sair</button>
+          </div>
+        </header>
+
+        <div class="legal-terms-layout">
+          <article id="legalTermsContent" class="legal-terms-content" tabindex="0" aria-label="Conteúdo dos Termos de Uso"></article>
+
+          <form id="legalTermsForm" class="legal-signature-panel" autocomplete="off">
+            <div class="legal-signature-heading">
+              <span><i class="fa-solid fa-pen-nib"></i></span>
+              <div><strong>Identificação e assinatura</strong><small>Assine com o dedo, mouse ou caneta digital.</small></div>
+            </div>
+
+            <label class="field">
+              <span>Nome completo do responsável</span>
+              <input id="legalSignerName" type="text" minlength="3" maxlength="160" required />
+            </label>
+            <div class="legal-signature-fields">
+              <label class="field">
+                <span>Cargo ou função</span>
+                <input id="legalSignerRole" type="text" minlength="2" maxlength="120" placeholder="Ex.: Sócio, gerente" required />
+              </label>
+              <label class="field">
+                <span>CPF do responsável</span>
+                <input id="legalSignerCpf" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required />
+              </label>
+            </div>
+
+            <div class="legal-canvas-field">
+              <div><span>Assinatura eletrônica</span><button id="legalSignatureClear" type="button">Limpar</button></div>
+              <canvas id="legalSignatureCanvas" aria-label="Campo para desenhar a assinatura"></canvas>
+              <small>O desenho será vinculado à sua conta, à versão do documento e à data/hora do servidor.</small>
+            </div>
+
+            <div class="legal-confirmations">
+              <label><input id="legalConfirmRead" type="checkbox" required /><span>Li e aceito integralmente os Termos de Uso e Privacidade.</span></label>
+              <label><input id="legalConfirmAuthority" type="checkbox" required /><span>Declaro possuir autorização para representar esta conta e organização.</span></label>
+              <label><input id="legalConfirmEvidence" type="checkbox" required /><span>Reconheço esta assinatura eletrônica, o tratamento das evidências e a retenção de dois anos.</span></label>
+            </div>
+
+            <div class="legal-retention-note">
+              <i class="fa-solid fa-database"></i>
+              <span>Registros de Prospecções com mais de dois anos são excluídos automaticamente. Faça exportações periódicas se precisar de arquivo permanente.</span>
+            </div>
+
+            <p id="legalTermsMessage" class="form-message" role="alert" aria-live="polite"></p>
+            <button class="primary-button legal-accept-button" type="submit"><i class="fa-solid fa-signature"></i>Assinar e continuar</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div id="legalDocumentModal" class="modal-backdrop legal-document-backdrop" hidden>
+      <section class="legal-document-dialog" role="dialog" aria-modal="true" aria-labelledby="legalDocumentTitle">
+        <header class="legal-document-header">
+          <div><p class="eyebrow">Evidência eletrônica</p><h2 id="legalDocumentTitle">Termo assinado</h2><span id="legalDocumentSubtitle"></span></div>
+          <div>
+            <button id="legalDocumentDownload" class="secondary-button" type="button"><i class="fa-solid fa-download"></i>Baixar comprovante</button>
+            <button id="legalDocumentClose" class="ghost-button topbar-icon-button" type="button" aria-label="Fechar documento"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+        </header>
+        <div class="legal-document-layout">
+          <article id="legalDocumentContent" class="legal-terms-content"></article>
+          <aside id="legalDocumentEvidence" class="legal-document-evidence"></aside>
+        </div>
       </section>
     </div>
   </body>

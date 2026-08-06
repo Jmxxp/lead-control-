@@ -1,0 +1,1621 @@
+(() => {
+  "use strict";
+
+  const root = document.querySelector("#prospectionView");
+  if (!root) return;
+
+  const PROBABILITIES = {
+    red: { label: "Improvável", color: "#c43d59" },
+    yellow: { label: "Pouco provável", color: "#d48616" },
+    blue: { label: "Provável", color: "#2f80ed" },
+    green: { label: "Muito provável", color: "#16855f" },
+  };
+  const STORE_COLORS = ["#16855f", "#2f80ed", "#7c5ce7", "#d48616", "#c43d59", "#168a91", "#55585f"];
+  const DEFAULT_SETTINGS = Object.freeze({
+    dailyGoal: 15,
+    bonusMinimum: 300,
+    bonusAmount: 20,
+    accentColor: "#16855f",
+    logoBackgroundColor: "#ffffff",
+  });
+
+  let bridge = null;
+  let active = false;
+  let loading = false;
+  let upgradePreview = false;
+  let archiveProspects = [];
+  let prospects = [];
+  let settings = [];
+  let professionals = [];
+  let tagCategories = [];
+  let tags = [];
+  let selectedStoreId = "";
+  let selectedAgencyId = "";
+  let editingId = "";
+  let dashboardPeriod = "today";
+  let listSearch = "";
+  let listStatus = "all";
+  let filtersOpen = false;
+  let calendarDate = new Date();
+  let analysisStoreId = "";
+  let analysisStartDate = "";
+  let analysisEndDate = "";
+  let analysisProfessionalId = "all";
+  let analysisDetailProfessionalId = "";
+  let bonusStoreId = "";
+  let bonusStartDate = "";
+  let bonusEndDate = "";
+  let bonusProfessionalId = "all";
+  let pendingPurchaseId = "";
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+  const normalize = (value) => String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+  const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
+
+  function formatPhone(value) {
+    const digits = onlyDigits(value).slice(0, 11);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  function formatCpf(value) {
+    const digits = onlyDigits(value).slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+
+  function parseMoney(value) {
+    let normalized = String(value || "").replace(/[^\d,.-]/g, "").trim();
+    if (normalized.includes(",") && normalized.includes(".")) normalized = normalized.replace(/\./g, "").replace(",", ".");
+    else if (normalized.includes(",")) normalized = normalized.replace(",", ".");
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+  }
+
+  const formatCurrency = (value) => new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(value || 0));
+
+  const formatDateTime = (value) => value
+    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
+    : "—";
+
+  const formatDate = (value) => value
+    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value))
+    : "—";
+
+  const formatInputDateDisplay = (value) => value
+    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(`${value}T12:00:00`))
+    : "—";
+
+  const formatDateTimeWithWeekday = (value) => value
+    ? `${new Intl.DateTimeFormat("pt-BR", { weekday: "short" }).format(new Date(value)).replace(".", "")}, ${formatDateTime(value)}`
+    : "—";
+
+  function startOfDay(value = new Date()) {
+    const date = new Date(value);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  function addDays(value, amount) {
+    const date = new Date(value);
+    date.setDate(date.getDate() + amount);
+    return date;
+  }
+
+  function startOfWeek(value = new Date()) {
+    const date = startOfDay(value);
+    const day = date.getDay();
+    date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+    return date;
+  }
+
+  function startOfMonth(value = new Date()) {
+    const date = new Date(value);
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+
+  function addMonths(value, amount) {
+    const date = new Date(value);
+    return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+  }
+
+  function formatDateInput(value) {
+    const date = new Date(value);
+    const offset = date.getTimezoneOffset();
+    return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+  }
+
+  function dateRange(startValue, endValue) {
+    const start = startValue ? startOfDay(new Date(`${startValue}T12:00:00`)) : null;
+    const end = endValue ? addDays(startOfDay(new Date(`${endValue}T12:00:00`)), 1) : null;
+    return { start, end };
+  }
+
+  function isInOptionalRange(value, startValue, endValue) {
+    if (!value) return false;
+    const range = dateRange(startValue, endValue);
+    const date = new Date(value);
+    return (!range.start || date >= range.start) && (!range.end || date < range.end);
+  }
+
+  function initializeInsightDates() {
+    const now = new Date();
+    if (!analysisStartDate) analysisStartDate = formatDateInput(startOfMonth(now));
+    if (!analysisEndDate) analysisEndDate = formatDateInput(now);
+    if (!bonusStartDate) bonusStartDate = formatDateInput(startOfWeek(now));
+    if (!bonusEndDate) bonusEndDate = formatDateInput(now);
+  }
+
+  function periodWindow(period = dashboardPeriod) {
+    const now = new Date();
+    if (period === "today") return { start: startOfDay(now), end: addDays(startOfDay(now), 1), label: "Hoje" };
+    if (period === "week") {
+      const start = startOfWeek(now);
+      return { start, end: addDays(start, 7), label: "Esta semana" };
+    }
+    if (period === "year") return { start: new Date(now.getFullYear(), 0, 1), end: new Date(now.getFullYear() + 1, 0, 1), label: "Este ano" };
+    if (period === "all") return { start: null, end: null, label: "Todo o período" };
+    const start = startOfMonth(now);
+    return { start, end: addMonths(start, 1), label: "Este mês" };
+  }
+
+  function isInWindow(value, window) {
+    if (!value) return false;
+    if (!window.start || !window.end) return true;
+    const date = new Date(value);
+    return date >= window.start && date < window.end;
+  }
+
+  function percentage(value, total) {
+    return total ? Math.round((Number(value || 0) / total) * 100) : 0;
+  }
+
+  function readableError(error) {
+    const message = String(error?.message || error || "Não foi possível concluir a ação.");
+    if (/lc_(list|get|upsert|set|save|add|update|delete|reorder)_prospection/i.test(message) || /function .* does not exist/i.test(message)) {
+      return "A estrutura do módulo de Prospecções ainda não foi instalada no banco principal.";
+    }
+    return message
+      .replace(/^.*?raise exception\s*/i, "")
+      .replace(/invalid input syntax.*$/i, "Dados inválidos.");
+  }
+
+  function normalizeRpcObject(raw) {
+    if (Array.isArray(raw)) return raw[0] || {};
+    return raw && typeof raw === "object" ? raw : {};
+  }
+
+  function mapProspect(row) {
+    return {
+      id: row.id,
+      storeId: row.store_id,
+      storeName: row.store_name || "Cliente",
+      agencyId: row.technician_id || "",
+      name: row.name || "",
+      phone: row.phone || "",
+      cpf: row.cpf || "",
+      notes: row.notes || "",
+      probability: PROBABILITIES[row.probability] ? row.probability : "blue",
+      tagValues: Array.isArray(row.tags) ? row.tags : [],
+      professionalId: row.professional_id || "",
+      professionalName: row.professional_name || row.professional_name_snapshot || "",
+      returnedAt: row.returned_at || null,
+      purchasedAt: row.purchased_at || null,
+      purchaseAmount: Number(row.purchase_amount || 0),
+      purchaseOrder: row.purchase_order || "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function mapSettings(row) {
+    return {
+      storeId: row.store_id,
+      dailyGoal: Number(row.daily_goal || DEFAULT_SETTINGS.dailyGoal),
+      bonusMinimum: Number(row.bonus_minimum || DEFAULT_SETTINGS.bonusMinimum),
+      bonusAmount: Number(row.bonus_amount || DEFAULT_SETTINGS.bonusAmount),
+      accentColor: row.accent_color || DEFAULT_SETTINGS.accentColor,
+      logoBackgroundColor: row.logo_background_color || DEFAULT_SETTINGS.logoBackgroundColor,
+    };
+  }
+
+  function mapProfessional(row) {
+    return {
+      id: row.id,
+      storeId: row.store_id,
+      name: row.name || "Profissional",
+      active: row.is_active !== false,
+    };
+  }
+
+  function mapTagCategory(row) {
+    return {
+      id: row.id,
+      storeId: row.store_id,
+      name: row.name || "Categoria",
+      sortOrder: Number(row.sort_order || 0),
+    };
+  }
+
+  function mapTag(row) {
+    return {
+      id: row.id,
+      storeId: row.store_id,
+      categoryId: row.category_id || "",
+      label: row.label || "Etiqueta",
+      sortOrder: Number(row.sort_order || 0),
+    };
+  }
+
+  function scopedStores() {
+    const allStores = bridge?.stores || [];
+    if (bridge?.profile?.role === "store") return allStores.filter((store) => store.id === bridge.profile.storeId);
+    if (bridge?.profile?.role === "technician") return allStores.filter((store) => store.technicianId === bridge.profile.id);
+    if (selectedAgencyId) return allStores.filter((store) => store.technicianId === selectedAgencyId);
+    return allStores;
+  }
+
+  function licensedScopedStores() {
+    return scopedStores().filter((store) => store.prospectionEnabled !== false);
+  }
+
+  function isLicensedStore(storeId) {
+    return Boolean(storeById(storeId)?.prospectionEnabled !== false && storeById(storeId));
+  }
+
+  function storeById(storeId) {
+    return (bridge?.stores || []).find((store) => store.id === storeId) || null;
+  }
+
+  function settingsFor(storeId) {
+    return settings.find((row) => row.storeId === storeId) || { storeId, ...DEFAULT_SETTINGS };
+  }
+
+  function professionalsFor(storeId, includeInactive = false) {
+    return professionals
+      .filter((row) => row.storeId === storeId && (includeInactive || row.active))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }
+
+  function tagsFor(storeId) {
+    return tags.filter((row) => row.storeId === storeId).sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, "pt-BR"));
+  }
+
+  function categoriesFor(storeId) {
+    return tagCategories.filter((row) => row.storeId === storeId).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "pt-BR"));
+  }
+
+  function prospectsFor(storeIds, period = dashboardPeriod) {
+    const idSet = new Set(Array.isArray(storeIds) ? storeIds : [storeIds]);
+    const window = periodWindow(period);
+    return prospects.filter((row) => idSet.has(row.storeId) && isInWindow(row.createdAt, window));
+  }
+
+  function isBonusEligible(prospect) {
+    return Boolean(prospect.purchasedAt) && prospect.purchaseAmount >= settingsFor(prospect.storeId).bonusMinimum;
+  }
+
+  function bonusFor(rows) {
+    return rows.reduce((sum, row) => sum + (isBonusEligible(row) ? settingsFor(row.storeId).bonusAmount : 0), 0);
+  }
+
+  function metricsFor(rows) {
+    const returned = rows.filter((row) => row.returnedAt).length;
+    const purchased = rows.filter((row) => row.purchasedAt).length;
+    return {
+      total: rows.length,
+      returned,
+      purchased,
+      returnRate: percentage(returned, rows.length),
+      conversion: percentage(purchased, rows.length),
+      bonus: bonusFor(rows),
+    };
+  }
+
+  function periodOptions(selected = dashboardPeriod) {
+    return [
+      ["today", "Hoje"],
+      ["week", "Semana"],
+      ["month", "Mês"],
+      ["year", "Ano"],
+      ["all", "Todo período"],
+    ].map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${label}</option>`).join("");
+  }
+
+  function metricCards(rows, storeId = "") {
+    const metrics = metricsFor(rows);
+    const goal = storeId ? settingsFor(storeId).dailyGoal : null;
+    const todayRows = rows.filter((row) => isInWindow(row.createdAt, periodWindow("today")));
+    return `
+      <section class="prospection-metrics" aria-label="Resumo das prospecções">
+        ${metricCard("fa-bullseye", "Prospecções", metrics.total, periodWindow().label, "#16855f")}
+        ${metricCard("fa-store", "Vieram à loja", metrics.returned, `${metrics.returnRate}% das prospecções`, "#2f80ed")}
+        ${metricCard("fa-bag-shopping", "Compraram", metrics.purchased, `${metrics.conversion}% de conversão`, "#d48616")}
+        ${metricCard("fa-chart-line", "Conversão", `${metrics.conversion}%`, "Compra sobre prospecções", "#7c5ce7")}
+        ${metricCard("fa-gift", "Bonificação", formatCurrency(metrics.bonus), "Compras válidas no período", "#c43d59")}
+        ${metricCard("fa-calendar-check", goal ? "Meta hoje" : "Atividade hoje", goal ? `${todayRows.length}/${goal}` : todayRows.length, goal ? `${percentage(todayRows.length, goal)}% da meta` : "Registros de hoje", "#168a91")}
+      </section>`;
+  }
+
+  function metricCard(icon, label, value, helper, color) {
+    return `<article class="prospection-metric" style="--metric-color:${color}">
+      <i class="fa-solid ${icon}" aria-hidden="true"></i>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(helper)}</small>
+    </article>`;
+  }
+
+  function loadingMarkup() {
+    return `<div class="prospection-loading-card" role="status">
+      <span class="prospection-loading-icon"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i></span>
+      <div><p class="eyebrow">Prospecções</p><h2>Sincronizando dados</h2><span>Aplicando seu escopo de acesso com segurança.</span></div>
+    </div>`;
+  }
+
+  function renderFatalError(message) {
+    root.innerHTML = `<div class="prospection-error-card" role="alert">
+      <span class="prospection-loading-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
+      <div><p class="eyebrow">Módulo indisponível</p><h2>Não foi possível carregar Prospecções</h2><span>${escapeHtml(message)}</span></div>
+    </div>`;
+  }
+
+  async function loadData() {
+    const [prospectRows, configurationRows] = await Promise.all([
+      bridge.rpc("lc_list_prospections"),
+      bridge.rpc("lc_get_prospection_configuration"),
+    ]);
+    prospects = (Array.isArray(prospectRows) ? prospectRows : []).map(mapProspect);
+    const configuration = normalizeRpcObject(configurationRows);
+    settings = (configuration.settings || []).map(mapSettings);
+    professionals = (configuration.professionals || []).map(mapProfessional);
+    tagCategories = (configuration.categories || []).map(mapTagCategory);
+    tags = (configuration.tags || []).map(mapTag);
+  }
+
+  async function reload({ configuration = false } = {}) {
+    if (configuration) {
+      await loadData();
+      return;
+    }
+    const rows = await bridge.rpc("lc_list_prospections");
+    prospects = (Array.isArray(rows) ? rows : []).map(mapProspect);
+  }
+
+  async function activate(nextBridge) {
+    bridge = nextBridge;
+    active = true;
+    loading = true;
+    upgradePreview = bridge.profile.role === "store" && bridge.prospectionAccessGranted === false;
+    selectedAgencyId = bridge.profile.role === "admin" ? bridge.initialAgencyId || "" : "";
+    selectedStoreId = bridge.profile.role === "store" ? bridge.profile.storeId : bridge.initialStoreId || "";
+    editingId = "";
+    listSearch = "";
+    listStatus = "all";
+    filtersOpen = false;
+    analysisStoreId = "";
+    analysisProfessionalId = "all";
+    analysisDetailProfessionalId = "";
+    bonusStoreId = "";
+    bonusProfessionalId = "all";
+    initializeInsightDates();
+    pendingPurchaseId = "";
+    root.innerHTML = loadingMarkup();
+    if (upgradePreview) {
+      try {
+        const archivedRows = await bridge.rpc("lc_export_prospections", { p_store_id: bridge.profile.storeId });
+        archiveProspects = (Array.isArray(archivedRows) ? archivedRows : []).map(mapProspect);
+      } catch (error) {
+        archiveProspects = [];
+        if (!/does not exist|could not find the function/i.test(String(error?.message || error))) throw error;
+      }
+      prospects = [...archiveProspects];
+      settings = [];
+      professionals = [];
+      tagCategories = [];
+      tags = [];
+    } else {
+      await loadData();
+    }
+    loading = false;
+    if (!active) return;
+    if (selectedStoreId && (!storeById(selectedStoreId) || !isLicensedStore(selectedStoreId))) selectedStoreId = "";
+    render();
+  }
+
+  function deactivate() {
+    active = false;
+    upgradePreview = false;
+    archiveProspects = [];
+    closeDialogs();
+  }
+
+  async function refreshContext(nextContext = {}) {
+    if (!bridge) return;
+    bridge = { ...bridge, ...nextContext };
+    if (!active || upgradePreview) return;
+    await loadData();
+    if (selectedStoreId && !isLicensedStore(selectedStoreId)) selectedStoreId = "";
+    render();
+  }
+
+  function render() {
+    if (!active || loading) return;
+    if (upgradePreview) {
+      bridge.setOperationMode?.(false);
+      renderUpgradeExperience();
+      return;
+    }
+    const isOperation = bridge.profile.role === "store" || Boolean(selectedStoreId);
+    bridge.setOperationMode?.(isOperation);
+    if (isOperation) renderStoreWorkspace();
+    else renderManagementDashboard();
+  }
+
+  function renderUpgradeExperience() {
+    const store = storeById(bridge.profile.storeId) || { id: bridge.profile.storeId, name: bridge.profile.storeName || "Sua empresa" };
+    const agencyName = store.technicianName || "sua agência";
+    root.innerHTML = `<section class="prospection-upgrade-shell" aria-labelledby="prospection-upgrade-title">
+      <div class="prospection-upgrade-glow is-one"></div><div class="prospection-upgrade-glow is-two"></div>
+      <div class="prospection-upgrade-hero">
+        <span class="prospection-upgrade-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i><b><i class="fa-solid fa-arrow-trend-up"></i></b></span>
+        <p class="eyebrow">Recurso premium</p>
+        <h2 id="prospection-upgrade-title">Transforme contatos que seriam perdidos em novas oportunidades.</h2>
+        <p>Prospecções ajuda sua empresa a controlar abordagens, acompanhar retornos e incentivar cada funcionário a trazer mais clientes para a loja.</p>
+        <div class="prospection-upgrade-actions">
+          <button class="prospection-button" type="button" data-prospection-action="copy-upgrade-request" data-agency-name="${escapeHtml(agencyName)}"><i class="fa-solid fa-paper-plane"></i>Solicitar upgrade</button>
+          ${archiveProspects.length ? `<button class="prospection-button is-archive" type="button" data-prospection-action="export-archive"><i class="fa-solid fa-file-arrow-down"></i>Baixar meus dados (${archiveProspects.length})</button>` : ""}
+          <button class="prospection-button is-secondary" type="button" data-prospection-action="open-leads" data-store-id="${escapeHtml(store.id || "")}"><i class="fa-solid fa-arrow-left"></i>Voltar para Leads</button>
+        </div>
+        <small>Peça a liberação para <strong>${escapeHtml(agencyName)}</strong>. ${archiveProspects.length ? `Seus ${archiveProspects.length} registros ainda podem ser exportados, mas não editados.` : "A operação permanece bloqueada enquanto o recurso não estiver ativo."}</small>
+        ${archiveProspects.length ? `<div class="prospection-archive-notice"><i class="fa-solid fa-clock-rotate-left"></i><span>O histórico é mantido por até dois anos desde a criação de cada registro. Exporte agora se precisar conservar uma cópia permanente.</span></div>` : ""}
+      </div>
+      <div class="prospection-upgrade-features" aria-label="Benefícios de Prospecções">
+        <article><i class="fa-solid fa-user-group"></i><div><strong>Desempenho individual</strong><span>Veja quantas prospecções, retornos e compras cada funcionário gerou.</span></div></article>
+        <article><i class="fa-solid fa-gift"></i><div><strong>Metas e bonificações</strong><span>Crie incentivo real para a equipe recuperar oportunidades esquecidas.</span></div></article>
+        <article><i class="fa-solid fa-chart-line"></i><div><strong>Faturamento rastreável</strong><span>Acompanhe conversão, valores, OS e resultado por período.</span></div></article>
+        <article><i class="fa-solid fa-rotate"></i><div><strong>Clientes recuperados</strong><span>Organize retornos e mantenha cada contato no radar até a decisão.</span></div></article>
+      </div>
+    </section>`;
+  }
+
+  function heroMarkup({ eyebrow, title, subtitle, backAction = "", actions = "" }) {
+    return `<section class="prospection-hero">
+      <span class="prospection-hero-icon"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span>
+      <div class="prospection-hero-copy">
+        <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+        <h2>${escapeHtml(title)}</h2>
+        <span>${escapeHtml(subtitle)}</span>
+      </div>
+      <div class="prospection-hero-actions">
+        ${backAction ? `<button class="prospection-button is-secondary" type="button" data-prospection-action="${backAction}"><i class="fa-solid fa-arrow-left"></i> Voltar</button>` : ""}
+        ${actions}
+      </div>
+    </section>`;
+  }
+
+  function periodField() {
+    return `<label class="prospection-period-field">Período<select data-prospection-period>${periodOptions()}</select></label>`;
+  }
+
+  function accountVisual(avatarUrl, name, icon = "fa-store", backgroundColor = "#ffffff") {
+    return `<span class="prospection-account-icon${avatarUrl ? " has-image" : ""}" style="--logo-background:${escapeHtml(backgroundColor)}" aria-hidden="true">
+      ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="" />` : `<i class="fa-solid ${icon}"></i>`}
+    </span>`;
+  }
+
+  function periodOverviewMarkup(storeIds) {
+    const definitions = [
+      ["today", "Hoje"],
+      ["week", "Esta semana"],
+      ["month", "Este mês"],
+      ["year", "Este ano"],
+    ];
+    return `<section class="prospection-overview-grid" aria-label="Resumo por período">
+      ${definitions.map(([period, label]) => {
+        const periodRows = prospectsFor(storeIds, period);
+        const metric = metricsFor(periodRows);
+        return `<article class="prospection-overview-card">
+          <span>${metric.total}</span>
+          <small>Prospecções · ${label}</small>
+          <strong>${metric.returned} vieram <i></i> ${metric.purchased} compraram</strong>
+        </article>`;
+      }).join("")}
+    </section>`;
+  }
+
+  function renderManagementDashboard() {
+    const storesInScope = scopedStores();
+    const isAdmin = bridge.profile.role === "admin";
+    const agency = selectedAgencyId
+      ? (bridge.agencies || []).find((item) => item.id === selectedAgencyId)
+      : bridge.profile.role === "technician"
+        ? (bridge.agencies || []).find((item) => item.id === bridge.profile.id) || bridge.profile
+        : null;
+    const storeIds = storesInScope.map((store) => store.id);
+    const rows = prospectsFor(storeIds);
+    const identityName = agency ? agency.fullName || agency.username : "Visão geral das agências";
+    const licensedCount = storesInScope.filter((store) => store.prospectionEnabled !== false).length;
+    const identitySubtitle = agency ? `${licensedCount} de ${storesInScope.length} clientes com Prospecções` : "Desempenho comercial da rede";
+    root.innerHTML = `<section class="prospection-management-shell" aria-labelledby="prospection-admin-title">
+      <header class="prospection-section-header prospection-management-header">
+        <div class="prospection-section-heading">
+          ${accountVisual(agency?.avatarUrl || "", identityName, agency ? "fa-building" : "fa-chart-pie", "#ffffff")}
+          <div><p class="eyebrow">${isAdmin && !agency ? "Administração" : "Agência"}</p><h2 id="prospection-admin-title">${escapeHtml(identityName)}</h2><span>${escapeHtml(identitySubtitle)}</span></div>
+        </div>
+        <div class="prospection-section-actions">
+          ${agency && isAdmin ? `<button class="prospection-button is-secondary" type="button" data-prospection-action="clear-agency"><i class="fa-solid fa-arrow-left"></i>Voltar</button>` : ""}
+          ${periodField()}
+          <button class="prospection-button is-secondary" type="button" data-prospection-action="open-analysis"><i class="fa-solid fa-chart-line"></i>Analisar cliente</button>
+          <button class="prospection-button is-secondary" type="button" data-prospection-action="open-bonus"><i class="fa-solid fa-gift"></i>Bonificações</button>
+          <button class="prospection-button" type="button" data-prospection-action="open-configuration"><i class="fa-solid fa-sliders"></i>Configurar clientes</button>
+        </div>
+      </header>
+      ${metricCards(rows)}
+      <div class="prospection-dashboard-layout">
+        <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Carteira</p><h3>${isAdmin && !agency ? "Agências" : "Clientes atendidos"}</h3><span>Logos, resultados e acesso rápido por conta.</span></div></div><div class="prospection-card-list">${renderManagementCards(storesInScope, isAdmin && !agency)}</div></article>
+        <aside class="prospection-management-aside"><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Evolução</p><h3>Ritmo de prospecção</h3><span>${escapeHtml(periodWindow().label)}</span></div></div>${chartMarkup(rows)}</article><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Destaques</p><h3>Ranking da carteira</h3><span>Conversão por cliente licenciado.</span></div></div>${rankingMarkup(storesInScope.filter((store) => store.prospectionEnabled !== false))}</article></aside>
+      </div>
+    </section>`;
+  }
+
+  function renderManagementCards(storesInScope, groupAgencies) {
+    if (groupAgencies) {
+      const agencies = (bridge.agencies || []).filter((agency) => agency.isActive !== false);
+      if (!agencies.length) return emptyMarkup("Nenhuma agência cadastrada", "Crie a primeira agência no módulo Leads para começar.");
+      return agencies.map((agency, index) => {
+        const agencyStores = (bridge.stores || []).filter((store) => store.technicianId === agency.id);
+        const licensedAgencyStores = agencyStores.filter((store) => store.prospectionEnabled !== false);
+        const rows = prospectsFor(licensedAgencyStores.map((store) => store.id));
+        const metrics = metricsFor(rows);
+        return accountCard({ id: agency.id, name: agency.fullName || agency.username, subtitle: `${licensedAgencyStores.length} de ${agencyStores.length} clientes com Prospecções`, avatarUrl: agency.avatarUrl || "", icon: "fa-building", color: STORE_COLORS[index % STORE_COLORS.length], metrics, goalText: `${metrics.returnRate}% retornaram · ${metrics.conversion}% converteram`, progress: metrics.conversion, action: "select-agency", actionLabel: "Ver agência" });
+      }).join("");
+    }
+
+    if (!storesInScope.length) return emptyMarkup("Nenhum cliente neste escopo", "Cadastre clientes no módulo Leads para acompanhar Prospecções.");
+    return storesInScope.map((store, index) => {
+      const rows = prospectsFor(store.id);
+      const metrics = metricsFor(rows);
+      const config = settingsFor(store.id);
+      const todayCount = prospectsFor(store.id, "today").length;
+      return accountCard({ id: store.id, name: store.name, subtitle: store.username || "Cliente", avatarUrl: store.avatarUrl || "", logoBackground: config.logoBackgroundColor, color: config.accentColor || STORE_COLORS[index % STORE_COLORS.length], metrics, goalText: `${todayCount}/${config.dailyGoal} da meta diária`, progress: percentage(todayCount, config.dailyGoal), action: "select-store", actionLabel: "Acessar", secondaryAction: "open-store-analysis", bonusAction: "open-store-bonus", configurationAction: "open-configuration", locked: store.prospectionEnabled === false });
+    }).join("");
+  }
+
+  function accountCard({ id, name, subtitle, icon, avatarUrl = "", logoBackground = "#ffffff", color, metrics, goalText, progress, action, actionLabel, secondaryAction = "", bonusAction = "", configurationAction = "", locked = false }) {
+    return `<article class="prospection-account-card${locked ? " is-locked" : ""}" style="--account-color:${color}">
+      <div class="prospection-account-card-header">
+        <div class="prospection-account-identity">${accountVisual(avatarUrl, name, icon, logoBackground)}<div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></div>
+        <div class="prospection-access-badges">${locked ? `<span class="prospection-chip is-locked">Somente Leads</span>` : `<span class="prospection-chip is-prospec"><i class="fa-solid fa-phone"></i>PROSPEC</span><span class="prospection-chip is-purchased">${formatCurrency(metrics.bonus)}</span>`}</div>
+      </div>
+      <div class="prospection-account-stats">
+        ${accountStat(metrics.total, "prospecções")}${accountStat(metrics.returned, "vieram")}${accountStat(metrics.purchased, "compraram")}${accountStat(`${metrics.conversion}%`, "conversão")}
+      </div>
+      <div class="prospection-progress"><div class="prospection-progress-copy"><span>${escapeHtml(goalText)}</span><strong>${Math.min(100, progress)}%</strong></div><div class="prospection-progress-track"><i style="--progress:${Math.min(100, progress)}%"></i></div></div>
+      <div class="prospection-account-actions">
+        ${locked ? `<button class="prospection-button is-secondary" type="button" data-prospection-action="manage-access" data-store-id="${escapeHtml(id)}"><i class="fa-solid fa-key"></i>Gerenciar acesso</button>` : `
+          ${secondaryAction ? `<button class="prospection-button is-quiet" type="button" data-prospection-action="${secondaryAction}" data-store-id="${escapeHtml(id)}">Análise</button>` : ""}
+          ${bonusAction ? `<button class="prospection-button is-quiet" type="button" data-prospection-action="${bonusAction}" data-store-id="${escapeHtml(id)}">Bonificação</button>` : ""}
+          ${configurationAction ? `<button class="prospection-button is-quiet" type="button" data-prospection-action="${configurationAction}" data-store-id="${escapeHtml(id)}"><i class="fa-solid fa-sliders"></i>Campos</button>` : ""}
+          <button class="prospection-button" type="button" data-prospection-action="${action}" data-account-id="${escapeHtml(id)}">${escapeHtml(actionLabel)}</button>`}
+      </div>
+    </article>`;
+  }
+
+  const accountStat = (value, label) => `<span class="prospection-account-stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></span>`;
+
+  function rankingMarkup(storesInScope) {
+    const rows = storesInScope.map((store) => {
+      const metrics = metricsFor(prospectsFor(store.id));
+      return { name: store.name, subtitle: `${metrics.total} prospecções`, purchased: metrics.purchased, conversion: metrics.conversion };
+    }).sort((a, b) => b.purchased - a.purchased || b.conversion - a.conversion || a.name.localeCompare(b.name, "pt-BR"));
+    if (!rows.length) return emptyMarkup("Ranking ainda vazio", "Os resultados aparecerão após os primeiros registros.");
+    return `<div class="prospection-ranking">${rows.map((row, index) => `<div class="prospection-ranking-row"><span class="prospection-ranking-position">${index + 1}</span><div class="prospection-ranking-name"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.subtitle)}</span></div><div class="prospection-ranking-value"><strong>${row.purchased}</strong><span>${row.conversion}% conversão</span></div></div>`).join("")}</div>`;
+  }
+
+  function trendBuckets(rows) {
+    const window = periodWindow();
+    const now = new Date();
+    let count = 14;
+    let start = addDays(startOfDay(now), -(count - 1));
+    if (dashboardPeriod === "week") { count = 7; start = startOfWeek(now); }
+    if (dashboardPeriod === "today") { count = 12; start = new Date(startOfDay(now)); }
+    if (dashboardPeriod === "month") { count = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); start = startOfMonth(now); }
+    if (dashboardPeriod === "year") { count = 12; start = new Date(now.getFullYear(), 0, 1); }
+    if (dashboardPeriod === "all") { count = 12; start = addMonths(startOfMonth(now), -11); }
+    return Array.from({ length: count }, (_, index) => {
+      const bucketStart = dashboardPeriod === "year" || dashboardPeriod === "all" ? addMonths(start, index) : dashboardPeriod === "today" ? new Date(start.getTime() + index * 2 * 3600000) : addDays(start, index);
+      const bucketEnd = dashboardPeriod === "year" || dashboardPeriod === "all" ? addMonths(bucketStart, 1) : dashboardPeriod === "today" ? new Date(bucketStart.getTime() + 2 * 3600000) : addDays(bucketStart, 1);
+      const label = dashboardPeriod === "year" || dashboardPeriod === "all"
+        ? new Intl.DateTimeFormat("pt-BR", { month: "short" }).format(bucketStart).replace(".", "")
+        : dashboardPeriod === "today" ? `${String(bucketStart.getHours()).padStart(2, "0")}h` : String(bucketStart.getDate());
+      return { label, value: rows.filter((row) => isInWindow(row.createdAt, { start: bucketStart, end: bucketEnd })).length };
+    });
+  }
+
+  function chartMarkup(rows) {
+    const buckets = trendBuckets(rows);
+    const max = Math.max(1, ...buckets.map((bucket) => bucket.value));
+    return `<div class="prospection-mini-chart" style="--chart-columns:${buckets.length}">${buckets.map((bucket) => `<div class="prospection-chart-column" title="${bucket.value} prospecções"><div class="prospection-chart-bar-wrap"><i class="prospection-chart-bar" style="--height:${Math.max(3, (bucket.value / max) * 100)}%"></i></div><span>${escapeHtml(bucket.label)}</span></div>`).join("")}</div>`;
+  }
+
+  function emptyMarkup(title, subtitle) {
+    return `<div class="prospection-empty"><i class="fa-solid fa-bullseye"></i><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`;
+  }
+
+  function renderStoreWorkspace() {
+    const storeId = bridge.profile.role === "store" ? bridge.profile.storeId : selectedStoreId;
+    const store = storeById(storeId) || { id: storeId, name: bridge.profile.storeName || "Cliente", username: bridge.profile.username };
+    selectedStoreId = store.id;
+    root.innerHTML = `${operationContextMarkup(store)}
+      <section id="operationWorkspace" class="workspace">
+        ${prospectFormMarkup(store.id)}
+        ${prospectListPanelMarkup(store.id)}
+      </section>`;
+  }
+
+  function operationContextMarkup(store) {
+    const config = settingsFor(store.id);
+    const isManager = ["admin", "technician"].includes(bridge.profile.role);
+    const metrics = metricsFor(prospectsFor(store.id, "week"));
+    return `<section class="prospection-operation-context" style="--account-color:${escapeHtml(config.accentColor)}">
+      <div class="prospection-account-identity">
+        ${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}
+        <div><small>Operação do cliente</small><strong>${escapeHtml(store.name)}</strong><span>${metrics.total} prospecções nesta semana · ${metrics.conversion}% de conversão</span></div>
+      </div>
+      <div class="prospection-operation-actions">
+        <button class="analysis-button" type="button" data-prospection-action="open-analysis"><i class="fa-solid fa-chart-line"></i><span>Análise</span></button>
+        <button class="secondary-button" type="button" data-prospection-action="open-bonus"><i class="fa-solid fa-gift"></i><span>Bonificações</span></button>
+        ${isManager ? `<button class="secondary-button" type="button" data-prospection-action="open-configuration" data-store-id="${escapeHtml(store.id)}"><i class="fa-solid fa-sliders"></i><span>Configurar</span></button><button class="secondary-button" type="button" data-prospection-action="back-dashboard"><i class="fa-solid fa-arrow-left"></i><span>Voltar</span></button>` : ""}
+      </div>
+    </section>`;
+  }
+
+  function prospectFormMarkup(storeId) {
+    const editing = prospects.find((row) => row.id === editingId) || null;
+    const storeProfessionals = professionalsFor(storeId);
+    return `<aside class="panel form-panel" aria-labelledby="form-title">
+      <div class="panel-header">
+        <div><p class="eyebrow">${editing ? "Atualização" : "Novo contato"}</p><h2 id="form-title">${editing ? "Editar prospecção" : "Registrar prospecção"}</h2></div>
+        <button class="icon-button" type="button" data-prospection-action="clear-form" title="Limpar formulário" aria-label="Limpar formulário">&#8634;</button>
+      </div>
+      <form id="prospectForm" autocomplete="off">
+        <input type="hidden" name="prospectId" value="${escapeHtml(editing?.id || "")}" />
+        <label>Nome<input name="name" type="text" maxlength="160" value="${escapeHtml(editing?.name || "")}" placeholder="Joao da Silva" required /></label>
+        <label>Telefone<input name="phone" type="tel" inputmode="tel" value="${escapeHtml(editing?.phone || "")}" placeholder="(19)000000000" /></label>
+        <label>CPF<input name="cpf" type="text" inputmode="numeric" value="${escapeHtml(editing?.cpf || "")}" placeholder="123.456.789-00" /></label>
+        <label>Anotações<textarea name="notes" rows="5" maxlength="2000" placeholder="Interessada em óculos de grau, voltar com receita.">${escapeHtml(editing?.notes || "")}</textarea></label>
+        <section class="professional-picker" aria-labelledby="professional-picker-title">
+          <div class="professional-picker-header"><span id="professional-picker-title">Profissional</span></div>
+          <div class="professional-options">${storeProfessionals.length ? storeProfessionals.map((professional) => `<label class="professional-option"><input type="radio" name="professionalId" value="${professional.id}"${editing?.professionalId === professional.id ? " checked" : ""} /><span>${escapeHtml(professional.name)}</span></label>`).join("") : `<span class="professional-empty">Nenhum profissional cadastrado pela agência.</span>`}</div>
+        </section>
+        ${tagCategoryPickerMarkup(storeId, editing)}
+        <fieldset class="status-picker">
+          <legend>Probabilidade</legend>
+          ${Object.entries(PROBABILITIES).map(([key, item]) => `<label class="status-option"><input type="radio" name="probability" value="${key}"${(editing?.probability || "blue") === key ? " checked" : ""} /><span class="swatch swatch-${key}"></span><span>${item.label}</span></label>`).join("")}
+        </fieldset>
+        <p id="prospectionFormMessage" class="form-error" role="alert"></p>
+        <button class="primary-button" type="submit"><span>${editing ? "Salvar alterações" : "Registrar prospecção"}</span></button>
+      </form>
+    </aside>`;
+  }
+
+  function tagCategoryPickerMarkup(storeId, editing) {
+    const storeCategories = categoriesFor(storeId);
+    return `<section class="tag-editor" aria-labelledby="tag-editor-title">
+      <div class="tag-editor-header"><span id="tag-editor-title">Categorias e subcategorias</span></div>
+      ${storeCategories.length ? storeCategories.map((category) => {
+        const categoryTags = tagsFor(storeId).filter((tag) => tag.categoryId === category.id);
+        return `<div class="tag-category-group"><small>${escapeHtml(category.name)}</small><div class="tag-options">${categoryTags.length ? categoryTags.map((tag) => `<label class="tag-option"><input type="checkbox" name="tags" value="${escapeHtml(tag.label)}"${editing?.tagValues.includes(tag.label) ? " checked" : ""} /><span>${escapeHtml(tag.label)}</span></label>`).join("") : `<span class="professional-empty">Nenhuma etiqueta</span>`}</div></div>`;
+      }).join("") : `<span class="professional-empty">Nenhuma categoria configurada pela Agência.</span>`}
+    </section>`;
+  }
+
+  function prospectListPanelMarkup(storeId) {
+    const filterCount = Number(dashboardPeriod !== "today") + Number(listStatus !== "all");
+    const periodTitle = dashboardPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
+    return `<section class="panel list-panel" aria-labelledby="list-title">
+      <div class="list-toolbar">
+        <div class="panel-header list-header"><div><p class="eyebrow">${periodTitle[0]}</p><h2 id="list-title">${periodTitle[1]}</h2></div></div>
+        <div class="search-row">
+          <label class="search-label">Buscar nas prospecções<input data-prospection-search type="search" value="${escapeHtml(listSearch)}" placeholder="Nome, telefone, CPF ou anotação" /></label>
+          <div class="filter-menu">
+            <button class="filter-button" type="button" data-prospection-action="toggle-filters" aria-expanded="${String(filtersOpen)}"><i class="fa-solid fa-filter" aria-hidden="true"></i>Filtros${filterCount ? `<span class="filter-count">${filterCount}</span>` : ""}</button>
+            <div class="filters-panel"${filtersOpen ? "" : " hidden"}>
+              <label>Período<select data-prospection-period>${periodOptions()}</select></label>
+              <label>Situação<select data-prospection-status><option value="all"${listStatus === "all" ? " selected" : ""}>Todos</option><option value="open"${listStatus === "open" ? " selected" : ""}>Não voltaram</option><option value="returned"${listStatus === "returned" ? " selected" : ""}>Voltaram</option><option value="purchased"${listStatus === "purchased" ? " selected" : ""}>Compraram</option></select></label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="prospectionRecords" class="prospects-list" aria-live="polite">${recordListMarkup(storeId)}</div>
+    </section>`;
+  }
+
+  function filteredStoreRows(storeId) {
+    const query = normalize(listSearch);
+    return prospectsFor(storeId).filter((row) => {
+      const matchesQuery = !query || normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, ...row.tagValues].join(" ")).includes(query);
+      const matchesStatus = listStatus === "all"
+        || (listStatus === "open" && !row.returnedAt)
+        || (listStatus === "returned" && row.returnedAt)
+        || (listStatus === "purchased" && row.purchasedAt);
+      return matchesQuery && matchesStatus;
+    });
+  }
+
+  function recordListMarkup(storeId) {
+    const rows = filteredStoreRows(storeId);
+    if (!rows.length) return `<div class="empty-state is-visible"><strong>Nenhuma prospecção encontrada</strong><span>Ajuste os filtros ou registre um novo contato.</span></div>`;
+    return rows.map(recordCardMarkup).join("");
+  }
+
+  function recordCardMarkup(row) {
+    const probability = PROBABILITIES[row.probability];
+    const whatsapp = row.phone ? `https://wa.me/55${onlyDigits(row.phone)}` : "";
+    const info = `${row.professionalName ? `<div class="card-professional"><i class="fa-solid fa-user-check" aria-hidden="true"></i><span>Profissional</span><strong>${escapeHtml(row.professionalName)}</strong></div>` : ""}${row.purchasedAt && (row.purchaseAmount || row.purchaseOrder) ? `<div class="card-purchase-info"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Compra</span>${row.purchaseAmount ? `<strong>${formatCurrency(row.purchaseAmount)}</strong>` : ""}${row.purchaseOrder ? `<em>${escapeHtml(row.purchaseOrder)}</em>` : ""}</div>` : ""}`;
+    return `<article class="prospect-card" data-color="${escapeHtml(row.probability)}">
+      <div class="card-main">
+        <div class="card-title-block"><div class="card-title-row"><h3 class="card-name">${escapeHtml(row.name)}</h3></div><div class="card-meta">${row.phone ? `<span class="meta-chip">${escapeHtml(row.phone)}</span>` : ""}${row.cpf ? `<span class="meta-chip">${escapeHtml(row.cpf)}</span>` : ""}${!row.phone && !row.cpf ? `<span class="meta-chip">Sem telefone ou CPF</span>` : ""}</div></div>
+        <div class="card-badges"><span class="color-badge">${escapeHtml(probability.label)}</span>${row.tagValues.length ? `<div class="card-tags">${row.tagValues.map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}</div>
+      </div>
+      ${row.notes ? `<p class="card-notes">${escapeHtml(row.notes)}</p>` : ""}
+      ${info ? `<div class="card-info-row">${info}</div>` : ""}
+      <div class="card-bottom">
+        <div class="card-actions">
+          ${whatsapp ? `<a class="whatsapp-button" href="${whatsapp}" target="_blank" rel="noreferrer">Chamar no WhatsApp</a>` : ""}
+          ${!row.returnedAt ? `<button class="mark-returned-button" type="button" data-prospection-action="toggle-returned" data-prospect-id="${row.id}" data-next-value="true">Registrar volta</button>` : !row.purchasedAt ? `<button class="unmark-returned-button" type="button" data-prospection-action="toggle-returned" data-prospect-id="${row.id}" data-next-value="false">Tirar volta</button>` : ""}
+          <button class="${row.purchasedAt ? "unmark-purchased-button" : "mark-purchased-button"}" type="button" data-prospection-action="${row.purchasedAt ? "unmark-purchased" : "open-purchase"}" data-prospect-id="${row.id}">${row.purchasedAt ? "Tirar compra" : "Registrar compra"}</button>
+          <button class="edit-button" type="button" data-prospection-action="edit-prospect" data-prospect-id="${row.id}">Editar</button>
+          <button class="delete-button" type="button" data-prospection-action="confirm-delete" data-prospect-id="${row.id}">Excluir</button>
+        </div>
+        <div class="card-footer-meta"><div class="created-date-block"><strong>Registrado</strong><em>${escapeHtml(formatDateTimeWithWeekday(row.createdAt))}</em></div><span class="return-badge${row.returnedAt ? " is-returned" : ""}">${row.returnedAt ? `<i class="fa-solid fa-check" aria-hidden="true"></i><span>Voltou</span>` : "Não voltou"}</span>${row.purchasedAt ? `<span class="purchase-badge is-purchased"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i><span>Comprou</span></span>` : ""}</div>
+      </div>
+    </article>`;
+  }
+
+  function renderRecordList() {
+    const container = root.querySelector("#prospectionRecords");
+    if (container && selectedStoreId) container.innerHTML = recordListMarkup(selectedStoreId);
+  }
+
+  function closeDialogs() {
+    root.querySelectorAll(".prospection-dialog-backdrop").forEach((dialog) => dialog.remove());
+    document.body.classList.remove("is-modal-open");
+    pendingPurchaseId = "";
+  }
+
+  function openDialog(markup) {
+    closeDialogs();
+    root.insertAdjacentHTML("beforeend", markup);
+    document.body.classList.add("is-modal-open");
+    requestAnimationFrame(() => root.querySelector(".prospection-dialog-close")?.focus());
+  }
+
+  function dialogShell({ eyebrow, title, body, wide = false }) {
+    return `<div class="prospection-dialog-backdrop"><section class="prospection-dialog${wide ? " is-wide" : ""}" role="dialog" aria-modal="true"><header class="prospection-dialog-header"><div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h2>${escapeHtml(title)}</h2></div><button class="prospection-dialog-close" type="button" data-prospection-action="close-dialog" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header><div class="prospection-dialog-body">${body}</div></section></div>`;
+  }
+
+  function openPurchaseDialog(prospectId) {
+    const row = prospects.find((item) => item.id === prospectId);
+    if (!row) return;
+    openDialog(dialogShell({
+      eyebrow: "Resultado comercial",
+      title: `Registrar compra de ${row.name}`,
+      body: `<form id="prospectionPurchaseForm" class="prospection-config-list"><div class="prospection-purchase-grid"><label class="prospection-field">Valor da compra<input name="purchaseAmount" type="text" inputmode="decimal" placeholder="R$ 0,00" required /></label><label class="prospection-field">Número da OS<input name="purchaseOrder" type="text" maxlength="80" placeholder="OS 1234" required /></label></div><p class="prospection-form-message" data-dialog-message></p><button class="prospection-button" type="submit"><i class="fa-solid fa-check"></i>Confirmar compra</button></form>`,
+    }));
+    pendingPurchaseId = row.id;
+  }
+
+  function openConfirmDialog({ title, message, action, id, idName = "prospect", cancelStoreId = "" }) {
+    openDialog(dialogShell({
+      eyebrow: "Confirmação",
+      title,
+      body: `<p class="prospection-record-notes">${escapeHtml(message)}</p><div class="prospection-account-actions"><button class="prospection-button is-secondary" type="button" data-prospection-action="${cancelStoreId ? "open-configuration" : "close-dialog"}"${cancelStoreId ? ` data-store-id="${escapeHtml(cancelStoreId)}"` : ""}>Cancelar</button><button class="prospection-button is-danger" type="button" data-prospection-action="${action}" data-${escapeHtml(idName)}-id="${escapeHtml(id)}">Confirmar</button></div>`,
+    }));
+  }
+
+  function professionalRanking(storeIds, rows = prospectsFor(storeIds)) {
+    const byProfessional = new Map();
+    rows.forEach((row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem profissional")}`;
+      if (!byProfessional.has(key)) byProfessional.set(key, { name: row.professionalName || "Sem profissional", total: 0, returned: 0, purchased: 0, bonus: 0 });
+      const item = byProfessional.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) item.purchased += 1;
+      if (isBonusEligible(row)) item.bonus += settingsFor(row.storeId).bonusAmount;
+    });
+    return [...byProfessional.values()].sort((a, b) => b.purchased - a.purchased || b.returned - a.returned || b.total - a.total);
+  }
+
+  function calendarMarkup(storeId) {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const offset = (firstDay.getDay() + 6) % 7;
+    const days = new Date(year, month + 1, 0).getDate();
+    const goal = settingsFor(storeId).dailyGoal;
+    const cells = Array.from({ length: offset }, () => `<span class="prospection-calendar-day is-empty"></span>`);
+    for (let day = 1; day <= days; day += 1) {
+      const start = new Date(year, month, day);
+      const count = prospects.filter((row) => row.storeId === storeId && isInWindow(row.createdAt, { start, end: addDays(start, 1) })).length;
+      const progress = percentage(count, goal);
+      const color = progress >= 100 ? "#2fc49a" : progress >= 60 ? "#d48616" : count ? "#c43d59" : "#8b8f8d";
+      cells.push(`<span class="prospection-calendar-day" style="--day-color:${color};--day-strength:${Math.min(22, 6 + progress / 6)}%"><span>${day}</span><strong>${count}/${goal}</strong></span>`);
+    }
+    return `<div class="prospection-panel-heading"><div><p class="eyebrow">Calendário de meta</p><h3>${new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(calendarDate)}</h3><span>Volume registrado por dia.</span></div><div class="prospection-toolbar-actions"><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-prev"><i class="fa-solid fa-chevron-left"></i></button><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-next"><i class="fa-solid fa-chevron-right"></i></button></div></div><div class="prospection-calendar">${cells.join("")}</div>`;
+  }
+
+  function insightScopeStoreId(requestedStoreId = "") {
+    if (bridge.profile.role === "store") return bridge.profile.storeId;
+    const candidates = [requestedStoreId, selectedStoreId, analysisStoreId, bonusStoreId].filter(Boolean);
+    const allowed = new Set(licensedScopedStores().map((store) => store.id));
+    return candidates.find((storeId) => allowed.has(storeId)) || licensedScopedStores()[0]?.id || "";
+  }
+
+  function insightStoreIds(requestedStoreId = "") {
+    const storeId = insightScopeStoreId(requestedStoreId);
+    return storeId ? [storeId] : [];
+  }
+
+  function professionalFilterOptions(storeIds, selectedValue = "all") {
+    const allowed = new Set(storeIds);
+    const values = new Map();
+    professionals.filter((row) => allowed.has(row.storeId)).forEach((row) => values.set(row.id, row.name));
+    prospects.filter((row) => allowed.has(row.storeId) && row.professionalName).forEach((row) => {
+      values.set(row.professionalId || `name:${normalize(row.professionalName)}`, row.professionalName);
+    });
+    return `<option value="all"${selectedValue === "all" ? " selected" : ""}>Todos os responsáveis</option>${[...values.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")).map(([id, name]) => `<option value="${escapeHtml(id)}"${selectedValue === id ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}`;
+  }
+
+  function matchesProfessionalFilter(row, selectedValue) {
+    if (!selectedValue || selectedValue === "all") return true;
+    if (selectedValue.startsWith("name:")) return `name:${normalize(row.professionalName)}` === selectedValue;
+    return row.professionalId === selectedValue;
+  }
+
+  function insightStoreOptions(selectedValue = "") {
+    const allowedStores = licensedScopedStores();
+    if (bridge.profile.role === "store") return `<option value="${escapeHtml(bridge.profile.storeId)}">${escapeHtml(storeById(bridge.profile.storeId)?.name || "Minha empresa")}</option>`;
+    return allowedStores.map((store) => `<option value="${escapeHtml(store.id)}"${selectedValue === store.id ? " selected" : ""}>${escapeHtml(store.name)}</option>`).join("");
+  }
+
+  function insightIdentityMarkup(store, helper) {
+    if (!store) return "";
+    const config = settingsFor(store.id);
+    return `<section class="prospection-insight-identity" style="--account-color:${escapeHtml(config.accentColor)}">
+      <div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><small>Dados isolados deste cliente</small><strong>${escapeHtml(store.name)}</strong><span>${escapeHtml(helper)}</span></div></div>
+      <span class="prospection-scope-lock"><i class="fa-solid fa-lock"></i>Sem mistura de contas</span>
+    </section>`;
+  }
+
+  function shortcutRange(shortcut) {
+    const today = startOfDay(new Date());
+    if (shortcut === "this-week") return { start: startOfWeek(today), end: today };
+    if (shortcut === "last-week") {
+      const currentStart = startOfWeek(today);
+      return { start: addDays(currentStart, -7), end: addDays(currentStart, -1) };
+    }
+    return { start: startOfMonth(today), end: today };
+  }
+
+  function shortcutIsActive(shortcut, startValue, endValue) {
+    const range = shortcutRange(shortcut);
+    return startValue === formatDateInput(range.start) && endValue === formatDateInput(range.end);
+  }
+
+  function dateShortcutsMarkup(target, startValue, endValue) {
+    const definitions = [["this-week", "Esta semana"], ["last-week", "Semana passada"], ["this-month", "Este mês"]];
+    return `<div class="prospection-date-shortcuts" aria-label="Atalhos de período">${definitions.map(([value, label]) => `<button class="prospection-button is-quiet${shortcutIsActive(value, startValue, endValue) ? " is-active" : ""}" type="button" data-prospection-action="apply-date-shortcut" data-shortcut-target="${target}" data-shortcut-value="${value}">${label}</button>`).join("")}</div>`;
+  }
+
+  function insightKpisMarkup(rows, { bonusRows = rows, purchaseRows = rows } = {}) {
+    const metrics = metricsFor(rows);
+    const purchasedRows = purchaseRows.filter((row) => row.purchasedAt);
+    const revenue = purchasedRows.reduce((sum, row) => sum + row.purchaseAmount, 0);
+    const ticket = purchasedRows.length ? revenue / purchasedRows.length : 0;
+    const eligible = bonusRows.filter(isBonusEligible);
+    const totalBonus = bonusFor(eligible);
+    const definitions = [
+      ["fa-phone", "Prospecções", rows.length, "Registros no período"],
+      ["fa-store", "Retornaram", metrics.returned, `${metrics.returnRate}% de retorno`],
+      ["fa-bag-shopping", "Compraram", purchasedRows.length, `${percentage(purchasedRows.length, rows.length)}% sobre as prospecções`],
+      ["fa-sack-dollar", "Faturamento", formatCurrency(revenue), `${formatCurrency(ticket)} de ticket médio`],
+      ["fa-gift", "Bonificação", formatCurrency(totalBonus), `${eligible.length} compras válidas`],
+    ];
+    return `<section class="prospection-insight-kpis">${definitions.map(([icon, label, value, helper]) => `<article><i class="fa-solid ${icon}"></i><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(helper)}</small></article>`).join("")}</section>`;
+  }
+
+  function funnelMarkup(rows) {
+    const total = rows.length;
+    const returned = rows.filter((row) => row.returnedAt).length;
+    const purchased = rows.filter((row) => row.purchasedAt).length;
+    const stages = [["Prospecções", total, 100, "#2f80ed"], ["Retornaram", returned, percentage(returned, total), "#d48616"], ["Compraram", purchased, percentage(purchased, total), "#16855f"]];
+    return `<div class="prospection-funnel">${stages.map(([label, value, percent, color]) => `<div><span><strong>${escapeHtml(label)}</strong><em>${value} · ${percent}%</em></span><i><b style="--funnel-width:${Math.max(value ? 5 : 0, percent)}%;--funnel-color:${color}"></b></i></div>`).join("")}</div>`;
+  }
+
+  function rangeTrendMarkup(rows, startValue, endValue) {
+    const range = dateRange(startValue, endValue);
+    const start = range.start || addDays(startOfDay(new Date()), -13);
+    const end = range.end || addDays(startOfDay(new Date()), 1);
+    const durationDays = Math.max(1, Math.ceil((end - start) / 86400000));
+    const bucketCount = Math.min(14, durationDays);
+    const bucketSize = Math.max(1, Math.ceil(durationDays / bucketCount));
+    const buckets = Array.from({ length: bucketCount }, (_, index) => {
+      const bucketStart = addDays(start, index * bucketSize);
+      const bucketEnd = new Date(Math.min(end.getTime(), addDays(bucketStart, bucketSize).getTime()));
+      return {
+        label: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(bucketStart),
+        value: rows.filter((row) => isInWindow(row.createdAt, { start: bucketStart, end: bucketEnd })).length,
+      };
+    }).filter((bucket, index) => index === 0 || addDays(start, index * bucketSize) < end);
+    const max = Math.max(1, ...buckets.map((bucket) => bucket.value));
+    return `<div class="prospection-mini-chart" style="--chart-columns:${buckets.length}">${buckets.map((bucket) => `<div class="prospection-chart-column" title="${bucket.value} prospecções"><div class="prospection-chart-bar-wrap"><i class="prospection-chart-bar" style="--height:${Math.max(bucket.value ? 5 : 2, (bucket.value / max) * 100)}%"></i></div><span>${escapeHtml(bucket.label)}</span></div>`).join("")}</div>`;
+  }
+
+  function professionalPerformanceRows(rows) {
+    const grouped = new Map();
+    rows.forEach((row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
+      if (!grouped.has(key)) grouped.set(key, { id: key, name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, revenue: 0, bonus: 0 });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) { item.purchased += 1; item.revenue += row.purchaseAmount; }
+      if (isBonusEligible(row)) item.bonus += settingsFor(row.storeId).bonusAmount;
+    });
+    return [...grouped.values()].sort((a, b) => b.purchased - a.purchased || b.revenue - a.revenue || b.returned - a.returned);
+  }
+
+  function professionalPerformanceMarkup(rows, { interactive = false } = {}) {
+    const performance = professionalPerformanceRows(rows);
+    if (!performance.length) return emptyMarkup("Nenhum responsável no período", "Registre o responsável nas prospecções para liberar o comparativo individual.");
+    return `<div class="prospection-performance-table${interactive ? " is-interactive" : ""}" role="table"><div class="prospection-performance-head" role="row"><span>Responsável</span><span>Feitas</span><span>Retornaram</span><span>Compraram</span><span>Faturamento</span><span>Bônus</span>${interactive ? "<span>Registros</span>" : ""}</div>${performance.map((row, index) => `<div class="prospection-performance-row" role="row"><span><b>${index + 1}</b><strong>${escapeHtml(row.name)}</strong></span><span>${row.total}</span><span>${row.returned}<small>${percentage(row.returned, row.total)}%</small></span><span>${row.purchased}<small>${percentage(row.purchased, row.total)}%</small></span><span>${formatCurrency(row.revenue)}</span><span class="is-bonus">${formatCurrency(row.bonus)}</span>${interactive ? `<span><button class="prospection-button is-quiet" type="button" data-prospection-action="show-professional-records" data-professional-id="${escapeHtml(row.id)}">Ver lista</button></span>` : ""}</div>`).join("")}</div>`;
+  }
+
+  function professionalMatchesKey(row, professionalKey) {
+    const rowKey = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
+    return rowKey === professionalKey;
+  }
+
+  function professionalProspectDetailsMarkup(rows, professionalKey) {
+    if (!professionalKey) return "";
+    const selectedRows = rows.filter((row) => professionalMatchesKey(row, professionalKey)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const name = selectedRows[0]?.professionalName || "Sem responsável";
+    return `<article id="prospectionProfessionalRecords" class="prospection-panel prospection-professional-records"><div class="prospection-panel-heading"><div><p class="eyebrow">Registros individuais</p><h3>${escapeHtml(name)}</h3><span>${selectedRows.length} prospecções no período selecionado.</span></div><button class="prospection-button is-quiet" type="button" data-prospection-action="hide-professional-records"><i class="fa-solid fa-xmark"></i>Fechar lista</button></div>
+      ${selectedRows.length ? `<div class="prospection-employee-prospect-list">${selectedRows.map((row) => `<article><div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.phone || "Sem telefone")} · registrada em ${formatDateTime(row.createdAt)}</span><small>${row.returnedAt ? `Retornou em ${formatDate(row.returnedAt)}` : "Ainda não retornou"}</small></div><div><span>${row.purchasedAt ? "Compra confirmada" : "Sem compra"}</span><strong>${row.purchasedAt ? formatCurrency(row.purchaseAmount) : "—"}</strong><small>${row.purchaseOrder ? `OS ${escapeHtml(row.purchaseOrder)}` : escapeHtml(PROBABILITIES[row.probability]?.label || "")}</small></div></article>`).join("")}</div>` : emptyMarkup("Nenhuma prospecção encontrada", "Ajuste o período para consultar outros registros deste responsável.")}
+    </article>`;
+  }
+
+  function storePerformanceMarkup(rows, storeIds) {
+    const entries = storeIds.map((storeId) => {
+      const store = storeById(storeId) || { name: "Cliente" };
+      const storeRows = rows.filter((row) => row.storeId === storeId);
+      const metrics = metricsFor(storeRows);
+      return { store, metrics, revenue: storeRows.reduce((sum, row) => sum + (row.purchasedAt ? row.purchaseAmount : 0), 0) };
+    }).sort((a, b) => b.metrics.purchased - a.metrics.purchased || b.revenue - a.revenue);
+    if (entries.length <= 1) return "";
+    return `<article class="prospection-panel prospection-store-comparison"><div class="prospection-panel-heading"><div><p class="eyebrow">Clientes</p><h3>Desempenho da carteira</h3><span>Comparação por cliente no mesmo período.</span></div></div><div class="prospection-ranking">${entries.map((entry, index) => `<div class="prospection-ranking-row"><span class="prospection-ranking-position">${index + 1}</span><div class="prospection-ranking-name"><strong>${escapeHtml(entry.store.name)}</strong><span>${entry.metrics.total} feitas · ${entry.metrics.returned} retornaram</span></div><div class="prospection-ranking-value"><strong>${entry.metrics.conversion}%</strong><span>${formatCurrency(entry.revenue)}</span></div></div>`).join("")}</div></article>`;
+  }
+
+  function analysisRows(storeIds) {
+    const allowed = new Set(storeIds);
+    return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, analysisStartDate, analysisEndDate) && matchesProfessionalFilter(row, analysisProfessionalId));
+  }
+
+  function openAnalysis(requestedStoreId) {
+    initializeInsightDates();
+    const previousStoreId = analysisStoreId;
+    analysisStoreId = insightScopeStoreId(bridge.profile.role === "store" ? bridge.profile.storeId : requestedStoreId || selectedStoreId || analysisStoreId);
+    if (!analysisStoreId) {
+      bridge.notify("Libere Prospecções para um cliente antes de abrir a análise.", "error");
+      return;
+    }
+    if (previousStoreId && previousStoreId !== analysisStoreId) {
+      analysisProfessionalId = "all";
+      analysisDetailProfessionalId = "";
+    }
+    const storeIds = insightStoreIds(analysisStoreId);
+    const rows = analysisRows(storeIds);
+    const selectedStore = storeById(analysisStoreId);
+    const title = selectedStore?.name || bridge.profile.storeName || "Minha empresa";
+    openDialog(dialogShell({
+      eyebrow: "Inteligência de prospecção",
+      title,
+      wide: true,
+      body: `${insightIdentityMarkup(selectedStore, `${formatInputDateDisplay(analysisStartDate)} a ${formatInputDateDisplay(analysisEndDate)} · ${rows.length} registros`)}
+      ${dateShortcutsMarkup("analysis", analysisStartDate, analysisEndDate)}
+      <form id="prospectionAnalysisFilters" class="prospection-insight-filters">
+        <label>Cliente<select name="storeId">${insightStoreOptions(analysisStoreId)}</select></label>
+        <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(analysisStartDate)}" /></label>
+        <label>Data final<input name="endDate" type="date" value="${escapeHtml(analysisEndDate)}" /></label>
+        <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, analysisProfessionalId)}</select></label>
+        <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar análise</button>
+      </form>
+      ${insightKpisMarkup(rows)}
+      <div class="prospection-insight-grid"><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Funil</p><h3>Eficiência comercial</h3><span>Retorno e compra sobre as prospecções registradas.</span></div></div>${funnelMarkup(rows)}</article><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Evolução</p><h3>Volume no período</h3><span>${escapeHtml(analysisStartDate)} até ${escapeHtml(analysisEndDate)}</span></div></div>${rangeTrendMarkup(rows, analysisStartDate, analysisEndDate)}</article></div>
+      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Equipe</p><h3>Desempenho por responsável</h3><span>Produção, retorno, conversão, faturamento e bonificação.</span></div></div>${professionalPerformanceMarkup(rows, { interactive: true })}</article>
+      ${professionalProspectDetailsMarkup(rows, analysisDetailProfessionalId)}`,
+    }));
+    if (analysisDetailProfessionalId) requestAnimationFrame(() => root.querySelector("#prospectionProfessionalRecords")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  function bonusRows(storeIds) {
+    const allowed = new Set(storeIds);
+    return prospects.filter((row) => allowed.has(row.storeId) && row.purchasedAt && isInOptionalRange(row.purchasedAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
+  }
+
+  function bonusActivityRows(storeIds) {
+    const allowed = new Set(storeIds);
+    return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
+  }
+
+  function bonusProfessionalPerformanceMarkup(activityRows, purchaseRows) {
+    const grouped = new Map();
+    const ensure = (row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
+      if (!grouped.has(key)) grouped.set(key, { name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, revenue: 0, bonus: 0 });
+      return grouped.get(key);
+    };
+    activityRows.forEach((row) => {
+      const item = ensure(row);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+    });
+    purchaseRows.forEach((row) => {
+      const item = ensure(row);
+      item.purchased += 1;
+      item.revenue += row.purchaseAmount;
+      if (isBonusEligible(row)) item.bonus += settingsFor(row.storeId).bonusAmount;
+    });
+    const entries = [...grouped.values()].sort((a, b) => b.bonus - a.bonus || b.purchased - a.purchased || b.revenue - a.revenue);
+    if (!entries.length) return emptyMarkup("Nenhum responsável no período", "As atividades e compras aparecerão aqui após os primeiros registros.");
+    return `<div class="prospection-performance-table" role="table"><div class="prospection-performance-head" role="row"><span>Responsável</span><span>Feitas</span><span>Retornaram</span><span>Compraram</span><span>Faturamento</span><span>Bônus</span></div>${entries.map((row, index) => `<div class="prospection-performance-row" role="row"><span><b>${index + 1}</b><strong>${escapeHtml(row.name)}</strong></span><span>${row.total}</span><span>${row.returned}<small>${percentage(row.returned, row.total)}%</small></span><span>${row.purchased}<small>${percentage(row.purchased, row.total)}%</small></span><span>${formatCurrency(row.revenue)}</span><span class="is-bonus">${formatCurrency(row.bonus)}</span></div>`).join("")}</div>`;
+  }
+
+  function bonusPurchaseListMarkup(rows) {
+    if (!rows.length) return emptyMarkup("Nenhuma compra encontrada", "Ajuste o período ou registre as compras realizadas pelos clientes prospectados.");
+    return `<div class="prospection-bonus-records">${rows.sort((a, b) => new Date(b.purchasedAt) - new Date(a.purchasedAt)).map((row) => {
+      const eligible = isBonusEligible(row);
+      const config = settingsFor(row.storeId);
+      return `<article class="prospection-bonus-record${eligible ? " is-eligible" : ""}"><div><span>${escapeHtml(row.storeName)}</span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.professionalName || "Sem responsável")} · ${formatDate(row.purchasedAt)}</small></div><div><span>OS</span><strong>${escapeHtml(row.purchaseOrder || "—")}</strong></div><div><span>Faturamento</span><strong>${formatCurrency(row.purchaseAmount)}</strong><small>Mínimo ${formatCurrency(config.bonusMinimum)}</small></div><div><span>Bonificação</span><strong>${eligible ? formatCurrency(config.bonusAmount) : "Não elegível"}</strong><small>${eligible ? "Compra válida" : "Abaixo do mínimo"}</small></div></article>`;
+    }).join("")}</div>`;
+  }
+
+  function openBonus(requestedStoreId) {
+    initializeInsightDates();
+    const previousStoreId = bonusStoreId;
+    bonusStoreId = insightScopeStoreId(bridge.profile.role === "store" ? bridge.profile.storeId : requestedStoreId || selectedStoreId || bonusStoreId);
+    if (!bonusStoreId) {
+      bridge.notify("Libere Prospecções para um cliente antes de abrir as bonificações.", "error");
+      return;
+    }
+    if (previousStoreId && previousStoreId !== bonusStoreId) bonusProfessionalId = "all";
+    const storeIds = insightStoreIds(bonusStoreId);
+    const rows = bonusRows(storeIds);
+    const activityRows = bonusActivityRows(storeIds);
+    const eligibleRows = rows.filter(isBonusEligible);
+    const titleStore = storeById(bonusStoreId);
+    openDialog(dialogShell({
+      eyebrow: "Remuneração variável",
+      title: titleStore ? `Bonificações · ${titleStore.name}` : "Bonificações",
+      wide: true,
+      body: `${insightIdentityMarkup(titleStore, `${formatInputDateDisplay(bonusStartDate)} a ${formatInputDateDisplay(bonusEndDate)} · faturamento e OS desta loja`)}
+      ${dateShortcutsMarkup("bonus", bonusStartDate, bonusEndDate)}
+      <form id="prospectionBonusFilters" class="prospection-insight-filters prospection-bonus-filters">
+        <label>Cliente<select name="storeId">${insightStoreOptions(bonusStoreId)}</select></label>
+        <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(bonusStartDate)}" /></label>
+        <label>Data final<input name="endDate" type="date" value="${escapeHtml(bonusEndDate)}" /></label>
+        <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, bonusProfessionalId)}</select></label>
+        <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar período</button>
+      </form>
+      ${insightKpisMarkup(activityRows, { bonusRows: eligibleRows, purchaseRows: rows })}
+      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Pagamento da equipe</p><h3>Bonificação por responsável</h3><span>Produção do período e compras que atingiram o mínimo configurado.</span></div></div>${bonusProfessionalPerformanceMarkup(activityRows, rows)}</article>
+      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Conferência</p><h3>Clientes, faturamento e OS</h3><span>Rastreabilidade completa de cada compra do período.</span></div></div>${bonusPurchaseListMarkup(rows)}</article>`,
+    }));
+  }
+
+  function configurationStoreIds(requestedStoreId = "") {
+    if (requestedStoreId) return isLicensedStore(requestedStoreId) ? [requestedStoreId] : [];
+    return licensedScopedStores().map((store) => store.id);
+  }
+
+  function openConfiguration(requestedStoreId = "") {
+    const storesToConfigure = configurationStoreIds(requestedStoreId).map(storeById).filter(Boolean);
+    const body = storesToConfigure.length
+      ? `<div class="prospection-config-list">${storesToConfigure.map(configurationRowMarkup).join("")}</div>`
+      : emptyMarkup("Nenhum cliente com Prospecções", "Libere uma licença para o cliente no módulo Leads antes de configurar categorias e equipe.");
+    openDialog(`<div class="analysis-overlay prospection-dialog-backdrop"><section class="admin-settings-panel" role="dialog" aria-modal="true" aria-labelledby="prospection-settings-title"><div class="admin-settings-header"><div><p class="eyebrow">${bridge.profile.role === "technician" ? "Configuração da Agência" : "Personalização"}</p><h2 id="prospection-settings-title">${requestedStoreId ? "Configurar cliente" : "Configurar clientes"}</h2></div><button class="icon-button prospection-dialog-close" type="button" data-prospection-action="close-dialog" aria-label="Fechar configurações">&#215;</button></div>${body}</section></div>`);
+  }
+
+  function configurationRowMarkup(store) {
+    const config = settingsFor(store.id);
+    const storeProfessionals = professionalsFor(store.id, true);
+    return `<article class="admin-store-settings-panel prospection-config-row" data-config-store="${store.id}">
+      <div class="prospection-config-row-header"><div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><strong>${escapeHtml(store.name)}</strong><span>Metas, identidade, categorias, subcategorias e equipe</span></div></div></div>
+      <form class="store-settings-fields prospection-config-grid" data-prospection-settings-form data-store-id="${store.id}">
+        <label class="prospection-field">Meta diária<input name="dailyGoal" type="number" min="1" max="9999" value="${config.dailyGoal}" required /></label>
+        <label class="prospection-field">Compra mínima para bônus<input name="bonusMinimum" type="number" min="0" step="0.01" value="${config.bonusMinimum}" required /></label>
+        <label class="prospection-field">Bônus por compra válida<input name="bonusAmount" type="number" min="0" step="0.01" value="${config.bonusAmount}" required /></label>
+        <label class="prospection-field prospection-color-field"><span>Cor de destaque</span><span class="prospection-color-control"><input name="accentColor" type="color" value="${escapeHtml(config.accentColor)}" /><code>${escapeHtml(config.accentColor.toUpperCase())}</code></span></label>
+        <label class="prospection-field prospection-color-field"><span>Fundo da logo</span><span class="prospection-color-control"><input name="logoBackgroundColor" type="color" value="${escapeHtml(config.logoBackgroundColor)}" /><code>${escapeHtml(config.logoBackgroundColor.toUpperCase())}</code></span></label>
+        <button class="primary-button config-save-button" type="submit"><i class="fa-solid fa-check"></i>Salvar configuração</button>
+      </form>
+      <div class="store-managers-grid prospection-config-columns">
+        ${categoryManagerMarkup(store.id)}
+        <section class="store-mini-manager prospection-professional-manager"><div class="prospection-manager-heading"><div><span>Profissionais</span><small>Equipe responsável pelas prospecções</small></div></div><form class="store-manager-form prospection-inline-form" data-prospection-professional-form data-store-id="${store.id}"><input name="name" maxlength="100" placeholder="Nome do profissional" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Criar</button></form><div class="prospection-managed-items">${storeProfessionals.map((professional) => `<form class="store-professional-row prospection-managed-item" data-prospection-professional-update data-professional-id="${professional.id}"><input name="name" value="${escapeHtml(professional.name)}" maxlength="100" required /><label class="store-professional-active"><input name="active" type="checkbox"${professional.active ? " checked" : ""} /><span>${professional.active ? "Ativo" : "Inativo"}</span></label><button class="secondary-button" type="submit"><i class="fa-solid fa-check"></i>Salvar</button></form>`).join("") || `<small>Nenhum profissional cadastrado.</small>`}</div></section>
+      </div>
+    </article>`;
+  }
+
+  function categoryManagerMarkup(storeId) {
+    const storeCategories = categoriesFor(storeId);
+    return `<section class="store-mini-manager prospection-category-manager">
+      <div class="prospection-manager-heading"><div><span>Categorias e subcategorias</span><small>Cada subcategoria/etiqueta fica dentro de uma categoria.</small></div></div>
+      <form class="store-manager-form prospection-inline-form" data-prospection-category-form data-store-id="${storeId}"><input name="name" maxlength="60" placeholder="Nova categoria" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Categoria</button></form>
+      <div class="prospection-category-list">
+        ${storeCategories.map((category, categoryIndex) => categoryEditorMarkup(category, categoryIndex, storeCategories.length)).join("") || `<div class="prospection-empty is-compact"><strong>Nenhuma categoria</strong><span>Crie a primeira categoria para organizar as subcategorias.</span></div>`}
+      </div>
+    </section>`;
+  }
+
+  function categoryEditorMarkup(category, categoryIndex, categoryCount) {
+    const categoryTags = tagsFor(category.storeId).filter((tag) => tag.categoryId === category.id);
+    return `<article class="prospection-category-card">
+      <div class="prospection-category-header">
+        <form data-prospection-category-update data-store-id="${category.storeId}" data-category-id="${category.id}"><span class="prospection-drag-handle"><i class="fa-solid fa-grip-vertical"></i></span><input name="name" value="${escapeHtml(category.name)}" maxlength="60" aria-label="Nome da categoria" required /><button class="prospection-icon-action" type="submit" title="Salvar categoria" aria-label="Salvar categoria"><i class="fa-solid fa-check"></i></button></form>
+        <div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-category-id="${category.id}" data-direction="up"${categoryIndex === 0 ? " disabled" : ""} aria-label="Mover categoria para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-category-id="${category.id}" data-direction="down"${categoryIndex === categoryCount - 1 ? " disabled" : ""} aria-label="Mover categoria para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-category" data-category-id="${category.id}" aria-label="Excluir categoria"><i class="fa-solid fa-trash"></i></button></div>
+      </div>
+      <form class="store-manager-form prospection-inline-form is-tag-form" data-prospection-tag-form data-store-id="${category.storeId}" data-category-id="${category.id}"><input name="label" maxlength="60" placeholder="Nova subcategoria em ${escapeHtml(category.name)}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Subcategoria</button></form>
+      <div class="prospection-tag-editor-list">
+        ${categoryTags.map((tag, tagIndex) => tagEditorMarkup(tag, tagIndex, categoryTags.length)).join("") || `<small>Nenhuma subcategoria nesta categoria.</small>`}
+      </div>
+    </article>`;
+  }
+
+  function tagEditorMarkup(tag, tagIndex, tagCount) {
+    return `<form class="prospection-tag-editor-row" data-prospection-tag-update data-tag-id="${tag.id}" data-category-id="${tag.categoryId}"><span class="prospection-drag-handle"><i class="fa-solid fa-tag"></i></span><input name="label" value="${escapeHtml(tag.label)}" maxlength="60" aria-label="Nome da etiqueta" required /><div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-tag-id="${tag.id}" data-direction="up"${tagIndex === 0 ? " disabled" : ""} aria-label="Mover etiqueta para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-tag-id="${tag.id}" data-direction="down"${tagIndex === tagCount - 1 ? " disabled" : ""} aria-label="Mover etiqueta para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action" type="submit" aria-label="Salvar etiqueta"><i class="fa-solid fa-check"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-tag" data-tag-id="${tag.id}" aria-label="Excluir etiqueta"><i class="fa-solid fa-trash"></i></button></div></form>`;
+  }
+
+  function reportRows(storeIds) {
+    return storeIds.map((storeId) => {
+      const store = storeById(storeId) || { name: "Cliente" };
+      const rows = prospectsFor(storeId);
+      return { storeId, name: store.name, ...metricsFor(rows) };
+    }).sort((a, b) => b.purchased - a.purchased || b.total - a.total);
+  }
+
+  function openReports(requestedStoreId = "") {
+    const storeIds = requestedStoreId ? [requestedStoreId] : licensedScopedStores().map((store) => store.id);
+    const rows = reportRows(storeIds);
+    const table = rows.length ? `<div style="overflow:auto"><table class="prospection-report-table"><thead><tr><th>Cliente</th><th>Prospecções</th><th>Vieram</th><th>Compraram</th><th>Conversão</th><th>Bônus</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.total}</td><td>${row.returned}</td><td>${row.purchased}</td><td>${row.conversion}%</td><td>${formatCurrency(row.bonus)}</td></tr>`).join("")}</tbody></table></div>` : emptyMarkup("Sem dados para relatório", "Registre prospecções para gerar o consolidado.");
+    openDialog(dialogShell({
+      eyebrow: "Relatórios",
+      title: `Consolidado · ${periodWindow().label}`,
+      wide: true,
+      body: `<div class="prospection-account-actions"><button class="prospection-button" type="button" data-prospection-action="export-report" data-store-id="${escapeHtml(requestedStoreId)}"><i class="fa-solid fa-file-csv"></i>Exportar CSV</button></div>${table}`,
+    }));
+  }
+
+  function exportReport(requestedStoreId = "") {
+    const storeIds = requestedStoreId ? [requestedStoreId] : licensedScopedStores().map((store) => store.id);
+    const rows = reportRows(storeIds);
+    const csvRows = [["Cliente", "Prospeccoes", "Vieram", "Compraram", "Conversao", "Bonificacao"], ...rows.map((row) => [row.name, row.total, row.returned, row.purchased, `${row.conversion}%`, row.bonus.toFixed(2)])];
+    const csv = csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `prospeccoes-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    bridge.notify("Relatório exportado");
+  }
+
+  function exportArchivedProspections() {
+    if (!archiveProspects.length) {
+      bridge.notify("Nenhum registro disponível para exportação.", "error");
+      return;
+    }
+    const probabilityLabels = Object.fromEntries(Object.entries(PROBABILITIES).map(([key, value]) => [key, value.label]));
+    const csvRows = [[
+      "Cliente", "Nome", "Telefone", "CPF", "Anotacoes", "Probabilidade", "Categorias e etiquetas",
+      "Profissional", "Criado em", "Retornou em", "Comprou em", "Valor da compra", "OS", "Atualizado em",
+    ], ...archiveProspects.map((row) => [
+      row.storeName, row.name, row.phone, row.cpf, row.notes, probabilityLabels[row.probability] || row.probability,
+      row.tagValues.join(" | "), row.professionalName, formatDateTime(row.createdAt), formatDateTime(row.returnedAt),
+      formatDateTime(row.purchasedAt), row.purchaseAmount ? row.purchaseAmount.toFixed(2).replace(".", ",") : "",
+      row.purchaseOrder, formatDateTime(row.updatedAt),
+    ])];
+    const csv = csvRows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `historico-prospeccoes-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    bridge.notify(`${archiveProspects.length} registros exportados.`);
+  }
+
+  async function mutate(task, successMessage, { configuration = false, closeDialog = false } = {}) {
+    if (loading) return false;
+    loading = true;
+    try {
+      await task();
+      await reload({ configuration });
+      if (closeDialog) closeDialogs();
+      loading = false;
+      render();
+      if (successMessage) bridge.notify(successMessage);
+      return true;
+    } catch (error) {
+      const message = readableError(error);
+      const target = root.querySelector("[data-dialog-message]") || root.querySelector("#prospectionFormMessage");
+      if (target) target.textContent = message;
+      bridge.notify(message, "error");
+      return false;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function saveProspect(form) {
+    const data = new FormData(form);
+    const name = String(data.get("name") || "").trim();
+    if (!name) return;
+    const storeId = bridge.profile.role === "store" ? bridge.profile.storeId : selectedStoreId;
+    const selectedTags = data.getAll("tags").map(String);
+    const wasEditing = Boolean(editingId);
+    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection", {
+      p_prospection_id: data.get("prospectId") || null,
+      p_store_id: storeId,
+      p_name: name,
+      p_phone: String(data.get("phone") || "").trim() || null,
+      p_cpf: String(data.get("cpf") || "").trim() || null,
+      p_notes: String(data.get("notes") || "").trim() || null,
+      p_probability: String(data.get("probability") || "blue"),
+      p_tags: selectedTags,
+      p_professional_id: data.get("professionalId") || null,
+    }), wasEditing ? "Prospecção atualizada" : "Prospecção registrada");
+    if (saved) {
+      editingId = "";
+      render();
+    }
+  }
+
+  async function setOutcome(prospectId, values, message) {
+    await mutate(() => bridge.rpc("lc_set_prospection_outcome", {
+      p_prospection_id: prospectId,
+      p_returned: values.returned ?? null,
+      p_purchased: values.purchased ?? null,
+      p_purchase_amount: values.purchaseAmount ?? null,
+      p_purchase_order: values.purchaseOrder ?? null,
+    }), message, { closeDialog: values.closeDialog });
+  }
+
+  async function savePurchase(form) {
+    const data = new FormData(form);
+    const amount = parseMoney(data.get("purchaseAmount"));
+    const order = String(data.get("purchaseOrder") || "").trim();
+    if (amount <= 0 || !order) {
+      root.querySelector("[data-dialog-message]").textContent = "Informe um valor maior que zero e o número da OS.";
+      return;
+    }
+    await setOutcome(pendingPurchaseId, { returned: true, purchased: true, purchaseAmount: amount, purchaseOrder: order, closeDialog: true }, "Compra registrada");
+  }
+
+  async function deleteProspect(prospectId) {
+    await mutate(() => bridge.rpc("lc_delete_prospection", { p_prospection_id: prospectId }), "Prospecção excluída", { closeDialog: true });
+    if (editingId === prospectId) editingId = "";
+  }
+
+  async function saveSettings(form) {
+    const data = new FormData(form);
+    const saved = await mutate(async () => {
+      await bridge.rpc("lc_save_prospection_store_settings", {
+        p_store_id: form.dataset.storeId,
+        p_daily_goal: Number(data.get("dailyGoal")),
+        p_bonus_minimum: Number(data.get("bonusMinimum")),
+        p_bonus_amount: Number(data.get("bonusAmount")),
+        p_accent_color: String(data.get("accentColor") || DEFAULT_SETTINGS.accentColor),
+      });
+      await bridge.rpc("lc_save_prospection_logo_background", {
+        p_store_id: form.dataset.storeId,
+        p_logo_background_color: String(data.get("logoBackgroundColor") || DEFAULT_SETTINGS.logoBackgroundColor),
+      });
+    }, "Configuração salva", { configuration: true });
+    if (saved) openConfiguration(form.dataset.storeId);
+  }
+
+  function applyAnalysisFilters(form) {
+    const data = new FormData(form);
+    const nextStart = String(data.get("startDate") || "");
+    const nextEnd = String(data.get("endDate") || "");
+    if (nextStart && nextEnd && nextStart > nextEnd) {
+      bridge.notify("A data inicial não pode ser posterior à data final.", "error");
+      return;
+    }
+    const nextStoreId = bridge.profile.role === "store" ? bridge.profile.storeId : String(data.get("storeId") || "");
+    if (nextStoreId !== analysisStoreId) analysisProfessionalId = "all";
+    else analysisProfessionalId = String(data.get("professionalId") || "all");
+    analysisDetailProfessionalId = "";
+    analysisStartDate = nextStart;
+    analysisEndDate = nextEnd;
+    openAnalysis(nextStoreId);
+  }
+
+  function applyBonusFilters(form) {
+    const data = new FormData(form);
+    const nextStart = String(data.get("startDate") || "");
+    const nextEnd = String(data.get("endDate") || "");
+    if (nextStart && nextEnd && nextStart > nextEnd) {
+      bridge.notify("A data inicial não pode ser posterior à data final.", "error");
+      return;
+    }
+    const nextStoreId = bridge.profile.role === "store" ? bridge.profile.storeId : String(data.get("storeId") || "");
+    if (nextStoreId !== bonusStoreId) bonusProfessionalId = "all";
+    else bonusProfessionalId = String(data.get("professionalId") || "all");
+    bonusStartDate = nextStart;
+    bonusEndDate = nextEnd;
+    openBonus(nextStoreId);
+  }
+
+  function applyDateShortcut(target, shortcut) {
+    const range = shortcutRange(shortcut);
+    if (target === "bonus") {
+      bonusStartDate = formatDateInput(range.start);
+      bonusEndDate = formatDateInput(range.end);
+      openBonus(bonusStoreId || selectedStoreId);
+      return;
+    }
+    analysisStartDate = formatDateInput(range.start);
+    analysisEndDate = formatDateInput(range.end);
+    analysisDetailProfessionalId = "";
+    openAnalysis(analysisStoreId || selectedStoreId);
+  }
+
+  async function addTag(form) {
+    const data = new FormData(form);
+    const saved = await mutate(() => bridge.rpc("lc_add_prospection_tag", {
+      p_store_id: form.dataset.storeId,
+      p_category_id: form.dataset.categoryId,
+      p_label: String(data.get("label") || "").trim(),
+    }), "Etiqueta criada", { configuration: true });
+    if (saved) openConfiguration(form.dataset.storeId);
+  }
+
+  async function saveCategory(form) {
+    const data = new FormData(form);
+    const name = String(data.get("name") || "").trim();
+    if (!name) return;
+    const categoryId = form.dataset.categoryId || null;
+    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_category", {
+      p_store_id: form.dataset.storeId,
+      p_category_id: categoryId,
+      p_name: name,
+    }), categoryId ? "Categoria atualizada" : "Categoria criada", { configuration: true });
+    if (saved) openConfiguration(form.dataset.storeId);
+  }
+
+  async function updateTag(form) {
+    const data = new FormData(form);
+    const tag = tags.find((row) => row.id === form.dataset.tagId);
+    if (!tag) return;
+    const saved = await mutate(() => bridge.rpc("lc_update_prospection_tag", {
+      p_tag_id: tag.id,
+      p_category_id: form.dataset.categoryId,
+      p_label: String(data.get("label") || "").trim(),
+    }), "Etiqueta atualizada", { configuration: true });
+    if (saved) openConfiguration(tag.storeId);
+  }
+
+  async function moveCategory(categoryId, direction) {
+    const category = tagCategories.find((row) => row.id === categoryId);
+    if (!category) return;
+    const ordered = categoriesFor(category.storeId);
+    const index = ordered.findIndex((row) => row.id === category.id);
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
+    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+    const saved = await mutate(() => bridge.rpc("lc_reorder_prospection_categories", {
+      p_store_id: category.storeId,
+      p_ordered_ids: ordered.map((row) => row.id),
+    }), "Ordem das categorias atualizada", { configuration: true });
+    if (saved) openConfiguration(category.storeId);
+  }
+
+  async function moveTag(tagId, direction) {
+    const tag = tags.find((row) => row.id === tagId);
+    if (!tag) return;
+    const ordered = tagsFor(tag.storeId).filter((row) => row.categoryId === tag.categoryId);
+    const index = ordered.findIndex((row) => row.id === tag.id);
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
+    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+    const saved = await mutate(() => bridge.rpc("lc_reorder_prospection_tags", {
+      p_category_id: tag.categoryId,
+      p_ordered_ids: ordered.map((row) => row.id),
+    }), "Ordem das etiquetas atualizada", { configuration: true });
+    if (saved) openConfiguration(tag.storeId);
+  }
+
+  async function deleteCategory(categoryId) {
+    const category = tagCategories.find((row) => row.id === categoryId);
+    if (!category) return;
+    const deleted = await mutate(() => bridge.rpc("lc_delete_prospection_category", {
+      p_category_id: category.id,
+    }), "Categoria excluída", { configuration: true, closeDialog: true });
+    if (deleted) openConfiguration(category.storeId);
+  }
+
+  async function addProfessional(form) {
+    const data = new FormData(form);
+    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_professional", { p_store_id: form.dataset.storeId, p_professional_id: null, p_name: String(data.get("name") || "").trim(), p_is_active: true }), "Profissional criado", { configuration: true });
+    if (saved) openConfiguration(form.dataset.storeId);
+  }
+
+  async function updateProfessional(form) {
+    const data = new FormData(form);
+    const professional = professionals.find((row) => row.id === form.dataset.professionalId);
+    if (!professional) return;
+    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_professional", { p_store_id: professional.storeId, p_professional_id: professional.id, p_name: String(data.get("name") || "").trim(), p_is_active: data.get("active") === "on" }), "Profissional atualizado", { configuration: true });
+    if (saved) openConfiguration(professional.storeId);
+  }
+
+  root.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.target;
+    if (form.id === "prospectForm") saveProspect(form);
+    else if (form.id === "prospectionPurchaseForm") savePurchase(form);
+    else if (form.id === "prospectionAnalysisFilters") applyAnalysisFilters(form);
+    else if (form.id === "prospectionBonusFilters") applyBonusFilters(form);
+    else if (form.matches("[data-prospection-settings-form]")) saveSettings(form);
+    else if (form.matches("[data-prospection-category-form], [data-prospection-category-update]")) saveCategory(form);
+    else if (form.matches("[data-prospection-tag-form]")) addTag(form);
+    else if (form.matches("[data-prospection-tag-update]")) updateTag(form);
+    else if (form.matches("[data-prospection-professional-form]")) addProfessional(form);
+    else if (form.matches("[data-prospection-professional-update]")) updateProfessional(form);
+  });
+
+  root.addEventListener("input", (event) => {
+    if (event.target.matches("[data-prospection-search]")) {
+      listSearch = event.target.value;
+      renderRecordList();
+    }
+    if (event.target.name === "phone") event.target.value = formatPhone(event.target.value);
+    if (event.target.name === "cpf") event.target.value = formatCpf(event.target.value);
+    if (event.target.type === "color" && event.target.closest(".prospection-color-control")) {
+      const control = event.target.closest(".prospection-color-control");
+      const code = control.querySelector("code");
+      if (code) code.textContent = event.target.value.toUpperCase();
+      const configRow = event.target.closest("[data-config-store]");
+      if (event.target.name === "logoBackgroundColor") configRow?.querySelector(".prospection-account-icon.has-image")?.style.setProperty("--logo-background", event.target.value);
+      if (event.target.name === "accentColor") configRow?.style.setProperty("--account-color", event.target.value);
+    }
+  });
+
+  root.addEventListener("change", (event) => {
+    if (event.target.matches("[data-prospection-period]")) {
+      dashboardPeriod = event.target.value;
+      filtersOpen = false;
+      closeDialogs();
+      render();
+    }
+    if (event.target.matches("[data-prospection-status]")) {
+      listStatus = event.target.value;
+      filtersOpen = false;
+      render();
+    }
+  });
+
+  root.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-prospection-action]");
+    if (!button) {
+      if (event.target.classList.contains("prospection-dialog-backdrop")) closeDialogs();
+      else if (filtersOpen && !event.target.closest(".filter-menu")) { filtersOpen = false; render(); }
+      return;
+    }
+    const action = button.dataset.prospectionAction;
+    const prospectId = button.dataset.prospectId || "";
+    if (action === "close-dialog") closeDialogs();
+    else if (action === "toggle-theme") { document.querySelector("#themeToggle")?.click(); render(); }
+    else if (action === "logout") document.querySelector("#logoutButton")?.click();
+    else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
+    else if (action === "manage-access") bridge.openStoreAccess?.(button.dataset.storeId || "");
+    else if (action === "export-archive") exportArchivedProspections();
+    else if (action === "copy-upgrade-request") {
+      const agencyName = button.dataset.agencyName || "minha agência";
+      const message = `Olá, ${agencyName}! Quero liberar o módulo de Prospecções para nossa loja e acompanhar o desempenho da equipe, retornos, compras e bonificações.`;
+      try {
+        await navigator.clipboard.writeText(message);
+        bridge.notify("Pedido copiado. Envie esta mensagem para sua agência.");
+      } catch {
+        bridge.notify(`Solicite a ${agencyName} a liberação do módulo de Prospecções.`);
+      }
+    }
+    else if (action === "toggle-filters") { filtersOpen = !filtersOpen; render(); }
+    else if (action === "clear-form") { editingId = ""; render(); }
+    else if (action === "select-agency") { selectedAgencyId = button.dataset.accountId; render(); }
+    else if (action === "clear-agency") { selectedAgencyId = ""; render(); }
+    else if (action === "select-store") {
+      const storeId = button.dataset.accountId;
+      if (!isLicensedStore(storeId)) bridge.notify("Este cliente possui somente Leads. Libere uma licença de Prospecções primeiro.", "error");
+      else { selectedStoreId = storeId; editingId = ""; listSearch = ""; listStatus = "all"; render(); }
+    }
+    else if (action === "back-dashboard") { selectedStoreId = ""; editingId = ""; render(); }
+    else if (action === "open-store-analysis") openAnalysis(button.dataset.storeId);
+    else if (action === "open-analysis") openAnalysis();
+    else if (action === "open-store-bonus") openBonus(button.dataset.storeId);
+    else if (action === "open-bonus") openBonus();
+    else if (action === "open-configuration") openConfiguration(button.dataset.storeId || "");
+    else if (action === "open-reports") openReports(button.dataset.storeId || "");
+    else if (action === "apply-date-shortcut") applyDateShortcut(button.dataset.shortcutTarget || "analysis", button.dataset.shortcutValue || "this-month");
+    else if (action === "show-professional-records") {
+      analysisDetailProfessionalId = button.dataset.professionalId || "";
+      openAnalysis(analysisStoreId || selectedStoreId);
+    }
+    else if (action === "hide-professional-records") {
+      analysisDetailProfessionalId = "";
+      openAnalysis(analysisStoreId || selectedStoreId);
+    }
+    else if (action === "export-report") exportReport(button.dataset.storeId || "");
+    else if (action === "edit-prospect") { editingId = prospectId; render(); root.querySelector("#prospectForm")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    else if (action === "cancel-edit") { editingId = ""; render(); }
+    else if (action === "toggle-returned") await setOutcome(prospectId, { returned: button.dataset.nextValue === "true" }, button.dataset.nextValue === "true" ? "Volta registrada" : "Volta removida");
+    else if (action === "open-purchase") openPurchaseDialog(prospectId);
+    else if (action === "unmark-purchased") openConfirmDialog({ title: "Remover esta compra?", message: "O valor, a OS e a bonificação vinculada serão removidos.", action: "confirm-unmark-purchased", id: prospectId });
+    else if (action === "confirm-unmark-purchased") await setOutcome(prospectId, { purchased: false, closeDialog: true }, "Compra removida");
+    else if (action === "confirm-delete") openConfirmDialog({ title: "Excluir esta prospecção?", message: "O registro e seus resultados serão removidos definitivamente.", action: "delete-prospect", id: prospectId });
+    else if (action === "delete-prospect") await deleteProspect(prospectId);
+    else if (action === "move-category") await moveCategory(button.dataset.categoryId, button.dataset.direction);
+    else if (action === "delete-category") {
+      const category = tagCategories.find((row) => row.id === button.dataset.categoryId);
+      if (category) openConfirmDialog({ title: `Excluir ${category.name}?`, message: "A categoria e todas as etiquetas dentro dela serão excluídas definitivamente.", action: "confirm-delete-category", id: category.id, idName: "category", cancelStoreId: category.storeId });
+    } else if (action === "confirm-delete-category") await deleteCategory(button.dataset.categoryId);
+    else if (action === "move-tag") await moveTag(button.dataset.tagId, button.dataset.direction);
+    else if (action === "delete-tag") {
+      const tag = tags.find((row) => row.id === button.dataset.tagId);
+      if (tag) openConfirmDialog({ title: `Excluir ${tag.label}?`, message: "A etiqueta será removida desta configuração. Registros históricos permanecem preservados.", action: "confirm-delete-tag", id: tag.id, idName: "tag", cancelStoreId: tag.storeId });
+    } else if (action === "confirm-delete-tag") {
+      const tag = tags.find((row) => row.id === button.dataset.tagId);
+      const deleted = tag ? await mutate(() => bridge.rpc("lc_delete_prospection_tag", { p_tag_id: tag.id }), "Etiqueta excluída", { configuration: true }) : false;
+      if (deleted) openConfiguration(tag.storeId);
+    } else if (action === "calendar-prev" || action === "calendar-next") {
+      calendarDate = addMonths(calendarDate, action === "calendar-prev" ? -1 : 1);
+      openAnalysis(analysisStoreId || selectedStoreId);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) closeDialogs();
+  });
+
+  window.ProspectionsModule = {
+    activate,
+    deactivate,
+    refreshContext,
+    renderFatalError,
+  };
+})();
