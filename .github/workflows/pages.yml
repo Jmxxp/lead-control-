@@ -1,0 +1,66 @@
+name: Publicar site no GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v6
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Montar site estático
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp \
+            index.html \
+            app.js \
+            styles.css \
+            prospections.js \
+            prospections.css \
+            prospec-original.css \
+            whatsapp.js \
+            whatsapp.css \
+            manifest.webmanifest \
+            favicon.ico \
+            logo__.png \
+            _site/
+          cp -R assets _site/assets
+          touch _site/.nojekyll
+
+      - name: Enviar artefato do site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 900000
