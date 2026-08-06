@@ -29,12 +29,14 @@
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
     <link rel="stylesheet" href="styles.css?v=20260806-agency-contact-1" />
+    <link rel="stylesheet" href="marketing.css?v=20260806-attribution-core-4" />
     <link rel="stylesheet" href="prospections.css?v=20260806-analysis-calendar-4" />
     <link rel="stylesheet" href="whatsapp.css?v=20260806-whatsapp-core-2" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260806-whatsapp-core-2" defer></script>
+    <script src="app.js?v=20260806-attribution-core-4" defer></script>
+    <script src="marketing.js?v=20260806-attribution-core-4" defer></script>
     <script src="prospections.js?v=20260806-analysis-calendar-2" defer></script>
     <script src="whatsapp.js?v=20260806-whatsapp-core-2" defer></script>
   </head>
@@ -552,10 +554,47 @@
                     <h3>Funil, receita e eficiência da mídia</h3>
                     <p>Indicadores calculados somente com o cliente e o período selecionados.</p>
                   </div>
-                  <span id="marketingDataBadge" class="marketing-data-badge">Dados próprios</span>
+                  <div class="marketing-intelligence-actions">
+                    <span id="marketingDataBadge" class="marketing-data-badge">Dados próprios</span>
+                    <button id="marketingSyncButton" class="marketing-heading-button" type="button">
+                      <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                      <span>Sincronizar</span>
+                    </button>
+                    <button id="marketingConnectButton" class="marketing-heading-button is-primary" type="button">
+                      <i class="fa-solid fa-link" aria-hidden="true"></i>
+                      <span>Conectar mídias</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div id="marketingFunnel" class="marketing-funnel" aria-label="Etapas do funil comercial"></div>
+
+                <section id="marketingApiPanel" class="marketing-api-panel" aria-label="Métricas importadas das plataformas">
+                  <div class="marketing-api-heading">
+                    <div>
+                      <span>Meta Ads + Google Ads</span>
+                      <strong>Desempenho da mídia conectado ao resultado real</strong>
+                    </div>
+                    <small id="marketingApiLastSync">Conecte uma conta para importar os dados</small>
+                  </div>
+                  <div id="marketingApiMetrics" class="marketing-api-metrics"></div>
+                  <div class="marketing-attribution-health">
+                    <div>
+                      <span><i class="fa-solid fa-route" aria-hidden="true"></i>Cobertura de atribuição</span>
+                      <strong id="marketingAttributionCoverage">0%</strong>
+                    </div>
+                    <div class="marketing-attribution-track" aria-hidden="true"><i id="marketingAttributionCoverageBar"></i></div>
+                    <small>Percentual de leads com UTM, identificador de clique ou campanha reconhecida.</small>
+                  </div>
+                  <div id="marketingApiBreakdown" class="marketing-api-breakdown" aria-label="Desempenho por campanha"></div>
+                  <details class="marketing-journey-details">
+                    <summary>
+                      <span><i class="fa-solid fa-timeline" aria-hidden="true"></i>Jornadas recentes</span>
+                      <small>Do primeiro clique ao resultado comercial</small>
+                    </summary>
+                    <div id="marketingJourneyList" class="marketing-journey-list"></div>
+                  </details>
+                </section>
 
                 <div class="marketing-performance-grid">
                   <article class="performance-card is-revenue">
@@ -716,14 +755,16 @@
                           <span class="connector-logo is-meta"><i class="fa-brands fa-meta" aria-hidden="true"></i></span>
                           <div><strong>Meta Conversions API</strong><small id="metaConnectionStatus">Aguardando conexão segura</small></div>
                           <b id="metaConnectionBadge">Desconectado</b>
+                          <button class="connector-manage-button" type="button" data-marketing-provider-configure="meta"><i class="fa-solid fa-plus" aria-hidden="true"></i>Conectar</button>
                         </div>
                         <div class="connector-status-row">
                           <span class="connector-logo is-google"><i class="fa-brands fa-google" aria-hidden="true"></i></span>
                           <div><strong>Google Data Manager</strong><small id="googleConnectionStatus">Aguardando conexão segura</small></div>
                           <b id="googleConnectionBadge">Desconectado</b>
+                          <button class="connector-manage-button" type="button" data-marketing-provider-configure="google"><i class="fa-solid fa-plus" aria-hidden="true"></i>Conectar</button>
                         </div>
                       </div>
-                      <p class="connector-note">A estrutura de eventos e retorno de compras já está preparada. A ativação exige as credenciais OAuth das contas de anúncio.</p>
+                      <p class="connector-note"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>As credenciais são cifradas no servidor e nunca retornam preenchidas ao navegador.</p>
                     </article>
                   </div>
                 </details>
@@ -1788,6 +1829,184 @@
           </button>
         </div>
         <div id="leadDetailsContent" class="lead-details-content"></div>
+      </section>
+    </div>
+
+    <div id="marketingConnectionModal" class="modal-backdrop marketing-connection-backdrop" hidden>
+      <section class="marketing-connection-dialog" role="dialog" aria-modal="true" aria-labelledby="marketingConnectionTitle">
+        <header class="marketing-connection-header">
+          <div class="marketing-connection-title">
+            <span class="marketing-connection-icon" aria-hidden="true"><i class="fa-solid fa-chart-line"></i></span>
+            <div>
+              <p class="eyebrow">Jornada e atribuição</p>
+              <h2 id="marketingConnectionTitle">Conectar contas de anúncio</h2>
+              <span><b id="marketingConnectionStoreName">Cliente selecionado</b> · dados totalmente isolados</span>
+            </div>
+          </div>
+          <button id="marketingConnectionClose" class="ghost-button topbar-icon-button" type="button" aria-label="Fechar integrações" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <div class="marketing-provider-tabs" role="tablist" aria-label="Plataforma de anúncios">
+          <button id="marketingMetaTab" class="marketing-provider-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="marketingMetaFields" data-marketing-provider-tab="meta">
+            <span class="connector-logo is-meta"><i class="fa-brands fa-meta" aria-hidden="true"></i></span>
+            <span><strong>Meta Ads</strong><small>Insights + Conversions API</small></span>
+          </button>
+          <button id="marketingGoogleTab" class="marketing-provider-tab" type="button" role="tab" aria-selected="false" aria-controls="marketingGoogleFields" data-marketing-provider-tab="google">
+            <span class="connector-logo is-google"><i class="fa-brands fa-google" aria-hidden="true"></i></span>
+            <span><strong>Google Ads</strong><small>Relatórios + Data Manager</small></span>
+          </button>
+        </div>
+
+        <div class="marketing-connection-body">
+          <form id="marketingConnectionForm" class="marketing-credentials-panel" autocomplete="off">
+            <div class="marketing-panel-heading">
+              <div>
+                <span>Conexão segura</span>
+                <strong>Credenciais da conta</strong>
+                <small>Os segredos são cifrados antes de serem armazenados.</small>
+              </div>
+              <span class="marketing-security-seal"><i class="fa-solid fa-lock" aria-hidden="true"></i>Servidor</span>
+            </div>
+
+            <label class="field">
+              <span>Nome da conexão</span>
+              <input id="marketingConnectionName" type="text" maxlength="120" placeholder="Ex.: Conta principal da loja" required />
+            </label>
+
+            <div id="marketingMetaFields" class="marketing-provider-fields" role="tabpanel" aria-labelledby="marketingMetaTab">
+              <div class="marketing-form-columns">
+                <label class="field">
+                  <span>ID da conta de anúncios</span>
+                  <input id="marketingMetaAdAccountId" type="text" inputmode="numeric" placeholder="act_123456789" />
+                  <small>Use a conta que financia as campanhas deste cliente.</small>
+                </label>
+                <label class="field">
+                  <span>Pixel ou Dataset ID</span>
+                  <input id="marketingMetaPixelId" type="text" inputmode="numeric" placeholder="123456789" />
+                  <small>Destino das conversões enviadas pelo servidor.</small>
+                </label>
+              </div>
+              <div class="marketing-form-columns is-token-row">
+                <label class="field">
+                  <span>Access Token</span>
+                  <input id="marketingMetaAccessToken" type="password" autocomplete="new-password" placeholder="Cole apenas para cadastrar ou substituir" />
+                  <small>Recomendado: token de usuário do sistema com acesso aos ativos.</small>
+                </label>
+                <label class="field marketing-api-version-field">
+                  <span>Versão da API</span>
+                  <select id="marketingMetaApiVersion">
+                    <option value="v26.0">v26.0 · atual</option>
+                    <option value="v25.0">v25.0</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div id="marketingGoogleFields" class="marketing-provider-fields" role="tabpanel" aria-labelledby="marketingGoogleTab" hidden>
+              <div class="marketing-form-columns is-three">
+                <label class="field">
+                  <span>Customer ID</span>
+                  <input id="marketingGoogleCustomerId" type="text" inputmode="numeric" placeholder="123-456-7890" />
+                </label>
+                <label class="field">
+                  <span>Login Customer ID</span>
+                  <input id="marketingGoogleLoginCustomerId" type="text" inputmode="numeric" placeholder="MCC, se houver" />
+                </label>
+                <label class="field">
+                  <span>Ação de conversão</span>
+                  <input id="marketingGoogleConversionActionId" type="text" inputmode="numeric" placeholder="Conversion Action ID" />
+                </label>
+              </div>
+              <label class="field">
+                <span>Developer Token</span>
+                <input id="marketingGoogleDeveloperToken" type="password" autocomplete="new-password" placeholder="Necessário para importar as métricas do Google Ads" />
+              </label>
+              <div class="marketing-form-columns">
+                <label class="field">
+                  <span>OAuth Client ID</span>
+                  <input id="marketingGoogleClientId" type="password" autocomplete="new-password" placeholder="OAuth Client ID" />
+                </label>
+                <label class="field">
+                  <span>OAuth Client Secret</span>
+                  <input id="marketingGoogleClientSecret" type="password" autocomplete="new-password" placeholder="OAuth Client Secret" />
+                </label>
+              </div>
+              <label class="field">
+                <span>URL de redirecionamento autorizada</span>
+                <div class="marketing-copy-control">
+                  <input id="marketingGoogleCallbackUrl" type="url" readonly aria-label="URL de redirecionamento OAuth do Google" />
+                  <button id="marketingGoogleCallbackCopy" class="ghost-button" type="button" aria-label="Copiar URL de redirecionamento" title="Copiar URL">
+                    <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <small>Cadastre exatamente esta URL no cliente OAuth Web do Google Cloud antes de autorizar.</small>
+              </label>
+              <label class="field">
+                <span>OAuth Refresh Token</span>
+                <input id="marketingGoogleRefreshToken" type="password" autocomplete="new-password" placeholder="Opcional se usar Autorizar com Google" />
+                <small>Você pode colar o token ou salvar e autorizar a conta pelo botão abaixo.</small>
+              </label>
+              <button id="marketingGoogleOAuth" class="marketing-oauth-button" type="button">
+                <i class="fa-brands fa-google" aria-hidden="true"></i>
+                Autorizar com Google
+              </button>
+            </div>
+
+            <div class="marketing-credentials-note">
+              <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+              <span>Nenhum token volta para esta tela depois de salvo. Para substituir, informe um novo valor.</span>
+            </div>
+            <p id="marketingConnectionMessage" class="form-message" role="status" aria-live="polite"></p>
+            <div class="marketing-connection-actions">
+              <button id="marketingConnectionDisconnect" class="marketing-danger-button" type="button" hidden><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>Desconectar</button>
+              <span></span>
+              <button id="marketingConnectionTest" class="secondary-button" type="button"><i class="fa-solid fa-vial-circle-check" aria-hidden="true"></i>Salvar e testar</button>
+              <button id="marketingConnectionSave" class="primary-button compact-primary" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i>Salvar conexão</button>
+            </div>
+          </form>
+
+          <aside class="marketing-integration-aside">
+            <section class="marketing-tracker-card">
+              <div class="marketing-panel-heading is-compact">
+                <div>
+                  <span>Primeiro contato</span>
+                  <strong>Rastreador da jornada</strong>
+                  <small id="marketingTrackerStatus">Pronto para instalar no site ou GTM</small>
+                </div>
+                <i class="fa-solid fa-code" aria-hidden="true"></i>
+              </div>
+              <p>As métricas agregadas funcionam só com as credenciais. Para a jornada individual, instale este código e faça o formulário repassar <code>lc_marketing_anonymous_id</code> ao cadastro do lead.</p>
+              <label class="field marketing-tracker-origin-field">
+                <span>Domínio onde o código será instalado</span>
+                <input id="marketingTrackerOrigin" type="url" inputmode="url" placeholder="https://www.site-do-cliente.com.br" />
+                <small>O código só aceitará eventos desse domínio. Após o aceite do banner, salve <code>lc_marketing_consent=granted</code> e dispare o evento <code>lc:marketing-consent-granted</code>.</small>
+              </label>
+              <label class="marketing-code-field">
+                <span>Código exclusivo deste cliente</span>
+                <textarea id="marketingTrackerSnippet" rows="8" readonly spellcheck="false"></textarea>
+              </label>
+              <div class="marketing-tracker-actions">
+                <button id="marketingTrackerCopy" class="secondary-button" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copiar código</button>
+                <button id="marketingTrackerRotate" class="ghost-button" type="button"><i class="fa-solid fa-key" aria-hidden="true"></i>Trocar token</button>
+              </div>
+            </section>
+
+            <section class="marketing-sync-card">
+              <div class="marketing-panel-heading is-compact">
+                <div>
+                  <span>Operação</span>
+                  <strong>Sincronizações recentes</strong>
+                </div>
+                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              </div>
+              <div id="marketingSyncHistory" class="marketing-sync-history">
+                <span class="marketing-sync-empty">Nenhuma sincronização executada.</span>
+              </div>
+            </section>
+          </aside>
+        </div>
       </section>
     </div>
 

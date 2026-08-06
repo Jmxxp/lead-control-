@@ -509,6 +509,12 @@ async function init() {
   renderAiMessages();
   renderAll();
   initializeSupabase();
+  window.MarketingAttributionModule?.initialize?.({
+    rpc: authenticatedRpc,
+    edge: callMarketingEdge,
+    notify: showAppNotification,
+    supabaseUrl: SUPABASE_URL,
+  });
 
   if (!isSupabaseReady()) {
     showAuthMessage("Cole a URL e a chave pública/anon do Supabase no topo do app.js.");
@@ -1612,6 +1618,48 @@ async function callWhatsAppEdge(action, payload = {}) {
   return data;
 }
 
+async function callMarketingEdge(action, payload = {}) {
+  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), action === "sync-now" ? 120000 : 45000);
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/marketing-api`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "x-app-session": currentProfile.sessionToken,
+      },
+      body: JSON.stringify({ action, ...payload }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error("A integração de marketing demorou demais para responder. Tente novamente.");
+      timeoutError.code = "MARKETING_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
+    const requestError = new Error(
+      payloadError.message || data?.error || data?.message || `Falha no serviço de marketing (${response.status}).`,
+    );
+    requestError.code = payloadError.code || data?.code || `HTTP_${response.status}`;
+    requestError.details = payloadError.details || data?.details || null;
+    requestError.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
+    throw requestError;
+  }
+  return data;
+}
+
 async function callWhatsAppUpload({ connectionId, file }) {
   if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
   if (!connectionId) throw new Error("Selecione uma conexão do WhatsApp antes de anexar arquivos.");
@@ -2353,11 +2401,6 @@ async function handleLeadSubmit(event) {
       }
     }
     const wasEditing = Boolean(editingIdInput.value);
-    if (payload.p_bought === "Sim") {
-      dispatchPendingMarketingConversions(store.id).catch((error) => {
-        console.warn("Conversão offline pendente:", readableError(error));
-      });
-    }
     await refreshRemoteState();
     resetLeadForm();
     showFormMessage(wasEditing ? "Lead atualizado." : "Lead salvo.", "success");
@@ -4681,6 +4724,21 @@ function renderMarketingIntelligence(rows) {
 
   syncMarketingTargetForm();
   renderMarketingConnectionStatus();
+  const marketingStore = getDashboardStores().find((store) => store.id === selectedAnalyticsStoreId);
+  const marketingRange = getAnalyticsSelectedDateRange(getAnalyticsBaseLeads());
+  const marketingTarget = marketingTargets.find((item) => item.storeId === selectedAnalyticsStoreId) || null;
+  window.MarketingAttributionModule?.setContext?.({
+    profile: currentProfile ? { ...currentProfile } : null,
+    storeId: marketingStore?.id || "",
+    storeName: marketingStore?.name || "",
+    dateStart: marketingRange.start,
+    dateEnd: marketingRange.end,
+    targets: marketingTarget,
+    rpc: authenticatedRpc,
+    edge: callMarketingEdge,
+    notify: showAppNotification,
+    supabaseUrl: SUPABASE_URL,
+  }).catch((error) => console.warn("Marketing attribution:", error));
 }
 
 function renderMarketingGoalProgress(metrics) {
@@ -4948,31 +5006,6 @@ async function refreshMarketingConnections(storeId) {
     if (isMissingRpcError(error)) return [];
     throw error;
   });
-}
-
-async function dispatchPendingMarketingConversions(storeId) {
-  const providers = marketingConnections
-    .filter((connection) => connection.status === "active")
-    .map((connection) => connection.provider)
-    .filter((provider) => ["meta", "google"].includes(provider));
-  if (!providers.length) return;
-
-  await Promise.allSettled(providers.map(async (provider) => {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/marketing-conversions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "x-app-session": currentProfile.sessionToken,
-      },
-      body: JSON.stringify({ store_id: storeId, provider }),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload?.error || `Falha ao enviar conversão para ${provider}.`);
-    }
-  }));
 }
 
 function parseOptionalCurrency(value) {

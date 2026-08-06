@@ -1,5 +1,11 @@
 # Ativação da inteligência de marketing
 
+> **Documento legado.** Use este arquivo apenas para instalar as tabelas de
+> qualificação, responsável e metas que o formulário atual ainda consome. Não
+> cadastre conexões em `marketing_connections`, não grave tokens em
+> `secret_config` e não publique `marketing-conversions`. A integração segura e
+> atual está documentada em `MARKETING_ATTRIBUTION_SETUP.md`.
+
 ## 1. Banco de dados
 
 Execute `marketing_intelligence_update.sql` no SQL Editor do Supabase depois das migrations já existentes. A migration é aditiva: preserva leads, categorias, opções e acessos atuais.

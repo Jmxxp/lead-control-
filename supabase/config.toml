@@ -4,6 +4,12 @@ verify_jwt = false
 [functions.marketing-conversions]
 verify_jwt = false
 
+[functions.marketing-api]
+verify_jwt = false
+
+[functions.marketing-worker]
+verify_jwt = false
+
 [functions.whatsapp-api]
 verify_jwt = false
 
