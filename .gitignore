@@ -2,6 +2,7 @@
 .env.*
 node_modules/
 .DS_Store
+supabase/.temp/
 
 # Projeto-fonte local usado na integração de Prospecções.
 /prospec/

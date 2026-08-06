@@ -30,11 +30,13 @@
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
     <link rel="stylesheet" href="styles.css?v=20260806-agency-contact-1" />
     <link rel="stylesheet" href="prospections.css?v=20260806-analysis-calendar-4" />
+    <link rel="stylesheet" href="whatsapp.css?v=20260806-whatsapp-core-2" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260806-analysis-calendar-2" defer></script>
+    <script src="app.js?v=20260806-whatsapp-core-2" defer></script>
     <script src="prospections.js?v=20260806-analysis-calendar-2" defer></script>
+    <script src="whatsapp.js?v=20260806-whatsapp-core-2" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -91,6 +93,10 @@
           <button id="moduleProspectionsButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" data-system-module="prospections">
             <i class="fa-solid fa-phone" aria-hidden="true"></i>
             <span>Prospecções</span>
+          </button>
+          <button id="moduleWhatsAppButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" data-system-module="whatsapp">
+            <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+            <span>WhatsApp</span>
           </button>
         </div>
         <div class="topbar-actions">
@@ -1313,6 +1319,16 @@
               <p class="eyebrow">Prospecções</p>
               <h2>Preparando o módulo</h2>
               <span>Carregando dados e permissões da sua conta.</span>
+            </div>
+          </div>
+        </section>
+        <section id="whatsappView" class="whatsapp-view" aria-label="Módulo WhatsApp Business" hidden>
+          <div class="whatsapp-loading-card" role="status">
+            <span class="whatsapp-loading-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
+            <div>
+              <p class="eyebrow">WhatsApp Business</p>
+              <h2>Preparando a central de comunicação</h2>
+              <span>Carregando conexões, conversas e permissões da empresa.</span>
             </div>
           </div>
         </section>

@@ -133,9 +133,11 @@ const appView = $("#appView");
 const adminView = $("#adminView");
 const storeView = $("#storeView");
 const prospectionView = $("#prospectionView");
+const whatsappView = $("#whatsappView");
 const appMainTitle = $("#appMainTitle");
 const moduleLeadsButton = $("#moduleLeadsButton");
 const moduleProspectionsButton = $("#moduleProspectionsButton");
+const moduleWhatsAppButton = $("#moduleWhatsAppButton");
 const sessionRole = $("#sessionRole");
 const sessionAvatar = $("#sessionAvatar");
 const appNotification = $("#appNotification");
@@ -524,6 +526,7 @@ function bindEvents() {
   loginForm.addEventListener("submit", handleLogin);
   moduleLeadsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("leads")));
   moduleProspectionsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("prospections")));
+  moduleWhatsAppButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("whatsapp")));
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
   settingsButton.addEventListener("click", openSettingsModal);
@@ -922,8 +925,8 @@ async function openProfile(profile) {
   }
 
   const preferredModule = localStorage.getItem(getSystemModuleStorageKey()) || "leads";
-  if (preferredModule === "prospections") {
-    await setSystemModule("prospections", { persist: false });
+  if (["prospections", "whatsapp"].includes(preferredModule)) {
+    await setSystemModule(preferredModule, { persist: false });
   } else {
     updateSystemModuleControls();
   }
@@ -1367,8 +1370,10 @@ function showAuth() {
   closeManagedAccountModal();
   closeAiChat();
   window.ProspectionsModule?.deactivate?.();
+  window.WhatsAppModule?.deactivate?.();
   activeSystemModule = "leads";
   setProspectionVisualMode(false);
+  setWhatsAppVisualMode(false);
   leadModuleSnapshot = null;
   settingsButton.hidden = true;
   authScreen.hidden = false;
@@ -1376,6 +1381,7 @@ function showAuth() {
   adminView.hidden = true;
   storeView.hidden = true;
   prospectionView.hidden = true;
+  whatsappView.hidden = true;
   if (legalTermsModal) legalTermsModal.hidden = true;
   if (legalDocumentModal) legalDocumentModal.hidden = true;
   if (agencyWhatsappModal) agencyWhatsappModal.hidden = true;
@@ -1398,17 +1404,24 @@ function getSystemModuleStorageKey() {
 
 function updateSystemModuleControls() {
   const isLeads = activeSystemModule === "leads";
+  const isProspections = activeSystemModule === "prospections";
+  const isWhatsApp = activeSystemModule === "whatsapp";
   const prospectionsAllowed = canUseProspections();
   moduleLeadsButton.classList.toggle("is-active", isLeads);
-  moduleProspectionsButton.classList.toggle("is-active", !isLeads);
+  moduleProspectionsButton.classList.toggle("is-active", isProspections);
+  moduleWhatsAppButton.classList.toggle("is-active", isWhatsApp);
   moduleProspectionsButton.classList.toggle("is-locked", !prospectionsAllowed);
   moduleProspectionsButton.disabled = !currentProfile;
+  moduleWhatsAppButton.disabled = !currentProfile;
   moduleLeadsButton.setAttribute("aria-selected", String(isLeads));
-  moduleProspectionsButton.setAttribute("aria-selected", String(!isLeads));
+  moduleProspectionsButton.setAttribute("aria-selected", String(isProspections));
+  moduleWhatsAppButton.setAttribute("aria-selected", String(isWhatsApp));
   moduleProspectionsButton.setAttribute("aria-disabled", "false");
+  moduleWhatsAppButton.setAttribute("aria-disabled", String(!currentProfile));
   moduleProspectionsButton.title = prospectionsAllowed
     ? "Abrir Prospecções"
     : "Conhecer Prospecções e solicitar upgrade";
+  moduleWhatsAppButton.title = "Abrir WhatsApp Business";
 }
 
 function canUseProspections() {
@@ -1425,6 +1438,10 @@ function setProspectionVisualMode(enabled, operation = false) {
   if (stylesheet) stylesheet.disabled = !(enabled && operation);
   document.body.classList.toggle("is-prospections-module", enabled);
   document.body.classList.toggle("is-prospections-operation", enabled && operation);
+}
+
+function setWhatsAppVisualMode(enabled) {
+  document.body.classList.toggle("is-whatsapp-module", enabled);
 }
 
 function captureLeadModuleSnapshot() {
@@ -1453,7 +1470,7 @@ function restoreLeadModuleSnapshot() {
 
 async function setSystemModule(moduleName, { persist = true } = {}) {
   if (!currentProfile) return;
-  const nextModule = moduleName === "prospections" ? "prospections" : "leads";
+  const nextModule = ["leads", "prospections", "whatsapp"].includes(moduleName) ? moduleName : "leads";
 
   if (nextModule === activeSystemModule) {
     updateSystemModuleControls();
@@ -1465,9 +1482,24 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     return;
   }
 
+  if (nextModule === "whatsapp" && !window.WhatsAppModule?.activate) {
+    showAppNotification("O módulo WhatsApp não foi carregado. Atualize a página.", "error");
+    return;
+  }
+
+  if (activeSystemModule === "leads" && nextModule !== "leads") {
+    leadModuleSnapshot = captureLeadModuleSnapshot();
+  }
+
+  window.ProspectionsModule?.deactivate?.();
+  window.WhatsAppModule?.deactivate?.();
+  prospectionView.hidden = true;
+  whatsappView.hidden = true;
+  setProspectionVisualMode(false);
+  setWhatsAppVisualMode(false);
+
   if (nextModule === "prospections") {
     setProspectionVisualMode(true, false);
-    leadModuleSnapshot = captureLeadModuleSnapshot();
     activeSystemModule = "prospections";
     updateSystemModuleControls();
     appMainTitle.textContent = "Controle de Prospecções";
@@ -1477,6 +1509,7 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     appointmentMonitorToggle.hidden = true;
     appointmentMonitorPanel.hidden = true;
     backAdminButton.hidden = true;
+    settingsButton.hidden = true;
     closeAiChat();
 
     try {
@@ -1503,12 +1536,48 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
       window.ProspectionsModule?.renderFatalError?.(readableError(error));
       showAppNotification(readableError(error), "error");
     }
+  } else if (nextModule === "whatsapp") {
+    setWhatsAppVisualMode(true);
+    activeSystemModule = "whatsapp";
+    updateSystemModuleControls();
+    appMainTitle.textContent = "WhatsApp Business";
+    adminView.hidden = true;
+    storeView.hidden = true;
+    whatsappView.hidden = false;
+    appointmentMonitorToggle.hidden = true;
+    appointmentMonitorPanel.hidden = true;
+    backAdminButton.hidden = true;
+    settingsButton.hidden = true;
+    closeAiChat();
+
+    try {
+      await window.WhatsAppModule.activate({
+        profile: { ...currentProfile },
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+        initialStoreId: activeStoreContext?.id || currentProfile.storeId || "",
+        initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
+        rpc: authenticatedRpc,
+        edge: callWhatsAppEdge,
+        upload: callWhatsAppUpload,
+        download: callWhatsAppDownload,
+        notify: showAppNotification,
+        supabaseUrl: SUPABASE_URL,
+        openLeadsForStore: async (storeId) => {
+          await setSystemModule("leads");
+          if (["admin", "technician"].includes(currentProfile?.role) && storeId) {
+            await openStoreAsAdmin(storeId);
+          }
+        },
+      });
+      renderCurrentSessionAvatar();
+    } catch (error) {
+      window.WhatsAppModule?.renderFatalError?.(readableError(error));
+      showAppNotification(readableError(error), "error");
+    }
   } else {
-    setProspectionVisualMode(false);
     activeSystemModule = "leads";
     updateSystemModuleControls();
-    window.ProspectionsModule?.deactivate?.();
-    prospectionView.hidden = true;
     appMainTitle.textContent = "Controle de Leads";
     restoreLeadModuleSnapshot();
     leadModuleSnapshot = null;
@@ -1516,6 +1585,111 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
   }
 
   if (persist) localStorage.setItem(getSystemModuleStorageKey(), activeSystemModule);
+}
+
+async function callWhatsAppEdge(action, payload = {}) {
+  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
+  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-app-session": currentProfile.sessionToken,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  }, 45000);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
+    const error = new Error(payloadError.message || data?.error || data?.message || `Falha no serviço WhatsApp (${response.status}).`);
+    error.code = payloadError.code || data?.code || `HTTP_${response.status}`;
+    error.details = payloadError.details || data?.details || null;
+    error.retryable = payloadError.retryable === true;
+    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
+    throw error;
+  }
+  return data;
+}
+
+async function callWhatsAppUpload({ connectionId, file }) {
+  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
+  if (!connectionId) throw new Error("Selecione uma conexão do WhatsApp antes de anexar arquivos.");
+  if (!(file instanceof File)) throw new Error("Selecione um arquivo válido.");
+  const body = new FormData();
+  body.set("action", "upload-media");
+  body.set("connection_id", connectionId);
+  body.set("file", file, file.name);
+  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-app-session": currentProfile.sessionToken,
+    },
+    body,
+  }, 120000);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
+    const error = new Error(payloadError.message || data?.message || `Falha ao enviar mídia (${response.status}).`);
+    error.code = payloadError.code || `HTTP_${response.status}`;
+    error.details = payloadError.details || null;
+    error.retryable = payloadError.retryable === true;
+    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
+    throw error;
+  }
+  return data;
+}
+
+async function callWhatsAppDownload({ attachmentId }) {
+  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
+  if (!attachmentId) throw new Error("Anexo inválido.");
+  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-app-session": currentProfile.sessionToken,
+    },
+    body: JSON.stringify({ action: "download-media", attachment_id: attachmentId }),
+  }, 120000);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
+    const error = new Error(payloadError.message || data?.message || `Falha ao baixar mídia (${response.status}).`);
+    error.code = payloadError.code || `HTTP_${response.status}`;
+    error.details = payloadError.details || null;
+    error.retryable = payloadError.retryable === true;
+    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
+    throw error;
+  }
+  const disposition = response.headers.get("content-disposition") || "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `midia-whatsapp-${attachmentId}`;
+  return {
+    blob: await response.blob(),
+    filename,
+    mimeType: response.headers.get("content-type") || "application/octet-stream",
+  };
+}
+
+async function fetchWhatsAppWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error("A integração do WhatsApp demorou demais para responder. Tente novamente.");
+      timeoutError.code = "WHATSAPP_TIMEOUT";
+      timeoutError.retryable = true;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function handleCreateStore(event) {
@@ -1771,6 +1945,11 @@ async function deleteManagedAccount(type, id) {
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
       });
+    } else if (activeSystemModule === "whatsapp") {
+      await window.WhatsAppModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+      });
     }
     renderAll();
     showAppNotification(type === "store" ? "Cliente excluído" : "Agência excluída");
@@ -1978,6 +2157,11 @@ async function handleManagedAccountSubmit(event) {
         stores: stores.map((store) => ({ ...store })),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
+      });
+    } else if (activeSystemModule === "whatsapp") {
+      await window.WhatsAppModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
       });
     }
     renderAll();
