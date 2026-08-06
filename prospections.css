@@ -225,6 +225,18 @@ body.is-dark .module-switcher-button.is-active {
   padding-inline: 18px;
 }
 
+.prospection-upgrade-actions .prospection-button.is-whatsapp {
+  border-color: #15985a;
+  background: linear-gradient(135deg, #22c876, #119458);
+  color: #fff;
+  box-shadow: 0 14px 32px rgba(22, 163, 96, 0.24);
+}
+
+.prospection-upgrade-actions .prospection-button.is-whatsapp:hover {
+  border-color: #25d57f;
+  background: linear-gradient(135deg, #28d985, #159e61);
+}
+
 .prospection-upgrade-actions .prospection-button.is-archive {
   border-color: color-mix(in srgb, var(--prospection-blue) 42%, var(--line));
   background: linear-gradient(135deg, var(--prospection-blue), #2367bd);
@@ -2918,5 +2930,706 @@ body.is-prospections-module .prospection-view .prospection-icon-action.is-danger
 
   body.is-prospections-module .prospection-view .store-settings-fields .config-save-button {
     grid-column: auto;
+  }
+}
+
+/* Análise por loja — mesma estrutura visual do painel do projeto prospec. */
+.prospection-dialog.is-wide:has(.prospection-prospec-analysis) {
+  width: min(1460px, 100%);
+}
+
+.prospection-prospec-analysis {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.prospection-prospec-analysis .admin-store-metrics,
+.prospection-prospec-analysis .admin-comparison {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prospection-prospec-analysis .admin-store-metrics > div,
+.prospection-prospec-analysis .admin-comparison > div {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  box-shadow: 0 10px 28px rgba(20, 35, 29, 0.045);
+}
+
+.prospection-prospec-analysis .admin-store-metrics > div {
+  min-height: 96px;
+}
+
+.prospection-prospec-analysis .admin-store-metrics strong,
+.prospection-prospec-analysis .admin-comparison strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.42rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.prospection-prospec-analysis .admin-store-metrics span,
+.prospection-prospec-analysis .admin-comparison span {
+  display: block;
+  margin: 6px 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+}
+
+.prospection-prospec-analysis .admin-store-metrics em {
+  display: block;
+  color: var(--store-accent, var(--primary));
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1.4;
+}
+
+.prospection-prospec-analysis .admin-store-metrics .admin-purchase-count {
+  color: var(--prospection-amber);
+}
+
+.prospection-prospec-analysis .admin-comparison > div {
+  min-height: 78px;
+  background: var(--surface);
+}
+
+.prospection-prospec-analysis .admin-period-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prospection-prospec-analysis .admin-period-button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 880;
+  transition: 160ms ease;
+}
+
+.prospection-prospec-analysis .admin-period-button:hover,
+.prospection-prospec-analysis .admin-period-button.is-active {
+  border-color: var(--store-accent, var(--primary));
+  background: color-mix(in srgb, var(--store-accent, var(--primary)) 12%, var(--surface));
+  color: var(--store-accent, var(--primary));
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--store-accent, var(--primary)) 10%, transparent);
+}
+
+.prospection-prospec-analysis .admin-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.prospection-prospec-analysis .admin-analysis-grid > *,
+.prospection-prospec-analysis .admin-professional-performance-slot,
+.prospection-prospec-analysis .admin-campaign-performance-slot {
+  display: grid;
+  min-width: 0;
+}
+
+.prospection-prospec-analysis .admin-store-chart {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.prospection-prospec-analysis .admin-professional-performance,
+.prospection-prospec-analysis .admin-campaign-performance {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 100%;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(20, 35, 29, 0.05);
+}
+
+.prospection-prospec-analysis .admin-professional-performance-header,
+.prospection-prospec-analysis .admin-campaign-performance-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+}
+
+.prospection-prospec-analysis .admin-professional-performance h4,
+.prospection-prospec-analysis .admin-campaign-performance h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.prospection-prospec-analysis .admin-professional-performance-header > span,
+.prospection-prospec-analysis .admin-campaign-performance-header > span,
+.prospection-prospec-analysis .admin-professional-empty {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 780;
+}
+
+.prospection-prospec-analysis .admin-professional-list,
+.prospection-prospec-analysis .admin-campaign-performance-list {
+  display: grid;
+  gap: 7px;
+}
+
+.prospection-prospec-analysis .admin-professional-row {
+  display: grid;
+  grid-template-columns: minmax(145px, 1fr) minmax(176px, 0.8fr) minmax(82px, 0.35fr);
+  gap: 9px;
+  align-items: center;
+  min-height: 62px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.prospection-prospec-analysis .admin-professional-name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prospection-prospec-analysis .admin-professional-name strong,
+.prospection-prospec-analysis .admin-professional-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-prospec-analysis .admin-professional-name strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.prospection-prospec-analysis .admin-professional-name small {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 760;
+}
+
+.prospection-prospec-analysis .admin-professional-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(48px, 1fr));
+  gap: 7px;
+}
+
+.prospection-prospec-analysis .admin-professional-metrics span {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.prospection-prospec-analysis .admin-professional-metrics b {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.prospection-prospec-analysis .admin-professional-actions,
+.prospection-prospec-analysis .admin-professional-rates {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.prospection-prospec-analysis .admin-professional-rates span {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.prospection-prospec-analysis .admin-professional-list-button {
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--store-accent, var(--primary)) 36%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--store-accent, var(--primary)) 8%, var(--surface));
+  color: var(--store-accent, var(--primary));
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.prospection-prospec-analysis .admin-campaign-performance-row {
+  display: grid;
+  grid-template-columns: minmax(115px, 1fr) repeat(3, minmax(48px, auto)) 48px;
+  gap: 7px;
+  align-items: center;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.prospection-prospec-analysis .admin-campaign-performance-row > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-prospec-analysis .admin-campaign-performance-row span {
+  display: grid;
+  justify-items: end;
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.prospection-prospec-analysis .admin-campaign-performance-row small {
+  color: var(--muted);
+  font-size: 0.53rem;
+  font-weight: 750;
+}
+
+.prospection-prospec-analysis .admin-campaign-performance-row em {
+  display: inline-grid;
+  min-height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--store-accent, var(--primary)) 10%, var(--surface));
+  color: var(--store-accent, var(--primary));
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.prospection-prospec-analysis .admin-trend-chart {
+  display: grid;
+  gap: 12px;
+  min-height: 280px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(20, 35, 29, 0.05);
+}
+
+.prospection-prospec-analysis .admin-trend-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.prospection-prospec-analysis .admin-trend-title {
+  display: grid;
+  gap: 3px;
+}
+
+.prospection-prospec-analysis .admin-trend-title strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.prospection-prospec-analysis .admin-trend-title span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 760;
+}
+
+.prospection-prospec-analysis .admin-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 14px;
+}
+
+.prospection-prospec-analysis .admin-trend-legend span {
+  display: grid;
+  grid-template-columns: 8px auto;
+  gap: 1px 5px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 820;
+}
+
+.prospection-prospec-analysis .admin-trend-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--series-color);
+}
+
+.prospection-prospec-analysis .admin-trend-legend small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.55rem;
+}
+
+.prospection-prospec-analysis .admin-line-chart {
+  display: block;
+  width: 100%;
+  min-height: 230px;
+  overflow: visible;
+}
+
+.prospection-prospec-analysis .admin-line-grid line,
+.prospection-prospec-analysis .admin-line-vertical {
+  stroke: color-mix(in srgb, var(--line) 72%, transparent);
+  stroke-width: 1;
+}
+
+.prospection-prospec-analysis .admin-line-vertical {
+  opacity: 0.4;
+}
+
+.prospection-prospec-analysis .admin-line-vertical.is-major {
+  opacity: 0.76;
+}
+
+.prospection-prospec-analysis .admin-goal-line line {
+  stroke: var(--muted);
+  stroke-dasharray: 6 7;
+  stroke-width: 1.35;
+  opacity: 0.55;
+}
+
+.prospection-prospec-analysis .admin-goal-line text,
+.prospection-prospec-analysis .admin-line-grid text,
+.prospection-prospec-analysis .admin-line-label,
+.prospection-prospec-analysis .admin-line-value {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.prospection-prospec-analysis .admin-goal-line text,
+.prospection-prospec-analysis .admin-line-label,
+.prospection-prospec-analysis .admin-line-value {
+  text-anchor: middle;
+}
+
+.prospection-prospec-analysis .admin-goal-line text {
+  text-anchor: end;
+}
+
+.prospection-prospec-analysis .admin-line-series polyline {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.prospection-prospec-analysis .admin-line-series circle {
+  fill: var(--series-color);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.prospection-prospec-analysis .calendar-panel {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(20, 35, 29, 0.05);
+}
+
+.prospection-prospec-analysis .calendar-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+
+.prospection-prospec-analysis .calendar-header h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.prospection-prospec-analysis .calendar-header p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 720;
+}
+
+.prospection-prospec-analysis .calendar-controls {
+  display: grid;
+  grid-template-columns: 38px minmax(150px, auto) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.prospection-prospec-analysis .calendar-controls .prospection-button {
+  width: 38px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.prospection-prospec-analysis .calendar-controls strong {
+  color: var(--text);
+  font-size: 0.74rem;
+  text-align: center;
+  text-transform: lowercase;
+}
+
+.prospection-prospec-analysis .calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.prospection-prospec-analysis .weekday-cell {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.prospection-prospec-analysis .calendar-day,
+.prospection-prospec-analysis .calendar-empty {
+  min-height: 112px;
+  border-radius: 8px;
+}
+
+.prospection-prospec-analysis .calendar-empty {
+  border: 1px dashed var(--line);
+  background: var(--surface-soft);
+  opacity: 0.65;
+}
+
+.prospection-prospec-analysis .calendar-day {
+  position: relative;
+  display: block;
+  padding: 13px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.prospection-prospec-analysis .calendar-day.is-today {
+  outline: 3px solid color-mix(in srgb, var(--store-accent, var(--primary)) 28%, transparent);
+}
+
+.prospection-prospec-analysis .calendar-day.is-over-goal {
+  border-color: rgba(22, 163, 74, 0.66);
+  animation: prospectionGoalGlow 1.8s ease-in-out infinite;
+}
+
+.prospection-prospec-analysis .calendar-day-number {
+  font-size: 1.35rem;
+  font-weight: 920;
+  line-height: 1;
+}
+
+.prospection-prospec-analysis .calendar-day-count {
+  position: absolute;
+  right: 11px;
+  bottom: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 920;
+}
+
+.prospection-prospec-analysis .prospection-custom-query {
+  display: grid;
+  gap: 12px;
+}
+
+body.is-dark .prospection-prospec-analysis .admin-store-metrics > div,
+body.is-dark .prospection-prospec-analysis .admin-comparison > div,
+body.is-dark .prospection-prospec-analysis .admin-professional-performance,
+body.is-dark .prospection-prospec-analysis .admin-campaign-performance,
+body.is-dark .prospection-prospec-analysis .admin-professional-row,
+body.is-dark .prospection-prospec-analysis .admin-campaign-performance-row,
+body.is-dark .prospection-prospec-analysis .admin-trend-chart,
+body.is-dark .prospection-prospec-analysis .calendar-panel {
+  border-color: #334155;
+  background: linear-gradient(145deg, #111c2f, #0d1728);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+body.is-dark .prospection-prospec-analysis .admin-professional-row,
+body.is-dark .prospection-prospec-analysis .admin-campaign-performance-row,
+body.is-dark .prospection-prospec-analysis .admin-store-metrics > div,
+body.is-dark .prospection-prospec-analysis .admin-comparison > div {
+  background: #111d31;
+}
+
+body.is-dark .prospection-prospec-analysis .calendar-day {
+  border-color: rgba(248, 250, 252, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 10px 22px rgba(0, 0, 0, 0.2);
+}
+
+body.is-dark .prospection-prospec-analysis .calendar-day.is-today {
+  outline-color: rgba(96, 165, 250, 0.72);
+}
+
+body.is-dark .prospection-prospec-analysis .calendar-day-count {
+  background: #020617;
+  color: #f8fafc;
+  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.12);
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) {
+  border-color: #334155;
+  background: linear-gradient(145deg, #111c2f 0%, #0d1728 52%, #0a1322 100%);
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-dialog-header {
+  border-bottom-color: #334155;
+  background: #101b2d;
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-dialog-body {
+  background: #0d1728;
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-identity,
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-custom-query,
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-filters {
+  border-color: #334155;
+  background: linear-gradient(145deg, #111d31, #0f192a);
+  box-shadow: none;
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-identity {
+  border-left-color: var(--account-color);
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-dialog-close,
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .admin-period-button {
+  border-color: #334155;
+  background: #18253a;
+  color: #b7c5da;
+}
+
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .admin-period-button:hover,
+body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .admin-period-button.is-active {
+  border-color: var(--store-accent, #60a5fa);
+  background: color-mix(in srgb, var(--store-accent, #60a5fa) 18%, #132036);
+  color: #dbeafe;
+}
+
+@keyframes prospectionGoalGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(22, 163, 74, 0), 0 0 0 1px rgba(22, 163, 74, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(22, 163, 74, 0.42), 0 0 0 1px rgba(22, 163, 74, 0.45);
+  }
+}
+
+@media (max-width: 980px) {
+  .prospection-prospec-analysis .admin-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-prospec-analysis .admin-store-chart {
+    grid-column: 1;
+  }
+
+  .prospection-prospec-analysis .calendar-day,
+  .prospection-prospec-analysis .calendar-empty {
+    min-height: 88px;
+  }
+}
+
+@media (max-width: 700px) {
+  .prospection-prospec-analysis .admin-store-metrics,
+  .prospection-prospec-analysis .admin-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-prospec-analysis .admin-professional-row {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-prospec-analysis .admin-professional-metrics,
+  .prospection-prospec-analysis .admin-professional-actions,
+  .prospection-prospec-analysis .admin-professional-rates {
+    justify-items: start;
+  }
+
+  .prospection-prospec-analysis .admin-professional-metrics span {
+    justify-items: start;
+  }
+
+  .prospection-prospec-analysis .admin-professional-rates {
+    display: flex;
+  }
+
+  .prospection-prospec-analysis .calendar-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prospection-prospec-analysis .calendar-controls {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+  }
+
+  .prospection-prospec-analysis .calendar-grid {
+    gap: 4px;
+  }
+
+  .prospection-prospec-analysis .calendar-day,
+  .prospection-prospec-analysis .calendar-empty {
+    min-height: 64px;
+  }
+
+  .prospection-prospec-analysis .calendar-day {
+    padding: 7px;
+  }
+
+  .prospection-prospec-analysis .calendar-day-number {
+    font-size: 0.86rem;
+  }
+
+  .prospection-prospec-analysis .calendar-day-count {
+    right: 5px;
+    bottom: 5px;
+    min-width: 25px;
+    min-height: 25px;
+    padding: 0 5px;
+    font-size: 0.7rem;
+  }
+
+  .prospection-prospec-analysis .admin-campaign-performance-row {
+    grid-template-columns: minmax(92px, 1fr) repeat(3, minmax(34px, auto)) 40px;
+    gap: 4px;
   }
 }

@@ -28,13 +28,13 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260805-governance-4" />
-    <link rel="stylesheet" href="prospections.css?v=20260805-governance-4" />
+    <link rel="stylesheet" href="styles.css?v=20260806-agency-contact-1" />
+    <link rel="stylesheet" href="prospections.css?v=20260806-analysis-calendar-4" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260805-governance-4" defer></script>
-    <script src="prospections.js?v=20260805-governance-4" defer></script>
+    <script src="app.js?v=20260806-analysis-calendar-2" defer></script>
+    <script src="prospections.js?v=20260806-analysis-calendar-2" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -354,6 +354,21 @@
               <span id="clientCapacityPercent">0%</span>
             </div>
           </section>
+
+          <form id="agencyContactForm" class="agency-contact-panel" autocomplete="off" hidden>
+            <span class="agency-contact-icon" aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></span>
+            <div class="agency-contact-copy">
+              <span>Contato comercial da agência</span>
+              <strong>WhatsApp para pedidos de upgrade</strong>
+              <small>Quando um cliente solicitar Prospecções, a conversa chegará neste número com a empresa e o usuário identificados.</small>
+            </div>
+            <label class="field agency-contact-field">
+              <span>Número com DDD</span>
+              <input id="agencyContactWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required />
+            </label>
+            <button class="primary-button compact-primary" type="submit"><i class="fa-solid fa-check"></i>Salvar WhatsApp</button>
+            <p id="agencyContactMessage" class="form-message" role="status" aria-live="polite"></p>
+          </form>
 
           <section id="adminAnalyticsPanel" class="analytics-panel" aria-label="Análise individual das campanhas" hidden>
             <div class="analytics-toolbar">
@@ -853,6 +868,12 @@
               <label class="field">
                 <span>Nome da agência</span>
                 <input id="technicianName" type="text" placeholder="Nome da agência de marketing" required />
+              </label>
+
+              <label class="field">
+                <span>WhatsApp comercial</span>
+                <input id="technicianWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required />
+                <small class="field-help">Usado pelos clientes para solicitar upgrade de Prospecções.</small>
               </label>
 
               <label class="field">
@@ -1534,6 +1555,12 @@
             <input id="managedAccountName" type="text" placeholder="Nome" required />
           </label>
 
+          <label id="managedAccountWhatsappField" class="field" hidden>
+            <span>WhatsApp comercial da agência</span>
+            <input id="managedAccountWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" />
+            <small class="field-help">Recebe os pedidos de upgrade já identificados pelo cliente.</small>
+          </label>
+
           <label id="managedAccountTechnicianField" class="field" hidden>
             <span>Agência responsável</span>
             <select id="managedAccountTechnician">
@@ -1588,6 +1615,34 @@
           <div class="modal-actions">
             <button class="ghost-button" type="button" id="managedAccountCancel">Cancelar</button>
             <button class="primary-button compact-primary" type="submit">Salvar alterações</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="agencyWhatsappModal" class="modal-backdrop agency-whatsapp-backdrop" hidden>
+      <section class="modal-dialog agency-whatsapp-dialog" role="dialog" aria-modal="true" aria-labelledby="agencyWhatsappTitle">
+        <div class="agency-whatsapp-hero">
+          <span aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></span>
+          <div>
+            <p class="eyebrow">Contato obrigatório</p>
+            <h2 id="agencyWhatsappTitle">Cadastre o WhatsApp da agência</h2>
+            <p>Seus clientes usarão este número para pedir o upgrade de Prospecções com uma mensagem pronta e identificada.</p>
+          </div>
+        </div>
+        <form id="agencyWhatsappForm" class="account-form" autocomplete="off">
+          <label class="field">
+            <span>WhatsApp comercial com DDD</span>
+            <input id="agencyWhatsappInput" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required autofocus />
+          </label>
+          <div class="agency-whatsapp-preview">
+            <i class="fa-solid fa-message"></i>
+            <span>O pedido informará o nome da empresa, o responsável logado e o login da conta.</span>
+          </div>
+          <p id="agencyWhatsappMessage" class="form-message" role="alert" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button id="agencyWhatsappLogout" class="ghost-button" type="button">Sair</button>
+            <button class="primary-button compact-primary" type="submit"><i class="fa-brands fa-whatsapp"></i>Salvar e continuar</button>
           </div>
         </form>
       </section>

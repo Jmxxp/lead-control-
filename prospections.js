@@ -40,6 +40,7 @@
   let analysisStoreId = "";
   let analysisStartDate = "";
   let analysisEndDate = "";
+  let analysisPeriod = "monthly";
   let analysisProfessionalId = "all";
   let analysisDetailProfessionalId = "";
   let bonusStoreId = "";
@@ -411,10 +412,16 @@
     listSearch = "";
     listStatus = "all";
     filtersOpen = false;
+    calendarDate = new Date();
     analysisStoreId = "";
+    analysisStartDate = "";
+    analysisEndDate = "";
+    analysisPeriod = "monthly";
     analysisProfessionalId = "all";
     analysisDetailProfessionalId = "";
     bonusStoreId = "";
+    bonusStartDate = "";
+    bonusEndDate = "";
     bonusProfessionalId = "all";
     initializeInsightDates();
     pendingPurchaseId = "";
@@ -481,7 +488,7 @@
         <h2 id="prospection-upgrade-title">Transforme contatos que seriam perdidos em novas oportunidades.</h2>
         <p>Prospecções ajuda sua empresa a controlar abordagens, acompanhar retornos e incentivar cada funcionário a trazer mais clientes para a loja.</p>
         <div class="prospection-upgrade-actions">
-          <button class="prospection-button" type="button" data-prospection-action="copy-upgrade-request" data-agency-name="${escapeHtml(agencyName)}"><i class="fa-solid fa-paper-plane"></i>Solicitar upgrade</button>
+          <button class="prospection-button is-whatsapp" type="button" data-prospection-action="request-upgrade"><i class="fa-brands fa-whatsapp"></i>Solicitar upgrade</button>
           ${archiveProspects.length ? `<button class="prospection-button is-archive" type="button" data-prospection-action="export-archive"><i class="fa-solid fa-file-arrow-down"></i>Baixar meus dados (${archiveProspects.length})</button>` : ""}
           <button class="prospection-button is-secondary" type="button" data-prospection-action="open-leads" data-store-id="${escapeHtml(store.id || "")}"><i class="fa-solid fa-arrow-left"></i>Voltar para Leads</button>
         </div>
@@ -854,15 +861,28 @@
     const offset = (firstDay.getDay() + 6) % 7;
     const days = new Date(year, month + 1, 0).getDate();
     const goal = settingsFor(storeId).dailyGoal;
-    const cells = Array.from({ length: offset }, () => `<span class="prospection-calendar-day is-empty"></span>`);
+    const storeRows = prospects.filter((row) => row.storeId === storeId);
+    const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+    const cells = weekdays.map((weekday) => `<div class="weekday-cell">${weekday}</div>`);
+    cells.push(...Array.from({ length: offset }, () => `<div class="calendar-empty"></div>`));
     for (let day = 1; day <= days; day += 1) {
       const start = new Date(year, month, day);
-      const count = prospects.filter((row) => row.storeId === storeId && isInWindow(row.createdAt, { start, end: addDays(start, 1) })).length;
-      const progress = percentage(count, goal);
-      const color = progress >= 100 ? "#2fc49a" : progress >= 60 ? "#d48616" : count ? "#c43d59" : "#8b8f8d";
-      cells.push(`<span class="prospection-calendar-day" style="--day-color:${color};--day-strength:${Math.min(22, 6 + progress / 6)}%"><span>${day}</span><strong>${count}/${goal}</strong></span>`);
+      const end = addDays(start, 1);
+      const count = storeRows.filter((row) => isInWindow(row.createdAt, { start, end })).length;
+      const returnedCount = storeRows.filter((row) => isInWindow(row.returnedAt, { start, end })).length;
+      const purchasedCount = storeRows.filter((row) => isInWindow(row.purchasedAt, { start, end })).length;
+      const ratio = Math.min(count / Math.max(1, goal), 1);
+      const darkMode = document.body.classList.contains("is-dark");
+      const hue = Math.round((darkMode ? 0 : 4) + ratio * (darkMode ? 142 : 126));
+      const lightness = Math.round((darkMode ? 22 : 88) + ratio * (darkMode ? 16 : -38));
+      const background = `hsl(${hue} 76% ${lightness}%)`;
+      const color = darkMode || ratio > 0.58 ? "#ffffff" : "#0f172a";
+      const today = new Date();
+      const isToday = start.getFullYear() === today.getFullYear() && start.getMonth() === today.getMonth() && start.getDate() === today.getDate();
+      cells.push(`<div class="calendar-day${isToday ? " is-today" : ""}${count > goal ? " is-over-goal" : ""}" style="background:${background};color:${color}" title="${count} prospecções feitas, ${returnedCount} viram a loja, ${purchasedCount} compraram"><span class="calendar-day-number">${day}</span><strong class="calendar-day-count">${count}</strong></div>`);
     }
-    return `<div class="prospection-panel-heading"><div><p class="eyebrow">Calendário de meta</p><h3>${new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(calendarDate)}</h3><span>Volume registrado por dia.</span></div><div class="prospection-toolbar-actions"><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-prev"><i class="fa-solid fa-chevron-left"></i></button><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-next"><i class="fa-solid fa-chevron-right"></i></button></div></div><div class="prospection-calendar">${cells.join("")}</div>`;
+    const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(firstDay);
+    return `<section class="calendar-panel" aria-labelledby="prospection-calendar-title"><div class="calendar-header"><div><h3 id="prospection-calendar-title">Calendário de meta</h3><p>Vermelho está longe da meta, verde está perto. Ao passar a meta, o dia brilha.</p></div><div class="calendar-controls"><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-prev" aria-label="Mês anterior"><i class="fa-solid fa-chevron-left"></i></button><strong>${escapeHtml(monthLabel)}</strong><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-next" aria-label="Próximo mês"><i class="fa-solid fa-chevron-right"></i></button></div></div><div class="calendar-grid" role="grid" aria-label="Metas diárias de ${escapeHtml(monthLabel)}">${cells.join("")}</div></section>`;
   }
 
   function insightScopeStoreId(requestedStoreId = "") {
@@ -1017,6 +1037,144 @@
     return `<article class="prospection-panel prospection-store-comparison"><div class="prospection-panel-heading"><div><p class="eyebrow">Clientes</p><h3>Desempenho da carteira</h3><span>Comparação por cliente no mesmo período.</span></div></div><div class="prospection-ranking">${entries.map((entry, index) => `<div class="prospection-ranking-row"><span class="prospection-ranking-position">${index + 1}</span><div class="prospection-ranking-name"><strong>${escapeHtml(entry.store.name)}</strong><span>${entry.metrics.total} feitas · ${entry.metrics.returned} retornaram</span></div><div class="prospection-ranking-value"><strong>${entry.metrics.conversion}%</strong><span>${formatCurrency(entry.revenue)}</span></div></div>`).join("")}</div></article>`;
   }
 
+  function analysisPeriodWindow(period = analysisPeriod) {
+    if (period === "custom") {
+      const range = dateRange(analysisStartDate, analysisEndDate);
+      return { ...range, label: "período personalizado" };
+    }
+    const mappedPeriod = { daily: "today", weekly: "week", monthly: "month", yearly: "year" }[period] || "month";
+    const window = periodWindow(mappedPeriod);
+    return { ...window, label: { daily: "dia", weekly: "semana", monthly: "mês", yearly: "ano" }[period] || "mês" };
+  }
+
+  function analysisRowsForPeriod(storeId, period = analysisPeriod, applyProfessional = true) {
+    const window = analysisPeriodWindow(period);
+    return prospects.filter((row) => row.storeId === storeId && isInWindow(row.createdAt, window) && (!applyProfessional || matchesProfessionalFilter(row, analysisProfessionalId)));
+  }
+
+  function analysisOverviewMarkup(storeId) {
+    const definitions = [["daily", "Hoje"], ["weekly", "Semana"], ["monthly", "Mês"], ["yearly", "Ano"]];
+    return `<section class="admin-store-metrics" aria-label="Resumo da loja">${definitions.map(([period, label]) => {
+      const window = analysisPeriodWindow(period);
+      const rows = analysisRowsForPeriod(storeId, period, false);
+      const storeRows = prospects.filter((row) => row.storeId === storeId);
+      const returned = storeRows.filter((row) => isInWindow(row.returnedAt, window)).length;
+      const purchased = storeRows.filter((row) => isInWindow(row.purchasedAt, window)).length;
+      return `<div><strong>${rows.length}</strong><span>${label}</span><em>${returned} viram a loja</em><em class="admin-purchase-count">${purchased} compraram</em></div>`;
+    }).join("")}</section>`;
+  }
+
+  function analysisPeriodControlsMarkup() {
+    const definitions = [["daily", "Dia"], ["weekly", "Semana"], ["monthly", "Mês"], ["yearly", "Ano"]];
+    return `<div class="admin-period-controls" aria-label="Período rápido">${definitions.map(([period, label]) => `<button class="admin-period-button${analysisPeriod === period ? " is-active" : ""}" type="button" data-prospection-action="set-analysis-period" data-analysis-period="${period}">${label}</button>`).join("")}</div>`;
+  }
+
+  function analysisComparisonMarkup(storeId, rows) {
+    const window = analysisPeriodWindow();
+    const storeRows = prospects.filter((row) => row.storeId === storeId && matchesProfessionalFilter(row, analysisProfessionalId));
+    const returned = storeRows.filter((row) => isInWindow(row.returnedAt, window)).length;
+    const purchased = storeRows.filter((row) => isInWindow(row.purchasedAt, window)).length;
+    const label = window.label;
+    return `<section class="admin-comparison"><div><strong>${rows.length}</strong><span>Prospecções neste ${label}</span></div><div><strong>${returned}</strong><span>Viram a loja neste ${label}</span></div><div><strong>${purchased}</strong><span>Compraram neste ${label}</span></div><div><strong>${percentage(purchased, rows.length)}%</strong><span>Compra sobre prospecções</span></div></section>`;
+  }
+
+  function analysisProfessionalPanelMarkup(storeId, rows) {
+    const grouped = new Map();
+    professionalsFor(storeId, true).forEach((professional) => grouped.set(professional.id, { id: professional.id, name: professional.name, total: 0, returned: 0, purchased: 0, tags: new Map(), active: professional.active }));
+    rows.forEach((row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
+      if (!grouped.has(key)) grouped.set(key, { id: key, name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, tags: new Map(), active: true });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) item.purchased += 1;
+      (row.tagValues?.length ? row.tagValues : ["Sem campanha"]).forEach((tag) => item.tags.set(tag, (item.tags.get(tag) || 0) + 1));
+    });
+    const items = [...grouped.values()].filter((item) => item.active || item.total).sort((a, b) => b.total - a.total || b.returned - a.returned || a.name.localeCompare(b.name, "pt-BR"));
+    return `<section class="admin-professional-performance"><div class="admin-professional-performance-header"><h4>Profissionais</h4><span>Feitas, vieram, compraram e taxas</span></div><div class="admin-professional-list">${items.length ? items.map((item) => {
+      const tagPreview = [...item.tags.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([tag, count]) => `${escapeHtml(tag)} ${count}`).join(" / ") || "Sem campanha no período";
+      return `<div class="admin-professional-row"><div class="admin-professional-name"><strong>${escapeHtml(item.name)}</strong><small>${tagPreview}</small></div><div class="admin-professional-metrics"><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span></div><div class="admin-professional-actions"><div class="admin-professional-rates"><span>${percentage(item.returned, item.total)}% visita</span><span>${percentage(item.purchased, item.total)}% compra</span></div><button class="admin-professional-list-button" type="button" data-prospection-action="show-professional-records" data-professional-id="${escapeHtml(item.id)}">Listar</button></div></div>`;
+    }).join("") : `<p class="admin-professional-empty">Nenhum profissional cadastrado nesta loja.</p>`}</div></section>`;
+  }
+
+  function analysisCampaignPanelMarkup(storeId, rows) {
+    const grouped = new Map();
+    tagsFor(storeId).forEach((tag) => grouped.set(normalize(tag.label), { label: tag.label, total: 0, returned: 0, purchased: 0 }));
+    rows.forEach((row) => (row.tagValues?.length ? row.tagValues : ["Sem campanha"]).forEach((label) => {
+      const key = normalize(label);
+      if (!grouped.has(key)) grouped.set(key, { label, total: 0, returned: 0, purchased: 0 });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) item.purchased += 1;
+    }));
+    const items = [...grouped.values()].sort((a, b) => b.total - a.total || b.returned - a.returned || a.label.localeCompare(b.label, "pt-BR"));
+    return `<section class="admin-campaign-performance"><div class="admin-campaign-performance-header"><h4>Campanhas</h4><span>Feitas, vieram e compraram por etiqueta</span></div><div class="admin-campaign-performance-list">${items.length ? items.map((item) => `<div class="admin-campaign-performance-row"><strong>${escapeHtml(item.label)}</strong><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span><em>${percentage(item.purchased, item.total)}%</em></div>`).join("") : `<p class="admin-professional-empty">Nenhuma campanha neste período.</p>`}</div></section>`;
+  }
+
+  function analysisTrendBuckets(period = analysisPeriod) {
+    const now = new Date();
+    let starts = [];
+    if (period === "daily") {
+      const start = startOfDay(now);
+      starts = Array.from({ length: 24 }, (_, index) => new Date(start.getTime() + index * 3600000));
+    } else if (period === "weekly") {
+      const start = startOfWeek(now);
+      starts = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+    } else if (period === "yearly") {
+      const start = new Date(now.getFullYear(), 0, 1);
+      starts = Array.from({ length: 12 }, (_, index) => addMonths(start, index));
+    } else if (period === "custom") {
+      const window = analysisPeriodWindow("custom");
+      const total = Math.max(1, Math.min(62, Math.ceil((window.end - window.start) / 86400000)));
+      starts = Array.from({ length: total }, (_, index) => addDays(window.start, index));
+    } else {
+      const start = startOfMonth(now);
+      const total = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      starts = Array.from({ length: total }, (_, index) => addDays(start, index));
+    }
+    return starts.map((start, index) => {
+      const end = period === "daily" ? new Date(start.getTime() + 3600000) : period === "yearly" ? addMonths(start, 1) : addDays(start, 1);
+      const label = period === "daily" ? `${String(index).padStart(2, "0")}h` : period === "yearly" ? new Intl.DateTimeFormat("pt-BR", { month: "short" }).format(start).replace(".", "") : String(start.getDate());
+      return { start, end, label, weekend: start.getDay() === 0 || start.getDay() === 6 };
+    });
+  }
+
+  function analysisTrendMarkup(storeId) {
+    const storeRows = prospects.filter((row) => row.storeId === storeId && matchesProfessionalFilter(row, analysisProfessionalId));
+    const buckets = analysisTrendBuckets();
+    const series = [
+      { key: "createdAt", label: "Prospecções", color: "#2f80ed" },
+      { key: "returnedAt", label: "Viram a loja", color: "#2fc49a" },
+      { key: "purchasedAt", label: "Compraram", color: "#d48616" },
+    ].map((item) => ({ ...item, values: buckets.map((bucket) => storeRows.filter((row) => isInWindow(row[item.key], bucket)).length) }));
+    const goal = ["weekly", "monthly"].includes(analysisPeriod) ? settingsFor(storeId).dailyGoal : 0;
+    const maxValue = Math.max(1, goal, ...series.flatMap((item) => item.values));
+    const width = 1080;
+    const height = 320;
+    const padding = { top: 34, right: 34, bottom: 54, left: 48 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const x = (index) => padding.left + (buckets.length > 1 ? (plotWidth * index) / (buckets.length - 1) : plotWidth / 2);
+    const y = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
+    const horizontal = Array.from({ length: 5 }, (_, index) => {
+      const value = Math.round((maxValue * index) / 4);
+      const yValue = y(value);
+      return `<g class="admin-line-grid"><line x1="${padding.left}" y1="${yValue}" x2="${width - padding.right}" y2="${yValue}"></line><text x="8" y="${yValue + 4}">${value}</text></g>`;
+    }).join("");
+    const labelEvery = buckets.length > 35 ? 4 : buckets.length > 20 ? 2 : 1;
+    const vertical = buckets.map((bucket, index) => `<line class="admin-line-vertical${index % labelEvery === 0 ? " is-major" : ""}" x1="${x(index)}" y1="${padding.top}" x2="${x(index)}" y2="${padding.top + plotHeight}"></line>`).join("");
+    const goalLine = goal ? `<g class="admin-goal-line"><line x1="${padding.left}" y1="${y(goal)}" x2="${width - padding.right}" y2="${y(goal)}"></line><text x="${width - padding.right - 5}" y="${y(goal) - 7}">Meta ${goal}/dia</text></g>` : "";
+    const paths = series.map((item) => {
+      const points = item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+      const dots = item.values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="${value ? 3.6 : 1.5}"><title>${item.label}: ${value} em ${buckets[index].label}</title></circle>${value ? `<text class="admin-line-value" x="${x(index)}" y="${Math.max(14, y(value) - 9)}">${value}</text>` : ""}`).join("");
+      return `<g class="admin-line-series" style="--series-color:${item.color}"><polyline points="${points}"></polyline>${dots}</g>`;
+    }).join("");
+    const labels = buckets.map((bucket, index) => index % labelEvery || (index !== 0 && index !== buckets.length - 1 && buckets.length > 35 && index % labelEvery) ? "" : `<text class="admin-line-label${bucket.weekend ? " is-weekend" : ""}" x="${x(index)}" y="${height - 18}">${escapeHtml(bucket.label)}</text>`).join("");
+    const legend = series.map((item) => `<span style="--series-color:${item.color}"><i></i><b>${item.label}</b><small>Total ${item.values.reduce((sum, value) => sum + value, 0)} · pico ${Math.max(0, ...item.values)}</small></span>`).join("");
+    return `<section class="admin-trend-chart is-${analysisPeriod}"><div class="admin-trend-heading"><div class="admin-trend-title"><strong>Fluxo do período</strong><span>${buckets.length} blocos · evolução de prospecções, visitas e compras</span></div><div class="admin-trend-legend">${legend}</div></div><svg class="admin-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico de desempenho no período">${vertical}${horizontal}${goalLine}${paths}<g>${labels}</g></svg></section>`;
+  }
+
   function analysisRows(storeIds) {
     const allowed = new Set(storeIds);
     return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, analysisStartDate, analysisEndDate) && matchesProfessionalFilter(row, analysisProfessionalId));
@@ -1033,28 +1191,39 @@
     if (previousStoreId && previousStoreId !== analysisStoreId) {
       analysisProfessionalId = "all";
       analysisDetailProfessionalId = "";
+      analysisPeriod = "monthly";
+      calendarDate = new Date();
     }
     const storeIds = insightStoreIds(analysisStoreId);
-    const rows = analysisRows(storeIds);
+    const rows = analysisPeriod === "custom" ? analysisRows(storeIds) : analysisRowsForPeriod(analysisStoreId);
     const selectedStore = storeById(analysisStoreId);
     const title = selectedStore?.name || bridge.profile.storeName || "Minha empresa";
+    const rangeLabel = analysisPeriod === "custom"
+      ? `${formatInputDateDisplay(analysisStartDate)} a ${formatInputDateDisplay(analysisEndDate)}`
+      : `Visão de ${analysisPeriodWindow().label}`;
     openDialog(dialogShell({
       eyebrow: "Inteligência de prospecção",
       title,
       wide: true,
-      body: `${insightIdentityMarkup(selectedStore, `${formatInputDateDisplay(analysisStartDate)} a ${formatInputDateDisplay(analysisEndDate)} · ${rows.length} registros`)}
-      ${dateShortcutsMarkup("analysis", analysisStartDate, analysisEndDate)}
-      <form id="prospectionAnalysisFilters" class="prospection-insight-filters">
-        <label>Cliente<select name="storeId">${insightStoreOptions(analysisStoreId)}</select></label>
-        <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(analysisStartDate)}" /></label>
-        <label>Data final<input name="endDate" type="date" value="${escapeHtml(analysisEndDate)}" /></label>
-        <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, analysisProfessionalId)}</select></label>
-        <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar análise</button>
-      </form>
-      ${insightKpisMarkup(rows)}
-      <div class="prospection-insight-grid"><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Funil</p><h3>Eficiência comercial</h3><span>Retorno e compra sobre as prospecções registradas.</span></div></div>${funnelMarkup(rows)}</article><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Evolução</p><h3>Volume no período</h3><span>${escapeHtml(analysisStartDate)} até ${escapeHtml(analysisEndDate)}</span></div></div>${rangeTrendMarkup(rows, analysisStartDate, analysisEndDate)}</article></div>
-      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Equipe</p><h3>Desempenho por responsável</h3><span>Produção, retorno, conversão, faturamento e bonificação.</span></div></div>${professionalPerformanceMarkup(rows, { interactive: true })}</article>
-      ${professionalProspectDetailsMarkup(rows, analysisDetailProfessionalId)}`,
+      body: `<div class="prospection-prospec-analysis" style="--store-accent:${escapeHtml(settingsFor(analysisStoreId).accentColor)}">
+      ${insightIdentityMarkup(selectedStore, `${rangeLabel} · ${rows.length} registros · meta ${settingsFor(analysisStoreId).dailyGoal}/dia`)}
+      ${analysisOverviewMarkup(analysisStoreId)}
+      ${analysisPeriodControlsMarkup()}
+      ${analysisComparisonMarkup(analysisStoreId, rows)}
+      <div class="admin-analysis-grid"><div class="admin-professional-performance-slot">${analysisProfessionalPanelMarkup(analysisStoreId, rows)}</div><div class="admin-campaign-performance-slot">${analysisCampaignPanelMarkup(analysisStoreId, rows)}</div><div class="admin-store-chart">${analysisTrendMarkup(analysisStoreId)}</div></div>
+      ${calendarMarkup(analysisStoreId)}
+      <article class="prospection-panel prospection-custom-query"><div class="prospection-panel-heading"><div><p class="eyebrow">Consulta personalizada</p><h3>Buscar por data e responsável</h3><span>Use uma faixa exata quando precisar conferir um intervalo específico.</span></div></div>
+        ${dateShortcutsMarkup("analysis", analysisStartDate, analysisEndDate)}
+        <form id="prospectionAnalysisFilters" class="prospection-insight-filters">
+          <label>Cliente<select name="storeId">${insightStoreOptions(analysisStoreId)}</select></label>
+          <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(analysisStartDate)}" /></label>
+          <label>Data final<input name="endDate" type="date" value="${escapeHtml(analysisEndDate)}" /></label>
+          <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, analysisProfessionalId)}</select></label>
+          <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar análise</button>
+        </form>
+      </article>
+      ${professionalProspectDetailsMarkup(rows, analysisDetailProfessionalId)}
+      </div>`,
     }));
     if (analysisDetailProfessionalId) requestAnimationFrame(() => root.querySelector("#prospectionProfessionalRecords")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -1363,6 +1532,7 @@
     analysisDetailProfessionalId = "";
     analysisStartDate = nextStart;
     analysisEndDate = nextEnd;
+    analysisPeriod = "custom";
     openAnalysis(nextStoreId);
   }
 
@@ -1392,6 +1562,17 @@
     }
     analysisStartDate = formatDateInput(range.start);
     analysisEndDate = formatDateInput(range.end);
+    analysisPeriod = "custom";
+    analysisDetailProfessionalId = "";
+    openAnalysis(analysisStoreId || selectedStoreId);
+  }
+
+  function setAnalysisPeriod(period) {
+    if (!["daily", "weekly", "monthly", "yearly"].includes(period)) return;
+    analysisPeriod = period;
+    const window = analysisPeriodWindow(period);
+    analysisStartDate = formatDateInput(window.start);
+    analysisEndDate = formatDateInput(addDays(window.end, -1));
     analysisDetailProfessionalId = "";
     openAnalysis(analysisStoreId || selectedStoreId);
   }
@@ -1545,15 +1726,20 @@
     else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
     else if (action === "manage-access") bridge.openStoreAccess?.(button.dataset.storeId || "");
     else if (action === "export-archive") exportArchivedProspections();
-    else if (action === "copy-upgrade-request") {
-      const agencyName = button.dataset.agencyName || "minha agência";
-      const message = `Olá, ${agencyName}! Quero liberar o módulo de Prospecções para nossa loja e acompanhar o desempenho da equipe, retornos, compras e bonificações.`;
-      try {
-        await navigator.clipboard.writeText(message);
-        bridge.notify("Pedido copiado. Envie esta mensagem para sua agência.");
-      } catch {
-        bridge.notify(`Solicite a ${agencyName} a liberação do módulo de Prospecções.`);
+    else if (action === "request-upgrade") {
+      const store = storeById(bridge.profile.storeId) || {};
+      const agencyName = store.technicianName || bridge.profile.agencyName || "minha agência";
+      const agencyWhatsapp = onlyDigits(store.technicianWhatsapp || bridge.profile.agencyWhatsapp || "");
+      const requesterName = bridge.profile.fullName || bridge.profile.username || "Responsável da conta";
+      const requesterLogin = bridge.profile.username ? `@${bridge.profile.username}` : "login não informado";
+      const storeName = store.name || bridge.profile.storeName || "empresa não identificada";
+      const message = `Olá, ${agencyName}! Sou ${requesterName}, responsável pela empresa ${storeName} (${requesterLogin}). Gostaria de solicitar o upgrade para liberar o módulo de Prospecções e acompanhar o desempenho da equipe, retornos, compras e bonificações. Poderia me passar as condições?`;
+      if (!agencyWhatsapp) {
+        bridge.notify("A agência ainda não cadastrou o WhatsApp comercial. Peça para ela atualizar o contato no painel.", "error");
+        return;
       }
+      const conversationUrl = `https://wa.me/${agencyWhatsapp}?text=${encodeURIComponent(message)}`;
+      window.open(conversationUrl, "_blank", "noopener,noreferrer");
     }
     else if (action === "toggle-filters") { filtersOpen = !filtersOpen; render(); }
     else if (action === "clear-form") { editingId = ""; render(); }
@@ -1572,6 +1758,7 @@
     else if (action === "open-configuration") openConfiguration(button.dataset.storeId || "");
     else if (action === "open-reports") openReports(button.dataset.storeId || "");
     else if (action === "apply-date-shortcut") applyDateShortcut(button.dataset.shortcutTarget || "analysis", button.dataset.shortcutValue || "this-month");
+    else if (action === "set-analysis-period") setAnalysisPeriod(button.dataset.analysisPeriod || "monthly");
     else if (action === "show-professional-records") {
       analysisDetailProfessionalId = button.dataset.professionalId || "";
       openAnalysis(analysisStoreId || selectedStoreId);
