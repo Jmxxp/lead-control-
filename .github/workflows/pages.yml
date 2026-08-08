@@ -41,6 +41,8 @@ jobs:
             prospec-original.css \
             whatsapp.js \
             whatsapp.css \
+            attendances.js \
+            attendances.css \
             manifest.webmanifest \
             favicon.ico \
             logo__.png \

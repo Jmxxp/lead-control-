@@ -58,6 +58,7 @@ let activeStoreContext = null;
 let activeTechnicianContext = null;
 let activeSystemModule = "leads";
 let leadModuleSnapshot = null;
+let attendanceStoreSelectionId = "";
 let accountUsage = null;
 let companyWorkspaceSection = "clients";
 let selectedAnalyticsStoreId = "";
@@ -134,10 +135,13 @@ const adminView = $("#adminView");
 const storeView = $("#storeView");
 const prospectionView = $("#prospectionView");
 const whatsappView = $("#whatsappView");
+const attendanceView = $("#attendanceView");
 const appMainTitle = $("#appMainTitle");
 const moduleLeadsButton = $("#moduleLeadsButton");
 const moduleProspectionsButton = $("#moduleProspectionsButton");
 const moduleWhatsAppButton = $("#moduleWhatsAppButton");
+const moduleAttendancesButton = $("#moduleAttendancesButton");
+const moduleSwitcher = $("#moduleSwitcher");
 const sessionRole = $("#sessionRole");
 const sessionAvatar = $("#sessionAvatar");
 const appNotification = $("#appNotification");
@@ -533,6 +537,8 @@ function bindEvents() {
   moduleLeadsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("leads")));
   moduleProspectionsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("prospections")));
   moduleWhatsAppButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("whatsapp")));
+  moduleAttendancesButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("attendances")));
+  moduleSwitcher.addEventListener("keydown", handleModuleSwitcherKeydown);
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
   settingsButton.addEventListener("click", openSettingsModal);
@@ -931,7 +937,7 @@ async function openProfile(profile) {
   }
 
   const preferredModule = localStorage.getItem(getSystemModuleStorageKey()) || "leads";
-  if (["prospections", "whatsapp"].includes(preferredModule)) {
+  if (["prospections", "whatsapp", "attendances"].includes(preferredModule)) {
     await setSystemModule(preferredModule, { persist: false });
   } else {
     updateSystemModuleControls();
@@ -1377,10 +1383,13 @@ function showAuth() {
   closeAiChat();
   window.ProspectionsModule?.deactivate?.();
   window.WhatsAppModule?.deactivate?.();
+  window.AttendancesModule?.resetSession?.();
   activeSystemModule = "leads";
   setProspectionVisualMode(false);
   setWhatsAppVisualMode(false);
+  setAttendanceVisualMode(false);
   leadModuleSnapshot = null;
+  attendanceStoreSelectionId = "";
   settingsButton.hidden = true;
   authScreen.hidden = false;
   appView.hidden = true;
@@ -1388,6 +1397,7 @@ function showAuth() {
   storeView.hidden = true;
   prospectionView.hidden = true;
   whatsappView.hidden = true;
+  attendanceView.hidden = true;
   if (legalTermsModal) legalTermsModal.hidden = true;
   if (legalDocumentModal) legalDocumentModal.hidden = true;
   if (agencyWhatsappModal) agencyWhatsappModal.hidden = true;
@@ -1408,26 +1418,52 @@ function getSystemModuleStorageKey() {
   return `${SYSTEM_MODULE_STORAGE_PREFIX}:${currentProfile?.id || "anonymous"}`;
 }
 
+function handleModuleSwitcherKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const buttons = [moduleLeadsButton, moduleProspectionsButton, moduleWhatsAppButton, moduleAttendancesButton]
+    .filter((button) => !button.disabled);
+  if (!buttons.length) return;
+  const currentIndex = Math.max(0, buttons.indexOf(document.activeElement));
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? buttons.length - 1
+      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+  event.preventDefault();
+  buttons[nextIndex].focus();
+  buttons[nextIndex].click();
+}
+
 function updateSystemModuleControls() {
   const isLeads = activeSystemModule === "leads";
   const isProspections = activeSystemModule === "prospections";
   const isWhatsApp = activeSystemModule === "whatsapp";
+  const isAttendances = activeSystemModule === "attendances";
   const prospectionsAllowed = canUseProspections();
   moduleLeadsButton.classList.toggle("is-active", isLeads);
   moduleProspectionsButton.classList.toggle("is-active", isProspections);
   moduleWhatsAppButton.classList.toggle("is-active", isWhatsApp);
+  moduleAttendancesButton.classList.toggle("is-active", isAttendances);
   moduleProspectionsButton.classList.toggle("is-locked", !prospectionsAllowed);
   moduleProspectionsButton.disabled = !currentProfile;
   moduleWhatsAppButton.disabled = !currentProfile;
+  moduleAttendancesButton.disabled = !currentProfile;
   moduleLeadsButton.setAttribute("aria-selected", String(isLeads));
   moduleProspectionsButton.setAttribute("aria-selected", String(isProspections));
   moduleWhatsAppButton.setAttribute("aria-selected", String(isWhatsApp));
+  moduleAttendancesButton.setAttribute("aria-selected", String(isAttendances));
+  moduleLeadsButton.tabIndex = isLeads ? 0 : -1;
+  moduleProspectionsButton.tabIndex = isProspections ? 0 : -1;
+  moduleWhatsAppButton.tabIndex = isWhatsApp ? 0 : -1;
+  moduleAttendancesButton.tabIndex = isAttendances ? 0 : -1;
   moduleProspectionsButton.setAttribute("aria-disabled", "false");
   moduleWhatsAppButton.setAttribute("aria-disabled", String(!currentProfile));
+  moduleAttendancesButton.setAttribute("aria-disabled", String(!currentProfile));
   moduleProspectionsButton.title = prospectionsAllowed
     ? "Abrir Prospecções"
     : "Conhecer Prospecções e solicitar upgrade";
   moduleWhatsAppButton.title = "Abrir WhatsApp Business";
+  moduleAttendancesButton.title = "Registrar e acompanhar atendimentos";
 }
 
 function canUseProspections() {
@@ -1448,6 +1484,10 @@ function setProspectionVisualMode(enabled, operation = false) {
 
 function setWhatsAppVisualMode(enabled) {
   document.body.classList.toggle("is-whatsapp-module", enabled);
+}
+
+function setAttendanceVisualMode(enabled) {
+  document.body.classList.toggle("is-attendances-module", enabled);
 }
 
 function captureLeadModuleSnapshot() {
@@ -1476,7 +1516,7 @@ function restoreLeadModuleSnapshot() {
 
 async function setSystemModule(moduleName, { persist = true } = {}) {
   if (!currentProfile) return;
-  const nextModule = ["leads", "prospections", "whatsapp"].includes(moduleName) ? moduleName : "leads";
+  const nextModule = ["leads", "prospections", "whatsapp", "attendances"].includes(moduleName) ? moduleName : "leads";
 
   if (nextModule === activeSystemModule) {
     updateSystemModuleControls();
@@ -1493,16 +1533,24 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     return;
   }
 
+  if (nextModule === "attendances" && !window.AttendancesModule?.activate) {
+    showAppNotification("O módulo de Atendimentos não foi carregado. Atualize a página.", "error");
+    return;
+  }
+
   if (activeSystemModule === "leads" && nextModule !== "leads") {
     leadModuleSnapshot = captureLeadModuleSnapshot();
   }
 
   window.ProspectionsModule?.deactivate?.();
   window.WhatsAppModule?.deactivate?.();
+  window.AttendancesModule?.deactivate?.();
   prospectionView.hidden = true;
   whatsappView.hidden = true;
+  attendanceView.hidden = true;
   setProspectionVisualMode(false);
   setWhatsAppVisualMode(false);
+  setAttendanceVisualMode(false);
 
   if (nextModule === "prospections") {
     setProspectionVisualMode(true, false);
@@ -1579,6 +1627,60 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
       renderCurrentSessionAvatar();
     } catch (error) {
       window.WhatsAppModule?.renderFatalError?.(readableError(error));
+      showAppNotification(readableError(error), "error");
+    }
+  } else if (nextModule === "attendances") {
+    setAttendanceVisualMode(true);
+    activeSystemModule = "attendances";
+    updateSystemModuleControls();
+    appMainTitle.textContent = "Atendimentos";
+    adminView.hidden = true;
+    storeView.hidden = true;
+    attendanceView.hidden = false;
+    appointmentMonitorToggle.hidden = true;
+    appointmentMonitorPanel.hidden = true;
+    backAdminButton.hidden = true;
+    settingsButton.hidden = true;
+    closeAiChat();
+
+    try {
+      await window.AttendancesModule.activate({
+        profile: { ...currentProfile },
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+        initialStoreId: attendanceStoreSelectionId || activeStoreContext?.id || currentProfile.storeId || "",
+        initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
+        rpc: authenticatedRpc,
+        notify: showAppNotification,
+        onStoreSelected: (storeId) => {
+          attendanceStoreSelectionId = storeId || "";
+        },
+        afterSave: async () => {
+          await refreshRemoteState();
+          if (activeSystemModule === "leads") {
+            renderAll();
+            return;
+          }
+          if (activeSystemModule !== "attendances") return;
+          renderAll();
+          adminView.hidden = true;
+          storeView.hidden = true;
+          attendanceView.hidden = false;
+          appointmentMonitorToggle.hidden = true;
+          appointmentMonitorPanel.hidden = true;
+          backAdminButton.hidden = true;
+          settingsButton.hidden = true;
+        },
+        openLeadsForStore: async (storeId) => {
+          await setSystemModule("leads");
+          if (["admin", "technician"].includes(currentProfile?.role) && storeId) {
+            await openStoreAsAdmin(storeId);
+          }
+        },
+      });
+      renderCurrentSessionAvatar();
+    } catch (error) {
+      window.AttendancesModule?.renderFatalError?.(readableError(error));
       showAppNotification(readableError(error), "error");
     }
   } else {
@@ -1998,6 +2100,11 @@ async function deleteManagedAccount(type, id) {
         stores: stores.map((store) => ({ ...store })),
         agencies: technicians.map((technician) => ({ ...technician })),
       });
+    } else if (activeSystemModule === "attendances") {
+      await window.AttendancesModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+      });
     }
     renderAll();
     showAppNotification(type === "store" ? "Cliente excluído" : "Agência excluída");
@@ -2208,6 +2315,11 @@ async function handleManagedAccountSubmit(event) {
       });
     } else if (activeSystemModule === "whatsapp") {
       await window.WhatsAppModule?.refreshContext?.({
+        stores: stores.map((store) => ({ ...store })),
+        agencies: technicians.map((technician) => ({ ...technician })),
+      });
+    } else if (activeSystemModule === "attendances") {
+      await window.AttendancesModule?.refreshContext?.({
         stores: stores.map((store) => ({ ...store })),
         agencies: technicians.map((technician) => ({ ...technician })),
       });

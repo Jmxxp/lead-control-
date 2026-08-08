@@ -32,13 +32,15 @@
     <link rel="stylesheet" href="marketing.css?v=20260806-attribution-core-4" />
     <link rel="stylesheet" href="prospections.css?v=20260806-analysis-calendar-4" />
     <link rel="stylesheet" href="whatsapp.css?v=20260806-whatsapp-core-2" />
+    <link rel="stylesheet" href="attendances.css?v=20260808-attendances-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260806-attribution-core-4" defer></script>
+    <script src="app.js?v=20260808-attendances-1" defer></script>
     <script src="marketing.js?v=20260806-attribution-core-4" defer></script>
     <script src="prospections.js?v=20260806-analysis-calendar-2" defer></script>
     <script src="whatsapp.js?v=20260806-whatsapp-core-2" defer></script>
+    <script src="attendances.js?v=20260808-attendances-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -88,17 +90,21 @@
           </div>
         </div>
         <div id="moduleSwitcher" class="module-switcher" role="tablist" aria-label="Módulo do sistema">
-          <button id="moduleLeadsButton" class="module-switcher-button is-active" type="button" role="tab" aria-selected="true" data-system-module="leads">
+          <button id="moduleLeadsButton" class="module-switcher-button is-active" type="button" role="tab" aria-selected="true" aria-controls="adminView storeView" tabindex="0" data-system-module="leads">
             <i class="fa-solid fa-user-group" aria-hidden="true"></i>
             <span>Leads</span>
           </button>
-          <button id="moduleProspectionsButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" data-system-module="prospections">
+          <button id="moduleProspectionsButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="prospectionView" tabindex="-1" data-system-module="prospections">
             <i class="fa-solid fa-phone" aria-hidden="true"></i>
             <span>Prospecções</span>
           </button>
-          <button id="moduleWhatsAppButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" data-system-module="whatsapp">
+          <button id="moduleWhatsAppButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="whatsappView" tabindex="-1" data-system-module="whatsapp">
             <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
             <span>WhatsApp</span>
+          </button>
+          <button id="moduleAttendancesButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="attendanceView" tabindex="-1" data-system-module="attendances">
+            <i class="fa-solid fa-clipboard-check" aria-hidden="true"></i>
+            <span>Atendimentos</span>
           </button>
         </div>
         <div class="topbar-actions">
@@ -130,7 +136,7 @@
       <div id="appNotification" class="app-notification" role="status" aria-live="polite" hidden></div>
 
       <main>
-        <section id="adminView" class="admin-view" hidden>
+        <section id="adminView" class="admin-view" role="tabpanel" aria-labelledby="moduleLeadsButton" hidden>
           <nav id="companyWorkspaceNav" class="company-workspace-nav" aria-label="Áreas da conta">
             <button class="company-nav-button is-active" type="button" data-company-section="clients">
               <i class="fa-solid fa-users-gear" aria-hidden="true"></i>
@@ -1011,7 +1017,7 @@
           </section>
         </section>
 
-        <section id="storeView" hidden>
+        <section id="storeView" role="tabpanel" aria-labelledby="moduleLeadsButton" hidden>
         <section class="store-export-panel" aria-label="Exportação de leads da loja">
           <div class="store-export-heading">
             <p class="eyebrow">Exportação</p>
@@ -1353,7 +1359,7 @@
         </section>
         </section>
 
-        <section id="prospectionView" class="prospection-view" aria-label="Módulo de Prospecções" hidden>
+        <section id="prospectionView" class="prospection-view" role="tabpanel" aria-labelledby="moduleProspectionsButton" hidden>
           <div class="prospection-loading-card" role="status">
             <span class="prospection-loading-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
             <div>
@@ -1363,13 +1369,23 @@
             </div>
           </div>
         </section>
-        <section id="whatsappView" class="whatsapp-view" aria-label="Módulo WhatsApp Business" hidden>
+        <section id="whatsappView" class="whatsapp-view" role="tabpanel" aria-labelledby="moduleWhatsAppButton" hidden>
           <div class="whatsapp-loading-card" role="status">
             <span class="whatsapp-loading-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
             <div>
               <p class="eyebrow">WhatsApp Business</p>
               <h2>Preparando a central de comunicação</h2>
               <span>Carregando conexões, conversas e permissões da empresa.</span>
+            </div>
+          </div>
+        </section>
+        <section id="attendanceView" class="attendance-view" role="tabpanel" aria-labelledby="moduleAttendancesButton" hidden>
+          <div class="attendance-loading-card" role="status">
+            <span class="attendance-loading-icon"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i></span>
+            <div>
+              <p class="eyebrow">Atendimentos</p>
+              <h2>Preparando o registro da loja</h2>
+              <span>Carregando profissionais, retornos e permissões da empresa.</span>
             </div>
           </div>
         </section>
