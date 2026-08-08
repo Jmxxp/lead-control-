@@ -28,19 +28,19 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260806-agency-contact-1" />
+    <link rel="stylesheet" href="styles.css?v=20260808-entitlements-1" />
     <link rel="stylesheet" href="marketing.css?v=20260806-attribution-core-4" />
     <link rel="stylesheet" href="prospections.css?v=20260806-analysis-calendar-4" />
-    <link rel="stylesheet" href="whatsapp.css?v=20260806-whatsapp-core-2" />
-    <link rel="stylesheet" href="attendances.css?v=20260808-attendances-2" />
+    <link rel="stylesheet" href="whatsapp.css?v=20260808-entitlements-1" />
+    <link rel="stylesheet" href="attendances.css?v=20260808-entitlements-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260805-prospec-round2-4" disabled />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260808-attendances-1" defer></script>
+    <script src="app.js?v=20260808-entitlements-1" defer></script>
     <script src="marketing.js?v=20260806-attribution-core-4" defer></script>
     <script src="prospections.js?v=20260806-analysis-calendar-2" defer></script>
-    <script src="whatsapp.js?v=20260806-whatsapp-core-2" defer></script>
-    <script src="attendances.js?v=20260808-attendances-2" defer></script>
+    <script src="whatsapp.js?v=20260808-entitlements-1" defer></script>
+    <script src="attendances.js?v=20260808-entitlements-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -367,6 +367,10 @@
               <div class="client-capacity-track"><i id="clientCapacityProgress"></i></div>
               <span id="clientCapacityPercent">0%</span>
             </div>
+            <div id="featureCapacitySummary" class="feature-capacity-summary" aria-label="Licenças de recursos premium">
+              <span id="prospectionCapacityBadge"><i class="fa-solid fa-phone" aria-hidden="true"></i><b>0 de 0</b> Prospecções + Atendimentos</span>
+              <span id="whatsappCapacityBadge"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><b>0 de 0</b> WhatsApp</span>
+            </div>
           </section>
 
           <form id="agencyContactForm" class="agency-contact-panel" autocomplete="off" hidden>
@@ -374,7 +378,7 @@
             <div class="agency-contact-copy">
               <span>Contato comercial da agência</span>
               <strong>WhatsApp para pedidos de upgrade</strong>
-              <small>Quando um cliente solicitar Prospecções, a conversa chegará neste número com a empresa e o usuário identificados.</small>
+              <small>Pedidos de upgrade de Prospecções, Atendimentos ou WhatsApp chegarão neste número com a empresa e o usuário identificados.</small>
             </div>
             <label class="field agency-contact-field">
               <span>Número com DDD</span>
@@ -926,7 +930,7 @@
               <label class="field">
                 <span>WhatsApp comercial</span>
                 <input id="technicianWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required />
-                <small class="field-help">Usado pelos clientes para solicitar upgrade de Prospecções.</small>
+                <small class="field-help">Usado pelos clientes para solicitar upgrade de Prospecções, Atendimentos ou WhatsApp.</small>
               </label>
 
               <label class="field">
@@ -953,7 +957,13 @@
               <label class="field">
                 <span>Clientes com Prospecções</span>
                 <input id="technicianProspectionLimit" type="number" min="0" max="9999" step="1" value="0" required />
-                <small class="field-help">Franquia adicional: quantos clientes desta agência poderão usar Leads + Prospecções.</small>
+                <small class="field-help">Franquia adicional: Prospecções e Atendimentos são liberados juntos para cada cliente.</small>
+              </label>
+
+              <label class="field">
+                <span>Clientes com WhatsApp</span>
+                <input id="technicianWhatsappLimit" type="number" min="0" max="9999" step="1" value="0" required />
+                <small class="field-help">Quantidade de clientes que poderão usar a integração oficial do WhatsApp.</small>
               </label>
 
               <div class="field avatar-field">
@@ -1666,14 +1676,20 @@
           <label id="managedAccountProspectionLimitField" class="field" hidden>
             <span>Clientes com Prospecções</span>
             <input id="managedAccountProspectionLimit" type="number" min="0" max="9999" step="1" />
-            <small id="managedAccountProspectionLimitHelp" class="field-help">Ao reduzir o plano, os acessos atuais permanecem ativos até a agência escolher quais clientes desativar. Novas liberações ficam bloqueadas enquanto houver excesso.</small>
+            <small id="managedAccountProspectionLimitHelp" class="field-help">Prospecções e Atendimentos usam a mesma licença. Ao reduzir o plano, novas liberações ficam bloqueadas enquanto houver excesso.</small>
+          </label>
+
+          <label id="managedAccountWhatsappLimitField" class="field" hidden>
+            <span>Clientes com WhatsApp</span>
+            <input id="managedAccountWhatsappLimit" type="number" min="0" max="9999" step="1" />
+            <small id="managedAccountWhatsappLimitHelp" class="field-help">Defina quantos clientes desta agência podem usar a API Oficial do WhatsApp.</small>
           </label>
 
           <div id="managedAccountProspectionField" class="feature-access-card" hidden>
             <div class="feature-access-copy">
               <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
               <div>
-                <strong>Leads + Prospecções</strong>
+                <strong>Prospecções + Atendimentos</strong>
                 <span id="managedAccountProspectionHelp">Libere o módulo adicional para este cliente.</span>
               </div>
             </div>
@@ -1681,6 +1697,21 @@
               <input id="managedAccountProspectionAccess" type="checkbox" />
               <span aria-hidden="true"></span>
               <em id="managedAccountProspectionStatus">Ativo</em>
+            </label>
+          </div>
+
+          <div id="managedAccountWhatsappAccessField" class="feature-access-card is-whatsapp" hidden>
+            <div class="feature-access-copy">
+              <span class="feature-access-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
+              <div>
+                <strong>WhatsApp Business Oficial</strong>
+                <span id="managedAccountWhatsappAccessHelp">Libere a central oficial de conversas para este cliente.</span>
+              </div>
+            </div>
+            <label class="feature-access-toggle">
+              <input id="managedAccountWhatsappAccess" type="checkbox" />
+              <span aria-hidden="true"></span>
+              <em id="managedAccountWhatsappAccessStatus">Ativo</em>
             </label>
           </div>
 
@@ -1700,7 +1731,7 @@
           <div>
             <p class="eyebrow">Contato obrigatório</p>
             <h2 id="agencyWhatsappTitle">Cadastre o WhatsApp da agência</h2>
-            <p>Seus clientes usarão este número para pedir o upgrade de Prospecções com uma mensagem pronta e identificada.</p>
+            <p>Seus clientes usarão este número para pedir upgrades de Prospecções, Atendimentos ou WhatsApp com uma mensagem pronta e identificada.</p>
           </div>
         </div>
         <form id="agencyWhatsappForm" class="account-form" autocomplete="off">

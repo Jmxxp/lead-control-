@@ -1650,6 +1650,43 @@ input.avatar-file-input {
   box-shadow: 0 20px 50px rgba(23, 38, 32, 0.11);
 }
 
+.feature-capacity-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--green) 18%, var(--line));
+}
+
+.feature-capacity-summary[hidden] { display: none; }
+
+.feature-capacity-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, #2f80ed 30%, var(--line));
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, #2f80ed 7%, var(--surface));
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.feature-capacity-summary > span i { color: #2f80ed; }
+.feature-capacity-summary > span b { color: var(--ink); }
+.feature-capacity-summary > span.is-full { border-color: color-mix(in srgb, #d48616 38%, var(--line)); }
+.feature-capacity-summary > span.is-full i { color: #d48616; }
+
+#whatsappCapacityBadge {
+  border-color: color-mix(in srgb, #18a866 32%, var(--line));
+  background: color-mix(in srgb, #18a866 7%, var(--surface));
+}
+
+#whatsappCapacityBadge i { color: #168a58; }
+
 .company-workspace-nav {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5379,6 +5416,13 @@ body.is-dark .secondary-button {
   box-shadow: 0 8px 20px color-mix(in srgb, #2f80ed 12%, transparent);
 }
 
+.feature-plan-badge.is-whatsapp.is-enabled {
+  border-color: color-mix(in srgb, #18a866 42%, var(--line));
+  background: color-mix(in srgb, #18a866 11%, var(--surface));
+  color: #118050;
+  box-shadow: 0 8px 20px color-mix(in srgb, #18a866 12%, transparent);
+}
+
 .feature-plan-badge.is-leads-only {
   color: var(--muted);
 }
@@ -5397,9 +5441,21 @@ body.is-dark .secondary-button {
   letter-spacing: 0.03em;
 }
 
+.analytics-prospec-badge.is-whatsapp {
+  border-color: color-mix(in srgb, #18a866 40%, var(--line));
+  color: #118050;
+  background: color-mix(in srgb, #18a866 10%, var(--surface));
+}
+
 .technician-usage-row.is-prospection-plan {
   margin-top: 9px;
 }
+
+.technician-usage-row.is-whatsapp-plan {
+  margin-top: 9px;
+}
+
+.technician-usage-row.is-whatsapp-plan i { color: #168a58; }
 
 .technician-usage-row .plan-adjustment {
   color: #b86a12;
@@ -5415,8 +5471,16 @@ body.is-dark .secondary-button {
   background: linear-gradient(90deg, #f0b33a, #d47816);
 }
 
+.technician-card.has-plan-overage .technician-usage-track.is-whatsapp-plan i {
+  background: linear-gradient(90deg, #f0b33a, #d47816);
+}
+
 .technician-usage-track.is-prospection-plan i {
   background: linear-gradient(90deg, #2f80ed, #16855f);
+}
+
+.technician-usage-track.is-whatsapp-plan i {
+  background: linear-gradient(90deg, #25d366, #168a58);
 }
 
 .feature-access-card {
@@ -5428,6 +5492,16 @@ body.is-dark .secondary-button {
   border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
   border-radius: 12px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--green) 8%, var(--surface)), var(--surface));
+}
+
+.feature-access-card.is-whatsapp {
+  border-color: color-mix(in srgb, #18a866 34%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, #18a866 9%, var(--surface)), var(--surface));
+}
+
+.feature-access-card.is-whatsapp .feature-access-icon {
+  color: #168a58;
+  background: color-mix(in srgb, #18a866 13%, var(--surface));
 }
 
 .feature-access-toggle input:disabled + span {
@@ -5988,6 +6062,11 @@ body.is-dark .legal-search-field { background: #0e1727; }
   background: var(--muted);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   transition: 160ms ease;
+}
+
+.feature-access-toggle input:focus-visible + span {
+  outline: 3px solid color-mix(in srgb, #2f80ed 38%, transparent);
+  outline-offset: 3px;
 }
 
 .feature-access-toggle input:checked + span {

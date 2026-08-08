@@ -38,6 +38,7 @@
   let bridge = null;
   let active = false;
   let loading = false;
+  let upgradePreview = false;
   let backendReady = true;
   let pollTimer = null;
   let activeSection = "conversations";
@@ -168,6 +169,80 @@
     return false;
   }
 
+  function entitlementErrorParts(error) {
+    const code = normalize(error?.code || error?.error?.code || "");
+    const message = normalize([
+      error?.message,
+      error?.error_description,
+      error?.details?.message,
+      typeof error?.details === "string" ? error.details : "",
+    ].filter(Boolean).join(" "));
+    return { code, message };
+  }
+
+  function isDefinitiveEntitlementError(error) {
+    const { code, message } = entitlementErrorParts(error);
+    return code.includes("whatsapp_access")
+      || code.includes("feature_access_disabled")
+      || /(?:whatsapp.*sem acesso|sem acesso.*whatsapp|acesso.*whatsapp.*nao.*liberad|whatsapp.*desativad|sem licenca.*whatsapp|licenca.*whatsapp.*nao encontrada)/.test(message);
+  }
+
+  function isAmbiguousPermissionError(error) {
+    const { message } = entitlementErrorParts(error);
+    return /(?:cliente|conexao|conversa|campanha|contato|template|webhook|evento|mensagem|anexo|log).*sem permissao/.test(message);
+  }
+
+  async function confirmWhatsappAccessRevoked(storeId) {
+    if (!storeId || !bridge?.rpc) return false;
+    try {
+      const response = await bridge.rpc("lc_get_whatsapp_entitlements");
+      const payload = Array.isArray(response) ? response[0] : (response?.data || response);
+      if (!payload || !Array.isArray(payload.stores)) return false;
+      const entitlement = payload.stores.find((item) => String(item?.store_id || "") === String(storeId));
+      return !entitlement || entitlement.whatsapp_enabled === false;
+    } catch (_) {
+      // Um erro de revalidacao nao prova perda de licenca. A operacao original
+      // continua protegida pelo servidor e o frontend evita um bloqueio falso.
+      return false;
+    }
+  }
+
+  async function handleEntitlementLoss(error) {
+    const definitive = isDefinitiveEntitlementError(error);
+    const ambiguous = isAmbiguousPermissionError(error);
+    if (!definitive && !ambiguous) return false;
+    const revokedStoreId = selectedStoreId;
+    const revokedGeneration = contextGeneration;
+    if (!definitive && !(await confirmWhatsappAccessRevoked(revokedStoreId))) return false;
+    if (!revokedStoreId || selectedStoreId !== revokedStoreId || contextGeneration !== revokedGeneration) return false;
+
+    releaseMediaObjectUrls();
+    closeDialog();
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    loading = false;
+    data = emptyData();
+    pagination = emptyPagination();
+    messages = [];
+    messagesHasMore = false;
+    selectedConnectionId = "";
+    selectedConversationId = "";
+
+    const revokedStore = (bridge?.stores || []).find((store) => store.id === revokedStoreId);
+    if (revokedStore) revokedStore.whatsappEnabled = false;
+    bridge?.onAccessRevoked?.(revokedStoreId);
+    upgradePreview = bridge?.profile?.role === "store";
+    selectedStoreId = "";
+    if (active) render();
+    bridge?.notify?.(
+      upgradePreview
+        ? "O acesso ao WhatsApp foi desativado. Solicite a reativação à sua agência."
+        : "O WhatsApp deste cliente foi desativado. Selecione outra empresa liberada.",
+      "warning",
+    );
+    return true;
+  }
+
   function readableError(error) {
     const message = String(error?.message || error || "Não foi possível concluir a operação.");
     if (/wa_|whatsapp-api|could not find the function|does not exist/i.test(message)) {
@@ -203,7 +278,7 @@
   }
 
   function scopedStores() {
-    const stores = bridge?.stores || [];
+    const stores = (bridge?.stores || []).filter((store) => store.whatsappEnabled === true);
     if (bridge?.profile?.role === "store") return stores.filter((store) => store.id === bridge.profile.storeId);
     if (bridge?.profile?.role === "technician") return stores.filter((store) => store.technicianId === bridge.profile.id);
     if (bridge?.initialAgencyId) return stores.filter((store) => store.technicianId === bridge.initialAgencyId);
@@ -245,6 +320,7 @@
     bridge = nextBridge;
     active = true;
     loading = true;
+    upgradePreview = bridge?.profile?.role === "store" && bridge?.whatsappAccessGranted === false;
     backendReady = true;
     activeSection = "conversations";
     selectedStoreId = resolveInitialStoreId();
@@ -256,11 +332,11 @@
     data = emptyData();
     pagination = emptyPagination();
     root.innerHTML = loadingMarkup();
-    await loadBootstrap();
+    if (!upgradePreview) await loadBootstrap();
     loading = false;
     if (!active) return;
     render();
-    schedulePoll();
+    if (!upgradePreview) schedulePoll();
   }
 
   function resolveInitialStoreId() {
@@ -272,6 +348,7 @@
   function deactivate() {
     contextGeneration += 1;
     active = false;
+    upgradePreview = false;
     clearTimeout(pollTimer);
     pollTimer = null;
     releaseMediaObjectUrls();
@@ -283,9 +360,19 @@
     requestVersions = Object.create(null);
     bridge = { ...bridge, ...nextContext };
     if (!active) return;
+    upgradePreview = bridge?.profile?.role === "store" && bridge?.whatsappAccessGranted === false;
+    if (upgradePreview) {
+      selectedStoreId = "";
+      data = emptyData();
+      clearTimeout(pollTimer);
+      pollTimer = null;
+      render();
+      return;
+    }
     if (!scopedStores().some((store) => store.id === selectedStoreId)) selectedStoreId = resolveInitialStoreId();
     await loadBootstrap({ silent: true });
     render();
+    schedulePoll();
   }
 
   async function loadBootstrap({ silent = false } = {}) {
@@ -318,6 +405,7 @@
       await loadSectionData(activeSection, { silent: true });
     } catch (error) {
       if (!requestIsCurrent(request)) return;
+      if (await handleEntitlementLoss(error)) return;
       backendReady = false;
       data = emptyData();
       if (!silent) bridge.notify(readableError(error), "error");
@@ -382,7 +470,9 @@
         updatePagedCollection("logs", response, append, refresh);
       }
     } catch (error) {
-      if (requestIsCurrent(request) && !silent) bridge.notify(readableError(error), "error");
+      if (!requestIsCurrent(request)) return;
+      if (await handleEntitlementLoss(error)) return;
+      if (!silent) bridge.notify(readableError(error), "error");
     }
   }
 
@@ -401,7 +491,7 @@
 
   function schedulePoll() {
     clearTimeout(pollTimer);
-    if (!active) return;
+    if (!active || upgradePreview) return;
     pollTimer = setTimeout(async () => {
       const activeElement = document.activeElement;
       const userIsEditing = Boolean(
@@ -427,6 +517,10 @@
 
   function render() {
     if (!active || loading) return;
+    if (upgradePreview) {
+      renderUpgradeExperience();
+      return;
+    }
     const store = storeById(selectedStoreId);
     const status = connectionStatus();
     root.innerHTML = `<section class="wa-shell">
@@ -448,10 +542,43 @@
     </section>`;
   }
 
+  function renderUpgradeExperience() {
+    const profile = bridge?.profile || {};
+    const store = storeById(profile.storeId) || { id: profile.storeId, name: profile.storeName || profile.username || "Sua empresa" };
+    const agencyName = store.technicianName || profile.agencyName || "sua agência";
+    const agencyPhone = onlyDigits(store.technicianWhatsapp || profile.agencyWhatsapp || "");
+    const whatsappPhone = agencyPhone.length === 10 || agencyPhone.length === 11 ? `55${agencyPhone}` : agencyPhone;
+    const requesterName = profile.fullName || profile.username || "responsável pela conta";
+    const requesterLogin = profile.username ? `@${profile.username}` : "usuário da empresa";
+    const message = `Olá, ${agencyName}! Sou ${requesterName}, responsável pela empresa ${store.name} (${requesterLogin}). Gostaria de solicitar a liberação do WhatsApp Business Oficial no sistema para organizar conversas, contatos, templates e campanhas. Poderia me passar as condições do upgrade?`;
+    const upgradeUrl = whatsappPhone ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}` : "";
+
+    root.innerHTML = `<section class="wa-upgrade-shell" aria-labelledby="wa-upgrade-title">
+      <div class="wa-upgrade-orb is-green" aria-hidden="true"></div><div class="wa-upgrade-orb is-blue" aria-hidden="true"></div>
+      <article class="wa-upgrade-hero">
+        <span class="wa-upgrade-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><b><i class="fa-solid fa-sparkles" aria-hidden="true"></i></b></span>
+        <p class="eyebrow">Recurso premium</p>
+        <h2 id="wa-upgrade-title">Toda a comunicação oficial da sua empresa em um só lugar.</h2>
+        <p>Conecte a API Oficial do WhatsApp para organizar conversas, contatos, templates e campanhas com histórico protegido e operação profissional.</p>
+        <div class="wa-upgrade-actions">
+          ${upgradeUrl ? `<a class="wa-upgrade-button is-primary" href="${escapeHtml(upgradeUrl)}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>Solicitar upgrade</a>` : `<span class="wa-upgrade-button is-disabled"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Contato da agência indisponível</span>`}
+          <button class="wa-upgrade-button is-secondary" type="button" data-wa-action="open-leads"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Voltar para Leads</button>
+        </div>
+        <small>Peça a liberação para <strong>${escapeHtml(agencyName)}</strong>. O módulo permanece protegido até a agência ativar uma licença para ${escapeHtml(store.name)}.</small>
+      </article>
+      <div class="wa-upgrade-features" aria-label="Benefícios do WhatsApp Business Oficial">
+        <article><i class="fa-solid fa-comments" aria-hidden="true"></i><div><strong>Conversas organizadas</strong><span>Centralize mensagens, mídias, status e histórico por contato.</span></div></article>
+        <article><i class="fa-solid fa-address-book" aria-hidden="true"></i><div><strong>Contatos completos</strong><span>Etiquetas, observações e consentimentos dentro da empresa certa.</span></div></article>
+        <article><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><div><strong>Campanhas oficiais</strong><span>Use templates aprovados e acompanhe entregas, leituras e falhas.</span></div></article>
+        <article><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><div><strong>Operação rastreável</strong><span>Webhooks, logs e filas preparados para crescer com segurança.</span></div></article>
+      </div>
+    </section>`;
+  }
+
   function storeSelectorMarkup() {
     const stores = scopedStores();
     if (bridge.profile.role === "store") return `<span class="wa-store-fixed"><i class="fa-solid fa-store"></i>${escapeHtml(stores[0]?.name || bridge.profile.storeName || "Empresa")}</span>`;
-    return `<label class="wa-store-selector"><span>Empresa</span><select data-wa-store>${stores.map((store) => `<option value="${escapeHtml(store.id)}"${store.id === selectedStoreId ? " selected" : ""}>${escapeHtml(store.name)}</option>`).join("")}</select></label>`;
+    return `<label class="wa-store-selector"><span>Empresa</span><select data-wa-store><option value=""${selectedStoreId ? "" : " selected"}>${stores.length ? "Selecione um cliente" : "Nenhum cliente liberado"}</option>${stores.map((store) => `<option value="${escapeHtml(store.id)}"${store.id === selectedStoreId ? " selected" : ""}>${escapeHtml(store.name)}</option>`).join("")}</select></label>`;
   }
 
   function connectionSelectorMarkup() {
@@ -486,7 +613,16 @@
   }
 
   function sectionMarkup() {
-    if (!selectedStoreId) return emptyState("Selecione uma empresa", "Escolha a empresa que terá a conexão oficial do WhatsApp.", "fa-store");
+    if (!selectedStoreId) {
+      const hasLicensedStores = scopedStores().length > 0;
+      return emptyState(
+        hasLicensedStores ? "Selecione uma empresa" : "Nenhum cliente com WhatsApp liberado",
+        hasLicensedStores
+          ? "Escolha a empresa que terá a conexão oficial do WhatsApp."
+          : "Ative uma licença WhatsApp em Editar acesso. Se a cota estiver cheia, desative outro cliente ou solicite ampliação ao administrador.",
+        hasLicensedStores ? "fa-store" : "fa-lock",
+      );
+    }
     if (activeSection === "contacts") return contactsMarkup();
     if (activeSection === "campaigns") return campaignsMarkup();
     if (activeSection === "templates") return templatesMarkup();
@@ -1190,7 +1326,7 @@
     if (action === "wizard-finish") { closeDialog(); activeSection = "conversations"; await loadBootstrap(); render(); bridge.notify("WhatsApp configurado e pronto para uso.", "success"); return; }
     if (action === "wa-placeholder") bridge.notify("Este recurso será disponibilizado nesta conexão.", "info");
     } catch (error) {
-      if (!error?.waHandled) bridge?.notify?.(operationErrorMessage(error), "error");
+      if (!error?.waHandled && !(await handleEntitlementLoss(error))) bridge?.notify?.(operationErrorMessage(error), "error");
     }
   });
 
@@ -1282,7 +1418,7 @@
     if (event.target.id === "waWizardCredentials") return await saveWizardCredentials(event.target);
     if (event.target.id === "waWizardTest") return await sendWizardTest(event.target);
     } catch (error) {
-      if (!error?.waHandled) bridge?.notify?.(operationErrorMessage(error), "error");
+      if (!error?.waHandled && !(await handleEntitlementLoss(error))) bridge?.notify?.(operationErrorMessage(error), "error");
     }
   });
 
@@ -1351,6 +1487,10 @@
       if (successMessage) bridge.notify(successMessage, "success");
       return result;
     } catch (error) {
+      if (await handleEntitlementLoss(error)) {
+        if (error && typeof error === "object") error.waHandled = true;
+        throw error;
+      }
       const message = operationErrorMessage(error);
       bridge.notify(message, "error");
       if (error && typeof error === "object") error.waHandled = true;
@@ -1367,6 +1507,10 @@
       if (successMessage) bridge.notify(successMessage, "success");
       return result;
     } catch (error) {
+      if (await handleEntitlementLoss(error)) {
+        if (error && typeof error === "object") error.waHandled = true;
+        throw error;
+      }
       bridge.notify(operationErrorMessage(error), "error");
       if (error && typeof error === "object") error.waHandled = true;
       throw error;
@@ -1408,7 +1552,9 @@
         if (list) list.scrollTop = list.scrollHeight;
       });
     } catch (error) {
-      if (requestIsCurrent(request, selectedConversationId === conversationId) && !silent) bridge.notify(operationErrorMessage(error), "error");
+      if (!requestIsCurrent(request, selectedConversationId === conversationId)) return;
+      if (await handleEntitlementLoss(error)) return;
+      if (!silent) bridge.notify(operationErrorMessage(error), "error");
     }
   }
 
@@ -1436,7 +1582,9 @@
         if (nextList) nextList.scrollTop = previousTop + Math.max(0, nextList.scrollHeight - previousHeight);
       });
     } catch (error) {
-      if (requestIsCurrent(request, selectedConversationId === conversationId)) bridge.notify(operationErrorMessage(error), "error");
+      if (!requestIsCurrent(request, selectedConversationId === conversationId)) return;
+      if (await handleEntitlementLoss(error)) return;
+      bridge.notify(operationErrorMessage(error), "error");
     }
   }
 
@@ -1662,6 +1810,8 @@
       await loadMessages(selectedConversationId, { silent: true });
       renderContent();
     } catch (error) {
+      if (error?.waHandled) return;
+      if (await handleEntitlementLoss(error)) return;
       bridge.notify(operationErrorMessage(error), "error");
     } finally { busy = false; }
   }
@@ -1683,6 +1833,8 @@
       await loadSectionData("contacts");
       renderContent();
     } catch (error) {
+      if (error?.waHandled) return;
+      if (await handleEntitlementLoss(error)) return;
       bridge.notify(operationErrorMessage(error), "error");
     }
   }
@@ -1743,7 +1895,10 @@
       const campaign = report.campaign || data.campaigns.find((item) => item.id === campaignId) || {};
       const recipients = arrayFrom(report.recipients || report.items);
       openDialog({ title: campaign.name || "Relatório da campanha", subtitle: "Resultado consolidado e status individual de cada destinatário.", icon: "fa-chart-column", size: "large", content: `<div class="wa-metrics">${metricCard("Enviadas", campaign.sent_count, "fa-paper-plane", "blue")}${metricCard("Entregues", campaign.delivered_count, "fa-check-double", "green")}${metricCard("Lidas", campaign.read_count, "fa-eye", "purple")}${metricCard("Falhas", campaign.failed_count, "fa-triangle-exclamation", "red")}</div><div class="wa-report-toolbar"><span>${formatNumber(recipients.length)} de ${formatNumber(report.total ?? recipients.length)} destinatários carregados</span><button class="wa-button is-secondary" type="button" data-wa-action="download-campaign-report" data-id="${escapeHtml(campaignId)}"><i class="fa-solid fa-download"></i>Baixar relatório completo</button></div><div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Contato</th><th>Número</th><th>Status</th><th>Atualização</th><th>Erro</th></tr></thead><tbody>${recipients.map((item) => `<tr><td data-label="Contato">${escapeHtml(item.contact_name || item.name || "—")}</td><td data-label="Número">${escapeHtml(formatPhone(item.phone || item.phone_e164 || item.wa_id))}</td><td data-label="Status">${statusBadge(item.status)}</td><td data-label="Atualização">${escapeHtml(formatDateTime(item.updated_at || item.sent_at))}</td><td data-label="Erro">${escapeHtml(item.error_message || "—")}</td></tr>`).join("")}</tbody></table></div>` });
-    } catch (error) { bridge.notify(operationErrorMessage(error), "error"); }
+    } catch (error) {
+      if (await handleEntitlementLoss(error)) return;
+      bridge.notify(operationErrorMessage(error), "error");
+    }
   }
 
   async function downloadFullCampaignReport(campaignId) {
@@ -1779,6 +1934,7 @@
         erro: item.error_message,
       })));
     } catch (error) {
+      if (await handleEntitlementLoss(error)) return;
       bridge.notify(operationErrorMessage(error), "error");
     }
   }

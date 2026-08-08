@@ -83,6 +83,35 @@
       .trim();
   }
 
+  function isEntitlementError(error) {
+    const message = normalizeText(error?.message || error?.details || error || "");
+    return /cliente nao encontrado ou sem permissao|acesso.*prospecc|prospecc.*(?:bloque|desativ|nao.*liberad)/.test(message);
+  }
+
+  function handleEntitlementLoss(error, storeId = state.selectedStoreId) {
+    if (!isEntitlementError(error)) return false;
+    const revokedStore = (state.bridge?.stores || []).find((store) => String(firstDefined(store.id, store.store_id, "")) === String(storeId || ""));
+    if (revokedStore) revokedStore.prospectionEnabled = false;
+    state.bridge?.onAccessRevoked?.(String(storeId || ""));
+    state.generation += 1;
+    state.contextGeneration += 1;
+    state.loading = false;
+    state.saving = false;
+    state.pendingSave = null;
+    state.records = [];
+    state.professionals = [];
+    state.serverMetrics = {};
+    state.feedback = null;
+    state.loadError = "";
+    state.idempotencyKey = "";
+    state.idempotencyFingerprint = "";
+    if (storeId) state.drafts.delete(String(storeId));
+    syncContext({ preserveSelection: false });
+    renderWorkspace();
+    notify("Atendimentos foi bloqueado junto com Prospecções. Reative a licença deste cliente para continuar.", "warning");
+    return true;
+  }
+
   function normalizeMoney(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
     let source = String(value ?? "").replace(/[^\d,.-]/g, "").trim();
@@ -264,12 +293,12 @@
 
   function visibleStores() {
     const profile = state.bridge?.profile || {};
-    const all = (Array.isArray(state.bridge?.stores) ? state.bridge.stores : []).map(normalizeStore).filter((store) => store.id);
+    const all = (Array.isArray(state.bridge?.stores) ? state.bridge.stores : [])
+      .map(normalizeStore)
+      .filter((store) => store.id && store.prospectionEnabled === true);
     if (isStoreRole()) {
       const ownId = String(firstDefined(profile.storeId, profile.store_id, profile.id, ""));
-      const own = all.filter((store) => store.id === ownId);
-      if (own.length) return own;
-      return ownId ? [normalizeStore({ id: ownId, name: profile.name || profile.username || "Minha empresa", avatarUrl: profile.avatarUrl })] : [];
+      return all.filter((store) => store.id === ownId);
     }
     if (isAgencyRole()) {
       const agencyId = String(firstDefined(profile.id, profile.technicianId, profile.technician_id, ""));
@@ -297,6 +326,22 @@
 
   function selectedStore() {
     return state.stores.find((store) => store.id === state.selectedStoreId) || null;
+  }
+
+  function hasUnlicensedStoreInScope() {
+    const profile = state.bridge?.profile || {};
+    const all = (Array.isArray(state.bridge?.stores) ? state.bridge.stores : []).map(normalizeStore).filter((store) => store.id);
+    let scoped = all;
+    if (isStoreRole()) {
+      const ownId = String(firstDefined(profile.storeId, profile.store_id, profile.id, ""));
+      scoped = all.filter((store) => store.id === ownId);
+    } else if (isAgencyRole()) {
+      const agencyId = String(firstDefined(profile.id, profile.technicianId, profile.technician_id, ""));
+      scoped = all.filter((store) => store.technicianId === agencyId);
+    } else if (state.bridge?.initialAgencyId) {
+      scoped = all.filter((store) => store.technicianId === String(state.bridge.initialAgencyId));
+    }
+    return scoped.some((store) => store.prospectionEnabled !== true);
   }
 
   function resolveRoot(target) {
@@ -363,13 +408,16 @@
 
   function renderNoStore() {
     const hasStores = state.stores.length > 0;
+    const blockedByPlan = !hasStores && hasUnlicensedStoreInScope();
     return `<section class="attendance-context-empty" aria-live="polite">
-      <span class="attendance-context-empty-icon"><i class="fa-solid ${hasStores ? "fa-arrow-pointer" : "fa-building-circle-exclamation"}" aria-hidden="true"></i></span>
+      <span class="attendance-context-empty-icon"><i class="fa-solid ${hasStores ? "fa-arrow-pointer" : blockedByPlan ? "fa-lock" : "fa-building-circle-exclamation"}" aria-hidden="true"></i></span>
       <p class="attendance-eyebrow">Dados protegidos por cliente</p>
-      <h2>${hasStores ? "Escolha uma empresa para começar" : "Nenhum cliente disponível"}</h2>
+      <h2>${hasStores ? "Escolha uma empresa para começar" : blockedByPlan ? "Atendimentos acompanha Prospecções" : "Nenhum cliente disponível"}</h2>
       <p>${hasStores
         ? "O painel só carrega um cliente por vez. Assim, atendimentos, profissionais e valores nunca são misturados entre empresas."
-        : "Sua conta ainda não possui uma empresa disponível para registrar atendimentos. Vincule um cliente e tente novamente."}</p>
+        : blockedByPlan
+          ? "Nenhum cliente desta conta possui Prospecções liberada. Ative uma licença de Prospecções em Editar acesso para liberar Atendimentos automaticamente."
+          : "Sua conta ainda não possui uma empresa disponível para registrar atendimentos. Vincule um cliente e tente novamente."}</p>
     </section>`;
   }
 
@@ -888,6 +936,7 @@
       renderWorkspace();
     } catch (error) {
       if (!state.active || requestGeneration !== state.generation) return;
+      if (handleEntitlementLoss(error, storeId)) return;
       state.loading = false;
       if (quiet) {
         notify(`Atendimento salvo, mas a lista não pôde ser atualizada agora: ${readableError(error)}`, "warning");
@@ -956,6 +1005,7 @@
         && state.selectedStoreId === saveContext.storeId
         && state.contextGeneration === saveContext.generation;
       setFormBusy(false);
+      if (handleEntitlementLoss(error, saveContext.storeId)) return;
       if (stillCurrent) setFormError(readableError(error));
       notify(readableError(error), "error");
       return;
@@ -1157,7 +1207,7 @@
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "attendanceRpcNames", "attendances.load", "attendances.save"],
+        optional: ["initialStoreId", "initialAgencyId", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save"],
       },
       rpc: {
         workspace: {

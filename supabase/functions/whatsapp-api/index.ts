@@ -644,7 +644,17 @@ async function resolveRuntime(
     input.connection_id || asObject(input.connection).connection_id,
   );
   if (!connectionId) {
-    return runtimeFromUnsaved(asObject(input.connection || input));
+    const candidate = asObject(input.connection || input);
+    const storeId = requiredString(
+      input.store_id || candidate.store_id,
+      "Cliente obrigatorio para validar a conexao.",
+    );
+    await serviceRpc("wa_assert_store_access", {
+      p_session_token: sessionToken,
+      p_store_id: storeId,
+      p_configuration_write: configurationWrite,
+    });
+    return runtimeFromUnsaved(candidate);
   }
   requireEncryptionKey();
   return await serviceRpc<WhatsAppRuntime>("wa_service_connection_runtime", {

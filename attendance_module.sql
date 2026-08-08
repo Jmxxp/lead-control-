@@ -3,6 +3,8 @@
 -- Dependencias: database.sql consolidado (usuarios, lojas, leads e prospeccoes).
 -- A migracao e aditiva, idempotente e usa a sessao x-app-session por meio do
 -- parametro p_session_token validado em app_private.session_user(text).
+-- O acesso usa exatamente app_private.prospection_store_allowed: nao existe
+-- licenca independente de Atendimentos.
 -- Execute no SQL Editor depois de database.sql.
 
 begin;
@@ -110,17 +112,13 @@ stable
 security definer
 set search_path = app_private, public, extensions
 as $$
-  select exists (
-    select 1
-    from public.stores st
-    where st.id = p_store_id
-      and st.admin_user_id = p_admin_user_id
-      and st.is_active = true
-      and (
-        p_user_role::text = 'admin'
-        or (p_user_role::text = 'technician' and st.technician_user_id = p_user_id)
-        or (p_user_role::text = 'store' and st.id = p_user_store_id)
-      )
+  select app_private.prospection_store_allowed(
+    p_admin_user_id,
+    p_user_id,
+    p_user_role,
+    p_user_store_id,
+    p_store_id,
+    false
   );
 $$;
 

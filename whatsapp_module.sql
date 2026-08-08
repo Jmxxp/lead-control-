@@ -769,6 +769,10 @@ as $$
     where st.id = p_store_id
       and st.admin_user_id = p_admin_user_id
       and st.is_active = true
+      -- Compatibilidade de ordem: antes da migracao de entitlements a chave nao
+      -- existe no JSON e o modulo conserva o comportamento legado. Depois dela,
+      -- reexecutar este arquivo nao remove a trava de stores.whatsapp_enabled.
+      and coalesce((to_jsonb(st)->>'whatsapp_enabled')::boolean, true)
       and (
         p_user_role::text = 'admin'
         or (p_user_role::text = 'technician' and st.technician_user_id = p_user_id)
@@ -1904,8 +1908,16 @@ as $$
 declare v_connection record;v_secrets jsonb;
 begin
   if length(coalesce(p_encryption_key,''))<32 then raise exception 'Chave de criptografia do WhatsApp ausente.'; end if;
-  select c.* into v_connection from public.whatsapp_connections c where c.id=p_connection_id;
-  if not found then raise exception 'Conexao nao encontrada.'; end if;
+  select c.* into v_connection
+  from public.whatsapp_connections c
+  join public.stores st
+    on st.id=c.store_id
+   and st.admin_user_id=c.admin_user_id
+   and st.is_active=true
+   and coalesce((to_jsonb(st)->>'whatsapp_enabled')::boolean,true)
+  where c.id=p_connection_id
+    and c.status in ('connected','token_expiring');
+  if not found then raise exception 'Conexao nao encontrada, inativa ou sem licenca.'; end if;
   begin
     select extensions.pgp_sym_decrypt(s.secret_cipher,p_encryption_key)::jsonb into v_secrets from app_private.whatsapp_connection_secrets s where s.connection_id=v_connection.id;
   exception when others then raise exception 'Nao foi possivel decifrar as credenciais. Verifique WHATSAPP_CREDENTIAL_ENCRYPTION_KEY.'; end;

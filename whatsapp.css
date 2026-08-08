@@ -79,6 +79,200 @@ body.is-dark .whatsapp-view {
   box-sizing: border-box;
 }
 
+.whatsapp-view .wa-upgrade-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+  gap: 22px;
+  width: 100%;
+  min-height: min(720px, calc(100dvh - 150px));
+  padding: clamp(24px, 4vw, 54px);
+  overflow: hidden;
+  border: 1px solid var(--wa-line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--wa-panel) 94%, var(--wa-green) 6%), var(--wa-panel));
+  box-shadow: var(--wa-shadow);
+}
+
+.whatsapp-view .wa-upgrade-orb {
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  filter: blur(22px);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.whatsapp-view .wa-upgrade-orb.is-green { top: -190px; right: 8%; background: var(--wa-green); }
+.whatsapp-view .wa-upgrade-orb.is-blue { bottom: -230px; left: -110px; background: var(--wa-blue); }
+
+.whatsapp-view .wa-upgrade-hero,
+.whatsapp-view .wa-upgrade-features {
+  position: relative;
+  z-index: 1;
+}
+
+.whatsapp-view .wa-upgrade-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+  padding: clamp(12px, 3vw, 32px);
+}
+
+.whatsapp-view .wa-upgrade-icon {
+  position: relative;
+  display: grid;
+  width: 78px;
+  height: 78px;
+  margin-bottom: 22px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wa-green) 40%, var(--wa-line));
+  border-radius: 24px;
+  color: var(--wa-green);
+  background: color-mix(in srgb, var(--wa-green) 11%, var(--wa-panel));
+  box-shadow: 0 22px 45px color-mix(in srgb, var(--wa-green) 18%, transparent);
+  font-size: 2.2rem;
+}
+
+.whatsapp-view .wa-upgrade-icon b {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 3px solid var(--wa-panel);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--wa-blue);
+  font-size: 0.72rem;
+}
+
+.whatsapp-view .wa-upgrade-hero .eyebrow {
+  margin: 0 0 9px;
+  color: var(--wa-green);
+}
+
+.whatsapp-view .wa-upgrade-hero h2 {
+  max-width: 760px;
+  margin: 0;
+  color: var(--wa-text);
+  font-size: clamp(2rem, 4.4vw, 4.3rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.whatsapp-view .wa-upgrade-hero > p:not(.eyebrow) {
+  max-width: 720px;
+  margin: 20px 0 0;
+  color: var(--wa-muted);
+  font-size: clamp(0.96rem, 1.4vw, 1.15rem);
+  line-height: 1.65;
+}
+
+.whatsapp-view .wa-upgrade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.whatsapp-view .wa-upgrade-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.whatsapp-view .wa-upgrade-button.is-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #19a866, #0e7e4c);
+  box-shadow: 0 16px 34px rgba(14, 126, 76, 0.24);
+}
+
+.whatsapp-view .wa-upgrade-button.is-secondary {
+  border-color: var(--wa-line);
+  color: var(--wa-text);
+  background: var(--wa-panel-soft);
+  cursor: pointer;
+}
+
+.whatsapp-view .wa-upgrade-button.is-disabled {
+  border-color: color-mix(in srgb, var(--wa-amber) 40%, var(--wa-line));
+  color: var(--wa-amber);
+  background: color-mix(in srgb, var(--wa-amber) 9%, var(--wa-panel));
+}
+
+.whatsapp-view .wa-upgrade-hero > small {
+  max-width: 700px;
+  margin-top: 18px;
+  color: var(--wa-muted);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.whatsapp-view .wa-upgrade-hero > small strong { color: var(--wa-text); }
+
+.whatsapp-view .wa-upgrade-features {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.whatsapp-view .wa-upgrade-features article {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  padding: 17px;
+  border: 1px solid var(--wa-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--wa-panel) 88%, transparent);
+  box-shadow: var(--wa-shadow-soft);
+  backdrop-filter: blur(14px);
+}
+
+.whatsapp-view .wa-upgrade-features article > i {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--wa-green);
+  background: color-mix(in srgb, var(--wa-green) 11%, var(--wa-panel));
+}
+
+.whatsapp-view .wa-upgrade-features article div { display: grid; gap: 4px; min-width: 0; }
+.whatsapp-view .wa-upgrade-features strong { color: var(--wa-text); font-size: 0.9rem; }
+.whatsapp-view .wa-upgrade-features span { color: var(--wa-muted); font-size: 0.76rem; font-weight: 700; line-height: 1.45; }
+
+@media (max-width: 920px) {
+  .whatsapp-view .wa-upgrade-shell { grid-template-columns: 1fr; min-height: 0; padding: 24px; }
+  .whatsapp-view .wa-upgrade-hero { padding: 8px 0 14px; }
+  .whatsapp-view .wa-upgrade-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 580px) {
+  .whatsapp-view .wa-upgrade-shell { padding: 18px; border-radius: 18px; }
+  .whatsapp-view .wa-upgrade-hero h2 { font-size: clamp(1.8rem, 10vw, 2.65rem); }
+  .whatsapp-view .wa-upgrade-actions,
+  .whatsapp-view .wa-upgrade-button { width: 100%; }
+  .whatsapp-view .wa-upgrade-features { grid-template-columns: 1fr; }
+}
+
 .whatsapp-view button,
 .whatsapp-view input,
 .whatsapp-view textarea,
