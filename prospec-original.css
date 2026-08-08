@@ -4548,6 +4548,591 @@ body.is-dark-mode.is-prospections-operation #operationWorkspace > .list-panel > 
   background-clip: padding-box;
 }
 
+/* Carteira de atendimentos dentro da operação de Prospecções. */
+body.is-prospections-operation .prospection-operation-list-toolbar {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 11px;
+  width: auto;
+  margin: 0;
+  border-top: 0;
+}
+
+.prospection-list-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.prospection-list-heading-row .list-header {
+  min-width: 0;
+}
+
+.prospection-list-helper {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.prospection-list-modes {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.prospection-list-modes button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 850;
+  white-space: nowrap;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.prospection-list-modes button:hover {
+  color: var(--text);
+}
+
+.prospection-list-modes button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--line));
+  background: var(--surface);
+  color: var(--primary-dark);
+  box-shadow: 0 7px 18px rgba(22, 32, 51, 0.09);
+}
+
+.prospection-attendance-query {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prospection-attendance-query .prospection-date-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prospection-attendance-query .prospection-date-shortcuts .prospection-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 820;
+  box-shadow: none;
+}
+
+.prospection-attendance-query .prospection-date-shortcuts .prospection-button:hover,
+.prospection-attendance-query .prospection-date-shortcuts .prospection-button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--line));
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary-dark);
+}
+
+.prospection-attendance-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.35fr) minmax(142px, 0.72fr) repeat(2, minmax(132px, 0.72fr)) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prospection-attendance-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 820;
+}
+
+.prospection-attendance-filters input,
+.prospection-attendance-filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.prospection-attendance-filters input:focus,
+.prospection-attendance-filters select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.prospection-attendance-search > div {
+  position: relative;
+  min-width: 0;
+}
+
+.prospection-attendance-search > div > i {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 11px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.prospection-attendance-search input {
+  padding-left: 32px;
+}
+
+.prospection-attendance-submit {
+  min-width: 174px;
+  min-height: 38px;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.prospection-attendance-submit:hover {
+  background: var(--primary-dark);
+}
+
+.prospection-attendance-submit:disabled,
+.prospection-attendance-more:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.prospection-attendance-list {
+  gap: 11px;
+}
+
+.prospection-attendance-results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 2px 2px 4px;
+  color: var(--muted);
+}
+
+.prospection-attendance-results-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.prospection-attendance-results-heading strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.prospection-attendance-results-heading span {
+  font-size: 0.68rem;
+  font-weight: 720;
+}
+
+.prospection-attendance-card {
+  --attendance-color: #2563eb;
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 14px 15px 14px 19px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface-soft) 58%, var(--surface)));
+  box-shadow: var(--card-shadow);
+}
+
+.prospection-attendance-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: var(--attendance-color);
+}
+
+.prospection-attendance-card[data-attendance-type="purchase"] {
+  --attendance-color: #16a34a;
+}
+
+.prospection-attendance-card[data-attendance-type="other"] {
+  --attendance-color: #64748b;
+}
+
+.prospection-attendance-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.prospection-attendance-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prospection-attendance-person > span {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--attendance-color) 32%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--attendance-color) 11%, var(--surface));
+  color: var(--attendance-color);
+  font-size: 0.82rem;
+  font-weight: 920;
+}
+
+.prospection-attendance-person > div {
+  min-width: 0;
+}
+
+.prospection-attendance-person h3 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-attendance-person p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 760;
+}
+
+.prospection-attendance-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prospection-attendance-type,
+.prospection-attendance-existing,
+.prospection-attendance-ambiguous {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--attendance-color) 42%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--attendance-color) 10%, var(--surface));
+  color: color-mix(in srgb, var(--attendance-color) 82%, var(--text));
+  font-size: 0.66rem;
+  font-weight: 870;
+  white-space: nowrap;
+}
+
+.prospection-attendance-existing {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--line));
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary-dark);
+}
+
+.prospection-attendance-ambiguous {
+  border-color: color-mix(in srgb, #d97706 46%, var(--line));
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  color: color-mix(in srgb, #b45309 86%, var(--text));
+}
+
+.prospection-attendance-context {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+}
+
+.prospection-attendance-context small {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 880;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.prospection-attendance-context p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.prospection-attendance-meta {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prospection-attendance-meta > span {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 1px 6px;
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.prospection-attendance-meta i {
+  grid-row: 1 / span 2;
+  color: var(--primary);
+  font-size: 0.7rem;
+}
+
+.prospection-attendance-meta small {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 780;
+}
+
+.prospection-attendance-meta strong {
+  color: var(--text);
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+
+.prospection-attendance-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 1px;
+}
+
+.prospection-attendance-actions a,
+.prospection-attendance-actions button,
+.prospection-attendance-no-phone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.prospection-attendance-actions .whatsapp-button {
+  border: 1px solid #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.prospection-attendance-actions .mark-returned-button {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.prospection-attendance-actions .mark-returned-button:hover {
+  background: var(--primary-dark);
+}
+
+.prospection-attendance-actions .edit-button {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.prospection-attendance-no-phone {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prospection-attendance-state {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  min-height: 240px;
+  gap: 7px;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 60%, transparent);
+  text-align: center;
+}
+
+.prospection-attendance-state > span {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+}
+
+.prospection-attendance-state strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.prospection-attendance-state p {
+  max-width: 420px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.prospection-attendance-state.is-error > span,
+.prospection-attendance-inline-error {
+  color: var(--danger);
+}
+
+.prospection-attendance-inline-error,
+.prospection-attendance-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.prospection-attendance-inline-error {
+  color: var(--danger);
+}
+
+.prospection-attendance-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 840;
+}
+
+body.is-dark-mode .prospection-list-modes button.is-active,
+body.is-dark-mode .prospection-attendance-card,
+body.is-dark-mode .prospection-attendance-meta > span {
+  background: linear-gradient(180deg, #142033, #111c2e);
+}
+
+body.is-dark-mode .prospection-attendance-query .prospection-date-shortcuts .prospection-button.is-active,
+body.is-dark-mode .prospection-attendance-type,
+body.is-dark-mode .prospection-attendance-existing,
+body.is-dark-mode .prospection-attendance-person > span {
+  background: color-mix(in srgb, var(--attendance-color, var(--primary)) 16%, var(--surface));
+}
+
+body.is-dark-mode .prospection-attendance-ambiguous {
+  border-color: color-mix(in srgb, #f59e0b 44%, var(--line));
+  background: color-mix(in srgb, #f59e0b 13%, var(--surface));
+  color: #fde68a;
+}
+
+body.is-dark-mode .prospection-attendance-context,
+body.is-dark-mode .prospection-attendance-state {
+  background: color-mix(in srgb, var(--surface-soft) 70%, var(--surface));
+}
+
+body.is-dark-mode .prospection-attendance-actions .whatsapp-button {
+  border-color: #15803d;
+  background: #052e16;
+  color: #bbf7d0;
+}
+
+body.is-dark-mode .prospection-attendance-filters input,
+body.is-dark-mode .prospection-attendance-filters select {
+  border-color: var(--line);
+  background: #0f192a;
+  color: var(--text);
+}
+
+body.is-dark-mode .prospection-attendance-filters select {
+  border-color: var(--line) !important;
+  background-color: #0f192a !important;
+  color: var(--text) !important;
+}
+
+body.is-dark-mode .prospection-attendance-filters select:focus {
+  border-color: var(--primary) !important;
+  background-color: #132036 !important;
+}
+
+@media (max-width: 1280px) {
+  .prospection-attendance-filters {
+    grid-template-columns: minmax(180px, 1.25fr) minmax(120px, 0.75fr) repeat(2, minmax(128px, 0.7fr));
+  }
+
+  .prospection-attendance-submit {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 1040px) {
+  .prospection-list-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prospection-list-modes {
+    width: 100%;
+  }
+
+  .prospection-attendance-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-attendance-search {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 720px) {
   body.is-prospections-operation #operationWorkspace > .list-panel {
     display: grid;
@@ -4560,5 +5145,62 @@ body.is-dark-mode.is-prospections-operation #operationWorkspace > .list-panel > 
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 10px;
+  }
+
+  body.is-prospections-operation #operationWorkspace > .list-panel.is-attendance-mode {
+    height: auto;
+    max-height: none;
+  }
+
+  body.is-prospections-operation #operationWorkspace > .list-panel.is-attendance-mode > .prospection-attendance-list {
+    height: clamp(320px, 56dvh, 560px);
+    min-height: 320px;
+  }
+
+  .prospection-attendance-card-head,
+  .prospection-attendance-results-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .prospection-attendance-badges,
+  .prospection-attendance-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .prospection-list-modes button {
+    padding-inline: 7px;
+    font-size: 0.67rem;
+  }
+
+  .prospection-attendance-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-attendance-search,
+  .prospection-attendance-submit {
+    grid-column: auto;
+  }
+
+  .prospection-attendance-card {
+    padding: 12px 12px 12px 17px;
+  }
+
+  .prospection-attendance-person h3 {
+    white-space: normal;
+  }
+
+  .prospection-attendance-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-attendance-actions a,
+  .prospection-attendance-actions button,
+  .prospection-attendance-no-phone {
+    width: 100%;
   }
 }

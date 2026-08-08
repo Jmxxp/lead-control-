@@ -18,6 +18,12 @@
     accentColor: "#16855f",
     logoBackgroundColor: "#ffffff",
   });
+  const ATTENDANCE_TYPES = Object.freeze({
+    all: { label: "Todos os tipos", icon: "fa-layer-group" },
+    budget: { label: "Orçamentos", singular: "Orçamento", icon: "fa-file-invoice-dollar" },
+    purchase: { label: "Compras", singular: "Compra", icon: "fa-bag-shopping" },
+    other: { label: "Outros", singular: "Outro", icon: "fa-ellipsis" },
+  });
 
   let bridge = null;
   let active = false;
@@ -36,6 +42,10 @@
   let listSearch = "";
   let listStatus = "all";
   let filtersOpen = false;
+  let listMode = "records";
+  let attendanceListState = null;
+  let attendanceListRequest = 0;
+  let prospectPrefill = null;
   let calendarDate = new Date();
   let analysisStoreId = "";
   let analysisStartDate = "";
@@ -70,12 +80,38 @@
 
   const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
 
-  function formatPhone(value) {
+  function canonicalPhoneDigits(value) {
+    const raw = String(value || "").trim();
+    const hasInternationalPrefix = /^(\+|00)/.test(raw);
+    let digits = onlyDigits(raw);
+    if (digits.startsWith("00")) digits = digits.slice(2);
+    if (hasInternationalPrefix) return digits.length >= 8 && digits.length <= 15 ? digits : "";
+    if (digits.startsWith("0") && [11, 12].includes(digits.length)) digits = digits.slice(1);
+    if ([10, 11].includes(digits.length)) digits = `55${digits}`;
+    const isBrazilianCanonical = digits.startsWith("55") && [12, 13].includes(digits.length);
+    const isInternational = digits.length > 11 && digits.length <= 15;
+    return isBrazilianCanonical || isInternational ? digits : "";
+  }
+
+  function formatBrazilianPhone(value) {
     const digits = onlyDigits(value).slice(0, 11);
     if (digits.length <= 2) return digits;
     if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
     if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  function formatPhone(value) {
+    const raw = String(value || "").trim();
+    if (raw === "+") return raw;
+    const digits = onlyDigits(raw).slice(0, 15);
+    if (!digits) return "";
+    const withoutInternationalPrefix = digits.startsWith("00") ? digits.slice(2) : digits;
+    if (withoutInternationalPrefix.startsWith("55") && [12, 13].includes(withoutInternationalPrefix.length)) {
+      return formatBrazilianPhone(withoutInternationalPrefix.slice(2));
+    }
+    if (/^(\+|00)/.test(raw) || withoutInternationalPrefix.length > 11) return `+${withoutInternationalPrefix}`;
+    return formatBrazilianPhone(withoutInternationalPrefix);
   }
 
   function formatCpf(value) {
@@ -156,6 +192,127 @@
     return { start, end };
   }
 
+  function createAttendanceListState(storeId = "") {
+    const today = startOfDay(new Date());
+    return {
+      storeId: String(storeId || ""),
+      search: "",
+      tag: "budget",
+      startDate: formatDateInput(startOfMonth(today)),
+      endDate: formatDateInput(today),
+      rows: [],
+      total: 0,
+      hasMore: false,
+      loading: false,
+      loaded: false,
+      error: "",
+    };
+  }
+
+  function ensureAttendanceListState(storeId = selectedStoreId) {
+    const safeStoreId = String(storeId || "");
+    if (!attendanceListState || attendanceListState.storeId !== safeStoreId) {
+      attendanceListRequest += 1;
+      attendanceListState = createAttendanceListState(safeStoreId);
+    }
+    return attendanceListState;
+  }
+
+  function normalizePhoneKey(value) {
+    return canonicalPhoneDigits(value);
+  }
+
+  function whatsappPhone(value) {
+    return canonicalPhoneDigits(value);
+  }
+
+  function attendanceType(value) {
+    const normalized = normalize(value);
+    if (["purchase", "compra", "comprou", "venda", "sale"].includes(normalized)) return "purchase";
+    if (["budget", "orcamento", "cotacao", "quote"].includes(normalized)) return "budget";
+    return "other";
+  }
+
+  function mapAttendanceOpportunity(row = {}, index = 0) {
+    const rawPhoneSource = String(row.phone || row.customer_phone || "").trim();
+    const phoneSource = /^(\+|00)/.test(rawPhoneSource)
+      ? rawPhoneSource
+      : row.phone_normalized || rawPhoneSource;
+    const tag = attendanceType(row.tag || row.tag_label || row.type);
+    const links = row.links && typeof row.links === "object" ? row.links : {};
+    const linkedProspection = links.prospection && typeof links.prospection === "object" ? links.prospection : {};
+    const prospectionMatchCount = Number(
+      links.prospection_match_count
+      ?? links.prospection_candidates_count
+      ?? row.prospection_match_count
+      ?? 0,
+    ) || 0;
+    return {
+      id: String(row.id || row.attendance_id || `${row.attended_at || row.created_at || "attendance"}-${index}`),
+      storeId: String(row.store_id || row.storeId || ""),
+      customerName: String(row.customer_name || row.customerName || row.name || "Cliente sem nome"),
+      phone: formatPhone(phoneSource),
+      phoneNormalized: canonicalPhoneDigits(phoneSource) || onlyDigits(phoneSource),
+      description: String(row.description || row.notes || row.observations || ""),
+      tag,
+      tagLabel: String(row.tag_label || ATTENDANCE_TYPES[tag]?.singular || "Atendimento"),
+      professionalId: String(row.professional_id || row.professionalId || ""),
+      professionalName: String(row.professional_name || row.professional_name_snapshot || row.professionalName || "Não informado"),
+      serviceValue: Number(row.service_value || row.serviceValue || 0),
+      purchaseValue: Number(row.purchase_value || row.purchaseValue || 0),
+      serviceOrder: String(row.service_order || row.serviceOrder || row.os || ""),
+      attendedAt: row.attended_at || row.attendedAt || row.created_at || row.createdAt || "",
+      linkedProspectId: String(linkedProspection.id || row.prospection_id || row.prospectionId || ""),
+      prospectionMatchCount,
+      prospectionAmbiguous: Boolean(
+        prospectionMatchCount > 1
+        || row.bonus_credit_status === "ambiguous_prospection",
+      ),
+    };
+  }
+
+  function unwrapAttendancePage(raw, requestedStoreId) {
+    let payload = raw;
+    if (Array.isArray(payload)) {
+      payload = payload.length === 1 && payload[0] && typeof payload[0] === "object" && !Array.isArray(payload[0])
+        ? payload[0]
+        : { items: payload };
+    }
+    if (payload?.data && typeof payload.data === "object" && !payload.items && !payload.attendances) payload = payload.data;
+    payload = payload && typeof payload === "object" ? payload : {};
+    const responseStoreId = String(payload.store_id || payload.storeId || requestedStoreId || "");
+    if (responseStoreId && responseStoreId !== requestedStoreId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+    const items = Array.isArray(payload.items) ? payload.items : Array.isArray(payload.attendances) ? payload.attendances : [];
+    const rows = items
+      .filter((row) => String(row?.store_id || row?.storeId || requestedStoreId) === requestedStoreId)
+      .map((row, index) => mapAttendanceOpportunity({ ...row, store_id: row?.store_id || row?.storeId || requestedStoreId }, index));
+    return {
+      rows,
+      total: Number(payload.total ?? rows.length) || 0,
+      hasMore: Boolean(payload.has_more ?? payload.hasMore ?? (rows.length >= 50)),
+    };
+  }
+
+  function prospectResolutionForAttendance(attendance) {
+    const key = normalizePhoneKey(attendance?.phone || attendance?.phoneNormalized);
+    const storeProspects = prospects.filter((row) => row.storeId === attendance?.storeId);
+    const phoneMatches = key
+      ? storeProspects.filter((row) => normalizePhoneKey(row.phone) === key)
+      : [];
+    const linkedProspect = attendance.linkedProspectId
+      ? storeProspects.find((row) => row.id === attendance.linkedProspectId) || null
+      : null;
+    const matchCount = Math.max(Number(attendance.prospectionMatchCount || 0), phoneMatches.length);
+    if (attendance.prospectionAmbiguous || matchCount > 1) {
+      return { prospect: null, ambiguous: true, count: matchCount };
+    }
+    return {
+      prospect: linkedProspect || (phoneMatches.length === 1 ? phoneMatches[0] : null),
+      ambiguous: false,
+      count: linkedProspect || phoneMatches.length === 1 ? 1 : 0,
+    };
+  }
+
   function isInOptionalRange(value, startValue, endValue) {
     if (!value) return false;
     const range = dateRange(startValue, endValue);
@@ -197,6 +354,9 @@
 
   function readableError(error) {
     const message = String(error?.message || error || "Não foi possível concluir a ação.");
+    if (/lc_list_attendances/i.test(message)) {
+      return "A consulta de Atendimentos ainda não está disponível no banco deste ambiente.";
+    }
     if (/lc_(list|get|upsert|set|save|add|update|delete|reorder|import)_(prospection|prospec)/i.test(message) || /function .* does not exist/i.test(message)) {
       return "A estrutura do módulo de Prospecções ainda não foi instalada no banco principal.";
     }
@@ -420,6 +580,10 @@
     listSearch = "";
     listStatus = "all";
     filtersOpen = false;
+    listMode = "records";
+    attendanceListRequest += 1;
+    attendanceListState = createAttendanceListState(selectedStoreId);
+    prospectPrefill = null;
     calendarDate = new Date();
     analysisStoreId = "";
     analysisStartDate = "";
@@ -460,6 +624,9 @@
     active = false;
     upgradePreview = false;
     archiveProspects = [];
+    attendanceListRequest += 1;
+    attendanceListState = null;
+    prospectPrefill = null;
     stopWorkspaceSizing();
     forceCloseDialogs();
   }
@@ -684,6 +851,7 @@
     const storeId = bridge.profile.role === "store" ? bridge.profile.storeId : selectedStoreId;
     const store = storeById(storeId) || { id: storeId, name: bridge.profile.storeName || "Cliente", username: bridge.profile.username };
     selectedStoreId = store.id;
+    ensureAttendanceListState(store.id);
     root.innerHTML = `${operationContextMarkup(store)}
       <section id="operationWorkspace" class="workspace">
         ${prospectFormMarkup(store.id)}
@@ -752,29 +920,31 @@
 
   function prospectFormMarkup(storeId) {
     const editing = prospects.find((row) => row.id === editingId) || null;
+    const draft = editing || prospectPrefill || null;
+    const isAttendancePrefill = Boolean(!editing && prospectPrefill);
     const storeProfessionals = professionalsFor(storeId);
     return `<aside class="panel form-panel" aria-labelledby="form-title">
       <div class="panel-header">
-        <div><p class="eyebrow">${editing ? "Atualização" : "Novo contato"}</p><h2 id="form-title">${editing ? "Editar prospecção" : "Registrar prospecção"}</h2></div>
+        <div><p class="eyebrow">${editing ? "Atualização" : isAttendancePrefill ? "Atendimento selecionado" : "Novo contato"}</p><h2 id="form-title">${editing ? "Editar prospecção" : isAttendancePrefill ? "Revisar e prospectar" : "Registrar prospecção"}</h2></div>
         <button class="icon-button" type="button" data-prospection-action="clear-form" title="Limpar formulário" aria-label="Limpar formulário">&#8634;</button>
       </div>
       <form id="prospectForm" autocomplete="off">
         <input type="hidden" name="prospectId" value="${escapeHtml(editing?.id || "")}" />
-        <label>Nome<input name="name" type="text" maxlength="160" value="${escapeHtml(editing?.name || "")}" placeholder="Joao da Silva" required /></label>
-        <label>Telefone<input name="phone" type="tel" inputmode="tel" value="${escapeHtml(editing?.phone || "")}" placeholder="(19)000000000" /></label>
-        <label>CPF<input name="cpf" type="text" inputmode="numeric" value="${escapeHtml(editing?.cpf || "")}" placeholder="123.456.789-00" /></label>
-        <label>Anotações<textarea name="notes" rows="5" maxlength="2000" placeholder="Interessada em óculos de grau, voltar com receita.">${escapeHtml(editing?.notes || "")}</textarea></label>
+        <label>Nome<input name="name" type="text" maxlength="160" value="${escapeHtml(draft?.name || "")}" placeholder="Joao da Silva" required /></label>
+        <label>Telefone<input name="phone" type="tel" inputmode="tel" value="${escapeHtml(draft?.phone || "")}" placeholder="(19)000000000" /></label>
+        <label>CPF<input name="cpf" type="text" inputmode="numeric" value="${escapeHtml(draft?.cpf || "")}" placeholder="123.456.789-00" /></label>
+        <label>Anotações<textarea name="notes" rows="5" maxlength="2000" placeholder="Interessada em óculos de grau, voltar com receita.">${escapeHtml(draft?.notes || "")}</textarea></label>
         <section class="professional-picker" aria-labelledby="professional-picker-title">
           <div class="professional-picker-header"><span id="professional-picker-title">Profissional</span></div>
-          <div class="professional-options">${storeProfessionals.length ? storeProfessionals.map((professional) => `<label class="professional-option"><input type="radio" name="professionalId" value="${professional.id}"${editing?.professionalId === professional.id ? " checked" : ""} /><span>${escapeHtml(professional.name)}</span></label>`).join("") : `<span class="professional-empty">Nenhum profissional cadastrado pela agência.</span>`}</div>
+          <div class="professional-options">${storeProfessionals.length ? storeProfessionals.map((professional) => `<label class="professional-option"><input type="radio" name="professionalId" value="${professional.id}"${draft?.professionalId === professional.id ? " checked" : ""} /><span>${escapeHtml(professional.name)}</span></label>`).join("") : `<span class="professional-empty">Nenhum profissional cadastrado pela agência.</span>`}</div>
         </section>
-        ${tagCategoryPickerMarkup(storeId, editing)}
+        ${tagCategoryPickerMarkup(storeId, draft)}
         <fieldset class="status-picker">
           <legend>Probabilidade</legend>
-          ${Object.entries(PROBABILITIES).map(([key, item]) => `<label class="status-option"><input type="radio" name="probability" value="${key}"${(editing?.probability || "blue") === key ? " checked" : ""} /><span class="swatch swatch-${key}"></span><span>${item.label}</span></label>`).join("")}
+          ${Object.entries(PROBABILITIES).map(([key, item]) => `<label class="status-option"><input type="radio" name="probability" value="${key}"${(draft?.probability || "blue") === key ? " checked" : ""} /><span class="swatch swatch-${key}"></span><span>${item.label}</span></label>`).join("")}
         </fieldset>
         <p id="prospectionFormMessage" class="form-error" role="alert"></p>
-        <button class="primary-button" type="submit"><span>${editing ? "Salvar alterações" : "Registrar prospecção"}</span></button>
+        <button class="primary-button" type="submit"><span>${editing ? "Salvar alterações" : isAttendancePrefill ? "Registrar esta prospecção" : "Registrar prospecção"}</span></button>
       </form>
     </aside>`;
   }
@@ -792,10 +962,18 @@
   function prospectListPanelMarkup(storeId) {
     const filterCount = Number(dashboardPeriod !== "today") + Number(listStatus !== "all");
     const periodTitle = dashboardPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
-    return `<section class="panel list-panel" aria-labelledby="list-title">
-      <div class="list-toolbar">
-        <div class="panel-header list-header"><div><p class="eyebrow">${periodTitle[0]}</p><h2 id="list-title">${periodTitle[1]}</h2></div></div>
-        <div class="search-row">
+    const attendanceState = ensureAttendanceListState(storeId);
+    const isAttendanceMode = listMode === "attendances";
+    return `<section id="prospectionListPanel" class="panel list-panel${isAttendanceMode ? " is-attendance-mode" : ""}" aria-labelledby="list-title">
+      <div class="list-toolbar prospection-operation-list-toolbar">
+        <div class="prospection-list-heading-row">
+          <div class="panel-header list-header"><div><p class="eyebrow">${isAttendanceMode ? "Carteira de atendimentos" : periodTitle[0]}</p><h2 id="list-title">${isAttendanceMode ? "Atendimentos para prospectar" : periodTitle[1]}</h2>${isAttendanceMode ? `<span class="prospection-list-helper">Consulte o contexto antes de entrar em contato.</span>` : ""}</div></div>
+          <div class="prospection-list-modes" role="group" aria-label="Visualização de prospecções">
+            <button type="button" aria-pressed="${String(!isAttendanceMode)}" class="${!isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="records"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span>Registradas</span></button>
+            <button type="button" aria-pressed="${String(isAttendanceMode)}" class="${isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="attendances"><i class="fa-solid fa-user-clock" aria-hidden="true"></i><span>Para prospectar</span></button>
+          </div>
+        </div>
+        ${isAttendanceMode ? attendanceFiltersMarkup(attendanceState) : `<div class="search-row">
           <label class="search-label">Buscar nas prospecções<input data-prospection-search type="search" value="${escapeHtml(listSearch)}" placeholder="Nome, telefone, CPF ou anotação" /></label>
           <div class="filter-menu">
             <button class="filter-button" type="button" data-prospection-action="toggle-filters" aria-expanded="${String(filtersOpen)}"><i class="fa-solid fa-filter" aria-hidden="true"></i>Filtros${filterCount ? `<span class="filter-count">${filterCount}</span>` : ""}</button>
@@ -804,16 +982,78 @@
               <label>Situação<select data-prospection-status><option value="all"${listStatus === "all" ? " selected" : ""}>Todos</option><option value="open"${listStatus === "open" ? " selected" : ""}>Não voltaram</option><option value="returned"${listStatus === "returned" ? " selected" : ""}>Voltaram</option><option value="purchased"${listStatus === "purchased" ? " selected" : ""}>Compraram</option></select></label>
             </div>
           </div>
-        </div>
+        </div>`}
       </div>
-      <div id="prospectionRecords" class="prospects-list" role="region" aria-label="Prospecções registradas" aria-live="polite" tabindex="0">${recordListMarkup(storeId)}</div>
+      <div id="prospectionRecords" class="prospects-list${isAttendanceMode ? " prospection-attendance-list" : ""}" role="region" aria-label="${isAttendanceMode ? "Atendimentos disponíveis para prospecção" : "Prospecções registradas"}" aria-live="polite" aria-busy="${String(isAttendanceMode && attendanceState.loading)}" tabindex="0">${isAttendanceMode ? attendanceOpportunityListMarkup(attendanceState) : recordListMarkup(storeId)}</div>
     </section>`;
+  }
+
+  function attendanceFiltersMarkup(state) {
+    const types = Object.entries(ATTENDANCE_TYPES).map(([value, item]) => `<option value="${value}"${state.tag === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+    return `<div class="prospection-attendance-query">
+      ${dateShortcutsMarkup("attendance", state.startDate, state.endDate)}
+      <form id="prospectionAttendanceFilters" class="prospection-attendance-filters">
+        <label class="prospection-attendance-search"><span>Buscar cliente</span><div><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input name="search" type="search" value="${escapeHtml(state.search)}" placeholder="Nome, telefone ou descrição" /></div></label>
+        <label><span>Tipo</span><select name="tag">${types}</select></label>
+        <label><span>Data inicial</span><input name="startDate" type="date" value="${escapeHtml(state.startDate)}" required /></label>
+        <label><span>Data final</span><input name="endDate" type="date" value="${escapeHtml(state.endDate)}" required /></label>
+        <button class="filter-button prospection-attendance-submit" type="submit"${state.loading ? " disabled" : ""}><i class="fa-solid ${state.loading ? "fa-circle-notch fa-spin" : "fa-filter"}" aria-hidden="true"></i>${state.loading ? "Buscando" : "Buscar atendimentos"}</button>
+      </form>
+    </div>`;
+  }
+
+  function attendanceOpportunityListMarkup(state) {
+    if (state.loading && !state.rows.length) {
+      return `<div class="prospection-attendance-state" role="status"><span><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i></span><strong>Buscando atendimentos</strong><p>Consultando apenas os registros desta empresa.</p></div>`;
+    }
+    if (state.error && !state.rows.length) {
+      return `<div class="prospection-attendance-state is-error"><span><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><strong>Não foi possível carregar a lista</strong><p>${escapeHtml(state.error)}</p><button class="edit-button" type="button" data-prospection-action="retry-attendances"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>Tentar novamente</button></div>`;
+    }
+    if (!state.loaded) {
+      return `<div class="prospection-attendance-state"><span><i class="fa-solid fa-address-book" aria-hidden="true"></i></span><strong>Encontre oportunidades nos atendimentos</strong><p>Escolha o tipo e o período. Você verá a descrição e quem atendeu antes de chamar o cliente.</p><button class="edit-button" type="button" data-prospection-action="retry-attendances"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>Buscar agora</button></div>`;
+    }
+    if (!state.rows.length) {
+      return `<div class="prospection-attendance-state"><span><i class="fa-solid fa-user-check" aria-hidden="true"></i></span><strong>Nenhum atendimento neste filtro</strong><p>Tente outro tipo ou amplie o período da busca.</p></div>`;
+    }
+    const loaded = state.rows.length;
+    return `<div class="prospection-attendance-results-heading"><div><strong>${state.total} atendimento${state.total === 1 ? "" : "s"}</strong><span>Contexto completo para uma abordagem melhor</span></div><span>${loaded} carregado${loaded === 1 ? "" : "s"}</span></div>
+      ${state.rows.map(attendanceOpportunityCardMarkup).join("")}
+      ${state.error ? `<p class="prospection-attendance-inline-error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.error)}</p>` : ""}
+      ${state.hasMore ? `<button class="prospection-attendance-more" type="button" data-prospection-action="load-more-attendances"${state.loading ? " disabled" : ""}><i class="fa-solid ${state.loading ? "fa-circle-notch fa-spin" : "fa-chevron-down"}" aria-hidden="true"></i>${state.loading ? "Carregando" : "Carregar mais atendimentos"}</button>` : `<p class="prospection-attendance-end"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Todos os resultados do período foram carregados.</p>`}`;
+  }
+
+  function attendanceOpportunityCardMarkup(row) {
+    const type = ATTENDANCE_TYPES[row.tag] || ATTENDANCE_TYPES.other;
+    const whatsapp = whatsappPhone(row.phone || row.phoneNormalized);
+    const resolution = prospectResolutionForAttendance(row);
+    const existing = resolution.prospect;
+    const value = row.tag === "purchase" ? row.purchaseValue || row.serviceValue : row.serviceValue;
+    return `<article class="prospection-attendance-card" data-attendance-type="${escapeHtml(row.tag)}">
+      <div class="prospection-attendance-card-head">
+        <div class="prospection-attendance-person"><span>${escapeHtml(row.customerName.slice(0, 1).toUpperCase() || "C")}</span><div><h3>${escapeHtml(row.customerName)}</h3><p>${escapeHtml(row.phone || "Telefone não informado")}</p></div></div>
+        <div class="prospection-attendance-badges"><span class="prospection-attendance-type"><i class="fa-solid ${type.icon}" aria-hidden="true"></i>${escapeHtml(row.tagLabel)}</span>${existing ? `<span class="prospection-attendance-existing"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Já em Prospecções</span>` : resolution.ambiguous ? `<span class="prospection-attendance-ambiguous"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${resolution.count} registros com este telefone</span>` : ""}</div>
+      </div>
+      <div class="prospection-attendance-context"><small>Contexto do atendimento</small><p>${escapeHtml(row.description || "Nenhuma descrição foi informada neste atendimento.")}</p></div>
+      <div class="prospection-attendance-meta">
+        <span><i class="fa-solid fa-user-tie" aria-hidden="true"></i><small>Atendido por</small><strong>${escapeHtml(row.professionalName)}</strong></span>
+        <span><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><small>Data</small><strong>${escapeHtml(formatDateTime(row.attendedAt))}</strong></span>
+        ${value ? `<span><i class="fa-solid fa-brazilian-real-sign" aria-hidden="true"></i><small>Valor</small><strong>${escapeHtml(formatCurrency(value))}</strong></span>` : ""}
+        ${row.serviceOrder ? `<span><i class="fa-solid fa-receipt" aria-hidden="true"></i><small>OS</small><strong>${escapeHtml(row.serviceOrder)}</strong></span>` : ""}
+      </div>
+      <div class="prospection-attendance-actions">
+        ${whatsapp ? `<a class="whatsapp-button" href="https://wa.me/${escapeHtml(whatsapp)}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>WhatsApp</a>` : `<span class="prospection-attendance-no-phone"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
+        ${existing ? `<button class="edit-button" type="button" data-prospection-action="edit-prospect" data-prospect-id="${escapeHtml(existing.id)}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Abrir prospecção</button>` : resolution.ambiguous ? `<button class="edit-button" type="button" data-prospection-action="review-duplicate-prospects" data-attendance-id="${escapeHtml(row.id)}"><i class="fa-solid fa-list" aria-hidden="true"></i>Revisar registros</button>` : `<button class="mark-returned-button" type="button" data-prospection-action="prefill-attendance" data-attendance-id="${escapeHtml(row.id)}"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Usar no cadastro</button>`}
+      </div>
+    </article>`;
   }
 
   function filteredStoreRows(storeId) {
     const query = normalize(listSearch);
+    const queryPhone = normalizePhoneKey(listSearch);
     return prospectsFor(storeId).filter((row) => {
-      const matchesQuery = !query || normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, ...row.tagValues].join(" ")).includes(query);
+      const matchesQuery = !query
+        || normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, ...row.tagValues].join(" ")).includes(query)
+        || Boolean(queryPhone && normalizePhoneKey(row.phone) === queryPhone);
       const matchesStatus = listStatus === "all"
         || (listStatus === "open" && !row.returnedAt)
         || (listStatus === "returned" && row.returnedAt)
@@ -830,7 +1070,8 @@
 
   function recordCardMarkup(row) {
     const probability = PROBABILITIES[row.probability];
-    const whatsapp = row.phone ? `https://wa.me/55${onlyDigits(row.phone)}` : "";
+    const whatsappNumber = whatsappPhone(row.phone);
+    const whatsapp = whatsappNumber ? `https://wa.me/${whatsappNumber}` : "";
     const info = `${row.professionalName ? `<div class="card-professional"><i class="fa-solid fa-user-check" aria-hidden="true"></i><span>Profissional</span><strong>${escapeHtml(row.professionalName)}</strong></div>` : ""}${row.purchasedAt && (row.purchaseAmount || row.purchaseOrder) ? `<div class="card-purchase-info"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Compra</span>${row.purchaseAmount ? `<strong>${formatCurrency(row.purchaseAmount)}</strong>` : ""}${row.purchaseOrder ? `<em>${escapeHtml(row.purchaseOrder)}</em>` : ""}</div>` : ""}`;
     return `<article class="prospect-card" data-color="${escapeHtml(row.probability)}">
       <div class="card-main">
@@ -855,6 +1096,181 @@
   function renderRecordList() {
     const container = root.querySelector("#prospectionRecords");
     if (container && selectedStoreId) container.innerHTML = recordListMarkup(selectedStoreId);
+  }
+
+  function renderProspectListPanel({ focusSelector = "", scrollTop } = {}) {
+    const panel = root.querySelector("#prospectionListPanel");
+    if (!panel || !selectedStoreId) return;
+    const previousList = panel.querySelector("#prospectionRecords");
+    const nextScrollTop = Number.isFinite(scrollTop) ? scrollTop : Number(previousList?.scrollTop || 0);
+    panel.outerHTML = prospectListPanelMarkup(selectedStoreId);
+    scheduleWorkspaceSizing();
+    const nextList = root.querySelector("#prospectionRecords");
+    if (nextList) nextList.scrollTop = nextScrollTop;
+    if (focusSelector) {
+      requestAnimationFrame(() => root.querySelector(focusSelector)?.focus({ preventScroll: true }));
+    }
+  }
+
+  async function loadAttendanceOpportunities({ append = false } = {}) {
+    const requestedStoreId = bridge.profile.role === "store" ? String(bridge.profile.storeId || "") : String(selectedStoreId || "");
+    if (!requestedStoreId) {
+      bridge.notify("Selecione um cliente para consultar os atendimentos.", "error");
+      return;
+    }
+    const state = ensureAttendanceListState(requestedStoreId);
+    if (state.loading || (append && !state.hasMore)) return;
+    if (state.startDate && state.endDate && state.startDate > state.endDate) {
+      bridge.notify("A data inicial não pode ser posterior à data final.", "error");
+      return;
+    }
+
+    const request = ++attendanceListRequest;
+    state.loading = true;
+    state.error = "";
+    if (!append) {
+      state.rows = [];
+      state.total = 0;
+      state.hasMore = false;
+    }
+    renderProspectListPanel({ scrollTop: append ? undefined : 0 });
+
+    try {
+      const raw = await bridge.rpc("lc_list_attendances", {
+        p_store_id: requestedStoreId,
+        p_search: state.search || null,
+        p_tag: state.tag === "all" ? null : state.tag,
+        p_professional_id: null,
+        p_link_status: null,
+        p_start_date: state.startDate || null,
+        p_end_date: state.endDate || null,
+        p_limit: 50,
+        p_offset: append ? state.rows.length : 0,
+      });
+      if (!active || request !== attendanceListRequest || listMode !== "attendances" || selectedStoreId !== requestedStoreId || attendanceListState !== state) return;
+      const page = unwrapAttendancePage(raw, requestedStoreId);
+      if (append) {
+        const known = new Set(state.rows.map((row) => row.id));
+        state.rows = [...state.rows, ...page.rows.filter((row) => !known.has(row.id))];
+      } else {
+        state.rows = page.rows;
+      }
+      state.total = page.total;
+      state.hasMore = page.hasMore;
+      state.loaded = true;
+    } catch (error) {
+      if (!active || request !== attendanceListRequest || attendanceListState !== state) return;
+      state.error = readableError(error);
+      state.loaded = true;
+    } finally {
+      if (request === attendanceListRequest && attendanceListState === state) {
+        state.loading = false;
+        if (listMode === "attendances" && selectedStoreId === requestedStoreId) {
+          renderProspectListPanel({ focusSelector: "#prospectionRecords" });
+        }
+      }
+    }
+  }
+
+  function applyAttendanceFilters(form) {
+    const data = new FormData(form);
+    const state = ensureAttendanceListState();
+    const startDate = String(data.get("startDate") || "");
+    const endDate = String(data.get("endDate") || "");
+    if (!startDate || !endDate) {
+      bridge.notify("Informe a data inicial e a data final.", "error");
+      return;
+    }
+    if (startDate > endDate) {
+      bridge.notify("A data inicial não pode ser posterior à data final.", "error");
+      return;
+    }
+    state.search = String(data.get("search") || "").trim();
+    state.tag = ATTENDANCE_TYPES[String(data.get("tag") || "budget")] ? String(data.get("tag")) : "budget";
+    state.startDate = startDate;
+    state.endDate = endDate;
+    state.loaded = false;
+    state.error = "";
+    if (state.loading) {
+      attendanceListRequest += 1;
+      state.loading = false;
+    }
+    loadAttendanceOpportunities();
+  }
+
+  function setListMode(nextMode) {
+    const safeMode = nextMode === "attendances" ? "attendances" : "records";
+    if (listMode === safeMode) return;
+    listMode = safeMode;
+    filtersOpen = false;
+    attendanceListRequest += 1;
+    if (attendanceListState) attendanceListState.loading = false;
+    renderProspectListPanel({
+      focusSelector: `[data-prospection-action="set-list-mode"][data-list-mode="${safeMode}"]`,
+      scrollTop: 0,
+    });
+    const state = ensureAttendanceListState();
+    if (safeMode === "attendances" && !state.loaded) loadAttendanceOpportunities();
+  }
+
+  function prefillProspectFromAttendance(attendanceId) {
+    const state = ensureAttendanceListState();
+    const attendance = state.rows.find((row) => row.id === attendanceId);
+    if (!attendance || attendance.storeId !== selectedStoreId) {
+      bridge.notify("Este atendimento não está mais disponível na lista.", "error");
+      return;
+    }
+    const resolution = prospectResolutionForAttendance(attendance);
+    if (resolution.ambiguous) {
+      reviewDuplicateProspects(attendanceId);
+      return;
+    }
+    if (resolution.prospect) {
+      editingId = resolution.prospect.id;
+      prospectPrefill = null;
+    } else {
+      const activeProfessional = professionalsFor(selectedStoreId).find((row) => row.id === attendance.professionalId);
+      const context = [
+        `Atendimento de ${formatDateTime(attendance.attendedAt)} por ${attendance.professionalName}.`,
+        attendance.description,
+        attendance.serviceOrder ? `OS: ${attendance.serviceOrder}.` : "",
+      ].filter(Boolean).join(" ").slice(0, 2000);
+      editingId = "";
+      prospectPrefill = {
+        name: attendance.customerName,
+        phone: attendance.phone,
+        cpf: "",
+        notes: context,
+        probability: "blue",
+        professionalId: activeProfessional?.id || "",
+        tagValues: [],
+      };
+    }
+    render();
+    requestAnimationFrame(() => {
+      const form = root.querySelector("#prospectForm");
+      form?.scrollIntoView({ behavior: "smooth", block: "start" });
+      form?.querySelector('[name="name"]')?.focus({ preventScroll: true });
+    });
+    bridge.notify(resolution.prospect ? "A prospecção existente foi aberta." : "Atendimento carregado no cadastro. Revise e registre a prospecção.");
+  }
+
+  function reviewDuplicateProspects(attendanceId) {
+    const state = ensureAttendanceListState();
+    const attendance = state.rows.find((row) => row.id === attendanceId);
+    if (!attendance || attendance.storeId !== selectedStoreId) {
+      bridge.notify("Este atendimento não está mais disponível na lista.", "error");
+      return;
+    }
+    listSearch = attendance.phone || attendance.phoneNormalized;
+    listStatus = "all";
+    dashboardPeriod = "all";
+    listMode = "records";
+    filtersOpen = false;
+    attendanceListRequest += 1;
+    state.loading = false;
+    renderProspectListPanel({ focusSelector: "[data-prospection-search]", scrollTop: 0 });
+    bridge.notify("Encontramos mais de uma prospecção com este telefone. Revise os registros antes de continuar.");
   }
 
   function forceCloseDialogs({ preserveConfiguration = false } = {}) {
@@ -1990,6 +2406,7 @@
     }), wasEditing ? "Prospecção atualizada" : "Prospecção registrada");
     if (saved) {
       editingId = "";
+      prospectPrefill = null;
       render();
     }
   }
@@ -2165,6 +2582,19 @@
 
   function applyDateShortcut(target, shortcut) {
     const range = shortcutRange(shortcut);
+    if (target === "attendance") {
+      const state = ensureAttendanceListState();
+      state.startDate = formatDateInput(range.start);
+      state.endDate = formatDateInput(range.end);
+      state.loaded = false;
+      state.error = "";
+      if (state.loading) {
+        attendanceListRequest += 1;
+        state.loading = false;
+      }
+      loadAttendanceOpportunities();
+      return;
+    }
     if (target === "bonus") {
       bonusStartDate = formatDateInput(range.start);
       bonusEndDate = formatDateInput(range.end);
@@ -2350,6 +2780,7 @@
     event.preventDefault();
     const form = event.target;
     if (form.id === "prospectForm") saveProspect(form);
+    else if (form.id === "prospectionAttendanceFilters") applyAttendanceFilters(form);
     else if (form.id === "prospectionPurchaseForm") savePurchase(form);
     else if (form.id === "prospectionAnalysisFilters") applyAnalysisFilters(form);
     else if (form.id === "prospectionBonusFilters") applyBonusFilters(form);
@@ -2464,15 +2895,38 @@
       window.open(conversationUrl, "_blank", "noopener,noreferrer");
     }
     else if (action === "toggle-filters") { filtersOpen = !filtersOpen; render(); }
-    else if (action === "clear-form") { editingId = ""; render(); }
+    else if (action === "set-list-mode") setListMode(button.dataset.listMode || "records");
+    else if (action === "retry-attendances") await loadAttendanceOpportunities();
+    else if (action === "load-more-attendances") await loadAttendanceOpportunities({ append: true });
+    else if (action === "prefill-attendance") prefillProspectFromAttendance(button.dataset.attendanceId || "");
+    else if (action === "review-duplicate-prospects") reviewDuplicateProspects(button.dataset.attendanceId || "");
+    else if (action === "clear-form") { editingId = ""; prospectPrefill = null; render(); }
     else if (action === "select-agency") { selectedAgencyId = button.dataset.accountId; render(); }
     else if (action === "clear-agency") { selectedAgencyId = ""; render(); }
     else if (action === "select-store") {
       const storeId = button.dataset.accountId;
       if (!isLicensedStore(storeId)) bridge.notify("Este cliente possui somente Leads. Libere uma licença de Prospecções primeiro.", "error");
-      else { selectedStoreId = storeId; editingId = ""; listSearch = ""; listStatus = "all"; render(); }
+      else {
+        selectedStoreId = storeId;
+        editingId = "";
+        prospectPrefill = null;
+        listMode = "records";
+        listSearch = "";
+        listStatus = "all";
+        attendanceListRequest += 1;
+        attendanceListState = createAttendanceListState(storeId);
+        render();
+      }
     }
-    else if (action === "back-dashboard") { selectedStoreId = ""; editingId = ""; render(); }
+    else if (action === "back-dashboard") {
+      selectedStoreId = "";
+      editingId = "";
+      prospectPrefill = null;
+      listMode = "records";
+      attendanceListRequest += 1;
+      attendanceListState = createAttendanceListState("");
+      render();
+    }
     else if (action === "open-store-analysis") openAnalysis(button.dataset.storeId);
     else if (action === "open-analysis") openAnalysis();
     else if (action === "open-store-bonus") openBonus(button.dataset.storeId);
@@ -2513,8 +2967,8 @@
       openAnalysis(analysisStoreId || selectedStoreId);
     }
     else if (action === "export-report") exportReport(button.dataset.storeId || "");
-    else if (action === "edit-prospect") { editingId = prospectId; render(); root.querySelector("#prospectForm")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
-    else if (action === "cancel-edit") { editingId = ""; render(); }
+    else if (action === "edit-prospect") { editingId = prospectId; prospectPrefill = null; render(); root.querySelector("#prospectForm")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    else if (action === "cancel-edit") { editingId = ""; prospectPrefill = null; render(); }
     else if (action === "toggle-returned") await setOutcome(prospectId, { returned: button.dataset.nextValue === "true" }, button.dataset.nextValue === "true" ? "Volta registrada" : "Volta removida");
     else if (action === "open-purchase") openPurchaseDialog(prospectId);
     else if (action === "unmark-purchased") openConfirmDialog({ title: "Remover esta compra?", message: "O valor, a OS e a bonificação vinculada serão removidos.", action: "confirm-unmark-purchased", id: prospectId });
