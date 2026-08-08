@@ -154,13 +154,23 @@ body.is-dark .attendance-shell,
   box-shadow: 0 9px 24px color-mix(in srgb, var(--att-blue) 14%, transparent);
 }
 
+.attendance-heading-avatar.has-image,
+.attendance-store-avatar.has-image {
+  padding: 5px;
+  background: color-mix(in srgb, var(--att-panel-soft) 88%, var(--att-panel));
+}
+
 .attendance-heading-avatar img,
 .attendance-store-avatar img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 5px;
+  object-position: center;
+  border: 1px solid color-mix(in srgb, var(--att-line-strong) 38%, transparent);
+  border-radius: 14px;
+  background: var(--att-panel);
+  box-shadow: 0 3px 10px color-mix(in srgb, #07101d 14%, transparent);
 }
 
 .attendance-heading-avatar--fallback,
@@ -1483,6 +1493,10 @@ body.is-dark .attendance-shell,
     border-radius: 17px;
   }
 
+  .attendance-heading-avatar img {
+    border-radius: 11px;
+  }
+
   .attendance-heading h1 {
     font-size: 1.38rem;
   }
@@ -1568,6 +1582,10 @@ body.is-dark .attendance-shell,
     width: 50px;
     height: 50px;
     border-radius: 15px;
+  }
+
+  .attendance-heading-avatar img {
+    border-radius: 9px;
   }
 
   .attendance-heading p:last-child {

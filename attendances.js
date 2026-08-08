@@ -365,7 +365,7 @@
 
   function renderAvatar(store, className = "attendance-store-avatar") {
     if (store?.avatarUrl) {
-      return `<span class="${className}"><img src="${escapeHtml(store.avatarUrl)}" alt="Logo de ${escapeHtml(store.name)}" /></span>`;
+      return `<span class="${className} has-image"><img src="${escapeHtml(store.avatarUrl)}" alt="Logo de ${escapeHtml(store.name)}" /></span>`;
     }
     return `<span class="${className} ${className}--fallback" aria-hidden="true">${escapeHtml(initials(store?.name))}</span>`;
   }
