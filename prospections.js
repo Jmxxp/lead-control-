@@ -735,8 +735,7 @@
 
   function tagCategoryPickerMarkup(storeId, editing) {
     const storeCategories = categoriesFor(storeId);
-    return `<section class="tag-editor" aria-labelledby="tag-editor-title">
-      <div class="tag-editor-header"><span id="tag-editor-title">Categorias e subcategorias</span></div>
+    return `<section class="tag-editor" aria-label="Categorias da prospecção">
       ${storeCategories.length ? storeCategories.map((category) => {
         const categoryTags = tagsFor(storeId).filter((tag) => tag.categoryId === category.id);
         return `<div class="tag-category-group"><small>${escapeHtml(category.name)}</small><div class="tag-options">${categoryTags.length ? categoryTags.map((tag) => `<label class="tag-option"><input type="checkbox" name="tags" value="${escapeHtml(tag.label)}"${editing?.tagValues.includes(tag.label) ? " checked" : ""} /><span>${escapeHtml(tag.label)}</span></label>`).join("") : `<span class="professional-empty">Nenhuma etiqueta</span>`}</div></div>`;
@@ -1809,7 +1808,6 @@
   function categoryManagerMarkup(storeId, draft = configurationDraftFor(storeId)) {
     const storeCategories = draft?.categories || [];
     return `<section class="store-mini-manager prospection-category-manager">
-      <div class="prospection-manager-heading"><div><span>Categorias e subcategorias</span><small>Cada subcategoria/etiqueta fica dentro de uma categoria.</small></div></div>
       <form class="store-manager-form prospection-inline-form" data-prospection-category-form data-store-id="${escapeHtml(storeId)}"><input name="name" maxlength="60" placeholder="Nova categoria" value="${escapeHtml(draft?.pendingCategoryName || "")}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Categoria</button></form>
       <div class="prospection-category-list">
         ${storeCategories.map((category, categoryIndex) => categoryEditorMarkup(category, categoryIndex, storeCategories.length, storeId)).join("") || `<div class="prospection-empty is-compact"><strong>Nenhuma categoria</strong><span>Crie a primeira categoria para organizar as subcategorias.</span></div>`}
