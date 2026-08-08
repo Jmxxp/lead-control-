@@ -52,6 +52,8 @@
   let configurationSession = null;
   let pendingConfigurationTransition = null;
   let configurationNeedsRefresh = false;
+  let workspaceResizeObserver = null;
+  let workspaceResizeFrame = 0;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -458,6 +460,7 @@
     active = false;
     upgradePreview = false;
     archiveProspects = [];
+    stopWorkspaceSizing();
     forceCloseDialogs();
   }
 
@@ -474,6 +477,7 @@
 
   function render() {
     if (!active || loading) return;
+    stopWorkspaceSizing();
     if (upgradePreview) {
       bridge.setOperationMode?.(false);
       renderUpgradeExperience();
@@ -685,6 +689,48 @@
         ${prospectFormMarkup(store.id)}
         ${prospectListPanelMarkup(store.id)}
       </section>`;
+    initializeWorkspaceSizing();
+  }
+
+  function stopWorkspaceSizing() {
+    if (workspaceResizeObserver) {
+      workspaceResizeObserver.disconnect();
+      workspaceResizeObserver = null;
+    }
+    if (workspaceResizeFrame) {
+      cancelAnimationFrame(workspaceResizeFrame);
+      workspaceResizeFrame = 0;
+    }
+  }
+
+  function scheduleWorkspaceSizing() {
+    if (!active) return;
+    if (workspaceResizeFrame) cancelAnimationFrame(workspaceResizeFrame);
+    workspaceResizeFrame = requestAnimationFrame(syncWorkspacePanelHeight);
+  }
+
+  function syncWorkspacePanelHeight() {
+    workspaceResizeFrame = 0;
+    const workspace = root.querySelector("#operationWorkspace");
+    const formPanel = workspace?.querySelector(":scope > .form-panel");
+    const listPanel = workspace?.querySelector(":scope > .list-panel");
+    if (!workspace || !formPanel || !listPanel) return;
+
+    listPanel.style.removeProperty("height");
+    if (!window.matchMedia("(min-width: 721px)").matches) return;
+
+    const formHeight = Math.ceil(formPanel.getBoundingClientRect().height);
+    if (formHeight > 0) listPanel.style.height = `${formHeight}px`;
+  }
+
+  function initializeWorkspaceSizing() {
+    const formPanel = root.querySelector("#operationWorkspace > .form-panel");
+    if (!formPanel) return;
+    if (typeof ResizeObserver === "function") {
+      workspaceResizeObserver = new ResizeObserver(scheduleWorkspaceSizing);
+      workspaceResizeObserver.observe(formPanel);
+    }
+    scheduleWorkspaceSizing();
   }
 
   function operationContextMarkup(store) {
@@ -760,7 +806,7 @@
           </div>
         </div>
       </div>
-      <div id="prospectionRecords" class="prospects-list" aria-live="polite">${recordListMarkup(storeId)}</div>
+      <div id="prospectionRecords" class="prospects-list" role="region" aria-label="Prospecções registradas" aria-live="polite" tabindex="0">${recordListMarkup(storeId)}</div>
     </section>`;
   }
 
@@ -2518,6 +2564,8 @@
     event.preventDefault();
     event.returnValue = "";
   });
+
+  window.addEventListener("resize", scheduleWorkspaceSizing);
 
   window.ProspectionsModule = {
     activate,

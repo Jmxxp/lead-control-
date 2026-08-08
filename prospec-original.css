@@ -4489,3 +4489,76 @@ body.is-dark-mode .created-date-block {
     display: none;
   }
 }
+
+/* Mantém o painel de registros estável e movimenta somente a lista interna. */
+body.is-prospections-operation #operationWorkspace > .list-panel {
+  align-self: start;
+  height: clamp(620px, calc(100dvh - 220px), 860px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list {
+  grid-auto-rows: max-content;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--muted) 52%, transparent) transparent !important;
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list::-webkit-scrollbar-track {
+  margin-block: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 54%, transparent);
+  background-clip: padding-box;
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 72%, var(--muted));
+  background-clip: padding-box;
+}
+
+body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline-offset: -3px;
+}
+
+body.is-dark-mode.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list {
+  scrollbar-color: color-mix(in srgb, var(--primary) 48%, var(--surface-soft)) transparent !important;
+}
+
+body.is-dark-mode.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--primary) 48%, var(--surface-soft));
+  background-clip: padding-box;
+}
+
+@media (max-width: 720px) {
+  body.is-prospections-operation #operationWorkspace > .list-panel {
+    display: grid;
+    height: clamp(520px, 76dvh, 720px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.is-prospections-operation #operationWorkspace > .list-panel > .prospects-list {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 10px;
+  }
+}
