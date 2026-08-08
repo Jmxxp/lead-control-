@@ -6,3 +6,6 @@ supabase/.temp/
 
 # Projeto-fonte local usado na integração de Prospecções.
 /prospec/
+
+# Backups operacionais podem conter dados pessoais de clientes.
+/prospec-backup*.json

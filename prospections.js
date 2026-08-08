@@ -48,6 +48,7 @@
   let bonusEndDate = "";
   let bonusProfessionalId = "all";
   let pendingPurchaseId = "";
+  let importDraft = null;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -191,7 +192,7 @@
 
   function readableError(error) {
     const message = String(error?.message || error || "Não foi possível concluir a ação.");
-    if (/lc_(list|get|upsert|set|save|add|update|delete|reorder)_prospection/i.test(message) || /function .* does not exist/i.test(message)) {
+    if (/lc_(list|get|upsert|set|save|add|update|delete|reorder|import)_(prospection|prospec)/i.test(message) || /function .* does not exist/i.test(message)) {
       return "A estrutura do módulo de Prospecções ainda não foi instalada no banco principal.";
     }
     return message
@@ -808,6 +809,7 @@
     root.querySelectorAll(".prospection-dialog-backdrop").forEach((dialog) => dialog.remove());
     document.body.classList.remove("is-modal-open");
     pendingPurchaseId = "";
+    importDraft = null;
   }
 
   function openDialog(markup) {
@@ -1316,11 +1318,224 @@
     openDialog(`<div class="analysis-overlay prospection-dialog-backdrop"><section class="admin-settings-panel" role="dialog" aria-modal="true" aria-labelledby="prospection-settings-title"><div class="admin-settings-header"><div><p class="eyebrow">${bridge.profile.role === "technician" ? "Configuração da Agência" : "Personalização"}</p><h2 id="prospection-settings-title">${requestedStoreId ? "Configurar cliente" : "Configurar clientes"}</h2></div><button class="icon-button prospection-dialog-close" type="button" data-prospection-action="close-dialog" aria-label="Fechar configurações">&#215;</button></div>${body}</section></div>`);
   }
 
+  function canImportProspectionBackup() {
+    return Boolean(bridge && ["admin", "technician"].includes(bridge.profile.role));
+  }
+
+  function summarizeBackupPayload(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("O arquivo não contém um objeto JSON válido.");
+    if (payload.format !== "prospec-backup" || Number(payload.schema_version) !== 1) throw new Error("Use um backup do Prospec no formato versão 1.");
+    if (payload.integrity && payload.integrity.import_ready === false) throw new Error("Este backup informa que não está pronto para importação.");
+    const sourceStores = payload?.data?.stores;
+    if (!Array.isArray(sourceStores) || sourceStores.length !== 1) throw new Error("O backup deve conter exatamente uma loja de origem.");
+    const source = sourceStores[0] || {};
+    if (!Array.isArray(source.prospects) || !Array.isArray(source.professionals) || !Array.isArray(source.tags)) {
+      throw new Error("O backup não possui listas válidas de prospecções, profissionais e etiquetas.");
+    }
+    const historicalTags = new Set(source.tags.map((tag) => String(tag?.label || "").trim()).filter(Boolean));
+    source.prospects.forEach((prospect) => {
+      if (Array.isArray(prospect?.tags)) prospect.tags.forEach((tag) => historicalTags.add(String(tag || "").trim()));
+    });
+    return {
+      prospects: source.prospects.length,
+      professionals: source.professionals.length,
+      tags: [...historicalTags].filter(Boolean).length,
+      returns: source.prospects.filter((row) => row?.returned_at).length,
+      purchases: source.prospects.filter((row) => row?.purchased_at).length,
+      missingNames: source.prospects.filter((row) => !String(row?.name || "").trim()).length,
+      exportedAt: payload.exported_at || null,
+    };
+  }
+
+  function importMetricMarkup(icon, value, label) {
+    return `<article><i class="fa-solid ${icon}"></i><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></article>`;
+  }
+
+  function importTargetMarkup(store) {
+    const config = settingsFor(store.id);
+    return `<div class="prospection-import-target" style="--account-color:${escapeHtml(config.accentColor)}">
+      <div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><small>Destino protegido</small><strong>${escapeHtml(store.name)}</strong><span>Nome, login, logo e acesso não serão alterados.</span></div></div>
+      <span class="prospection-scope-lock"><i class="fa-solid fa-lock"></i>Dados isolados nesta loja</span>
+    </div>`;
+  }
+
+  function importFileCardMarkup(draft) {
+    const hasFile = Boolean(draft?.fileName);
+    const statusLabel = draft?.status === "validating"
+      ? "Validando no banco…"
+      : draft?.status === "importing"
+        ? "Importando com segurança…"
+        : draft?.validation
+          ? "Arquivo validado"
+          : "Selecionar backup";
+    return `<label class="prospection-import-dropzone${hasFile ? " has-file" : ""}${draft?.status === "validating" || draft?.status === "importing" ? " is-loading" : ""}" for="prospectionBackupFile">
+      <input id="prospectionBackupFile" type="file" accept=".json,application/json" data-prospection-import-file data-store-id="${escapeHtml(draft?.storeId || "")}" />
+      <span class="prospection-import-file-icon"><i class="fa-solid ${hasFile ? "fa-file-circle-check" : "fa-cloud-arrow-up"}"></i></span>
+      <span class="prospection-import-file-copy"><strong>${hasFile ? escapeHtml(draft.fileName) : "Escolha o arquivo JSON"}</strong><small>${hasFile ? `${escapeHtml(formatFileSize(draft.fileSize))} · ${escapeHtml(statusLabel)}` : "Arraste ou clique para selecionar · máximo de 10 MB"}</small></span>
+      <span class="secondary-button">${hasFile ? "Trocar arquivo" : "Procurar"}</span>
+    </label>`;
+  }
+
+  function formatFileSize(size) {
+    const bytes = Number(size || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
+  }
+
+  function importPreviewMarkup(draft) {
+    if (!draft?.validation) {
+      const message = draft?.error
+        ? `<div class="prospection-import-alert is-error"><i class="fa-solid fa-circle-exclamation"></i><span>${escapeHtml(draft.error)}</span></div>`
+        : `<div class="prospection-import-empty"><i class="fa-solid fa-shield-halved"></i><div><strong>Importação segura e sem duplicação</strong><span>O arquivo é validado antes de qualquer gravação. Dados atuais permanecem e um reenvio do mesmo backup não cria cópias.</span></div></div>`;
+      return `${message}<p class="prospection-form-message" data-dialog-message></p>`;
+    }
+
+    const result = normalizeRpcObject(draft.validation);
+    const counts = result.counts || {};
+    const prospectCounts = counts.prospects || {};
+    const professionalCounts = counts.professionals || {};
+    const tagCounts = counts.tags || {};
+    const outcomes = counts.outcomes || {};
+    const normalized = counts.normalized || {};
+    const settingsPreview = result.settings || {};
+    const alreadyImported = result.already_imported === true;
+    const warnings = Object.values(result.warnings || {}).filter(Boolean);
+    return `<div class="prospection-import-validation-bar${alreadyImported ? " is-repeated" : ""}"><i class="fa-solid ${alreadyImported ? "fa-clock-rotate-left" : "fa-shield-circle-check"}"></i><div><strong>${alreadyImported ? "Este arquivo já foi importado" : "Pronto para importar"}</strong><span>${alreadyImported ? "A confirmação apenas confere o lote existente; nenhuma prospecção será duplicada." : "Formato, escopo, datas e vínculos foram validados pelo banco."}</span></div></div>
+      ${draft.error ? `<div class="prospection-import-alert is-error"><i class="fa-solid fa-circle-exclamation"></i><span>${escapeHtml(draft.error)}</span></div>` : ""}
+      <div class="prospection-import-metrics">
+        ${importMetricMarkup("fa-address-card", prospectCounts.eligible ?? prospectCounts.total ?? draft.localSummary?.prospects ?? 0, "Prospecções")}
+        ${importMetricMarkup("fa-user-group", professionalCounts.total ?? draft.localSummary?.professionals ?? 0, "Profissionais")}
+        ${importMetricMarkup("fa-tags", tagCounts.total ?? draft.localSummary?.tags ?? 0, "Etiquetas")}
+        ${importMetricMarkup("fa-store", outcomes.returns ?? draft.localSummary?.returns ?? 0, "Retornos")}
+        ${importMetricMarkup("fa-bag-shopping", outcomes.purchases ?? draft.localSummary?.purchases ?? 0, "Compras")}
+      </div>
+      <div class="prospection-import-details">
+        <div><span>Meta diária</span><strong>${escapeHtml(settingsPreview.daily_goal ?? "—")}</strong></div>
+        <div><span>Compra mínima</span><strong>${settingsPreview.bonus_minimum == null ? "—" : escapeHtml(formatCurrency(settingsPreview.bonus_minimum))}</strong></div>
+        <div><span>Bônus por compra</span><strong>${settingsPreview.bonus_amount == null ? "—" : escapeHtml(formatCurrency(settingsPreview.bonus_amount))}</strong></div>
+        <div><span>Histórico de origem</span><strong>${result.source?.exported_at ? escapeHtml(formatDateTime(result.source.exported_at)) : "Data não informada"}</strong></div>
+      </div>
+      ${warnings.length ? `<div class="prospection-import-alert"><i class="fa-solid fa-wand-magic-sparkles"></i><div>${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div></div>` : ""}
+      ${Number(prospectCounts.skipped_expired || 0) ? `<div class="prospection-import-alert"><i class="fa-solid fa-clock-rotate-left"></i><span>${escapeHtml(prospectCounts.skipped_expired)} registro(s) anteriores a dois anos serão ignorados conforme a política de retenção.</span></div>` : ""}
+      ${Number(normalized.missing_names || 0) ? `<small class="prospection-import-footnote">Contatos sem nome recebem uma identificação rastreável; nenhum histórico válido é perdido.</small>` : ""}
+      <label class="prospection-import-consent"><input type="checkbox" data-prospection-import-consent /><span>Confirmo a importação para <strong>${escapeHtml(storeById(draft.storeId)?.name || "esta loja")}</strong>. Os dados serão mesclados sem apagar os registros atuais.</span></label>
+      <p class="prospection-form-message" data-dialog-message></p>`;
+  }
+
+  function openImportDialog(storeId, nextDraft = null) {
+    if (!canImportProspectionBackup()) {
+      bridge.notify("Apenas o Admin ou a Agência podem importar dados.", "error");
+      return;
+    }
+    const store = storeById(storeId);
+    if (!store || !isLicensedStore(storeId)) {
+      bridge.notify("Cliente não encontrado ou sem acesso a Prospecções.", "error");
+      return;
+    }
+    const draft = { storeId, ...(nextDraft || {}) };
+    const isBusy = ["validating", "importing"].includes(draft.status);
+    const body = `<div class="prospection-import-shell">
+      ${importTargetMarkup(store)}
+      <div class="prospection-import-layout">
+        <section class="prospection-import-main">
+          ${importFileCardMarkup(draft)}
+          ${importPreviewMarkup(draft)}
+        </section>
+        <aside class="prospection-import-guardrails"><p class="eyebrow">O que será importado</p><ul><li><i class="fa-solid fa-check"></i>Prospecções e seus históricos</li><li><i class="fa-solid fa-check"></i>Profissionais e etiquetas</li><li><i class="fa-solid fa-check"></i>Retornos, compras, valores e OS</li><li><i class="fa-solid fa-check"></i>Meta e regras de bonificação</li></ul><p class="eyebrow">O que fica preservado</p><ul class="is-muted"><li><i class="fa-solid fa-lock"></i>Nome e login da loja</li><li><i class="fa-solid fa-lock"></i>Logo, cores e permissões</li><li><i class="fa-solid fa-lock"></i>Dados que já existem</li></ul></aside>
+      </div>
+      <div class="prospection-import-actions"><button class="prospection-button is-secondary" type="button" data-prospection-action="return-configuration" data-store-id="${escapeHtml(storeId)}"${isBusy ? " disabled" : ""}><i class="fa-solid fa-arrow-left"></i>Voltar às configurações</button>${draft.validation ? `<button class="prospection-button" type="button" data-prospection-action="confirm-import" data-store-id="${escapeHtml(storeId)}" disabled><i class="fa-solid ${draft.status === "importing" ? "fa-circle-notch fa-spin" : "fa-file-import"}"></i>${draft.status === "importing" ? "Importando…" : draft.validation?.already_imported ? "Conferir sem duplicar" : `Importar para ${escapeHtml(store.name)}`}</button>` : ""}</div>
+    </div>`;
+    openDialog(dialogShell({ eyebrow: "Migração de dados", title: "Importar backup do Prospec", body, wide: true }));
+    importDraft = draft;
+  }
+
+  async function handleImportFile(input, droppedFile = null) {
+    const storeId = input.dataset.storeId || "";
+    const file = droppedFile || input.files?.[0];
+    if (!file || !canImportProspectionBackup()) return;
+    const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let draft = { storeId, fileName: file.name, fileSize: file.size, nonce, status: "validating" };
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error("O arquivo excede o limite de 10 MB.");
+      if (!file.name.toLowerCase().endsWith(".json")) throw new Error("Selecione um arquivo com extensão .json.");
+      const payload = JSON.parse(await file.text());
+      const localSummary = summarizeBackupPayload(payload);
+      draft = { ...draft, payload, localSummary };
+      openImportDialog(storeId, draft);
+      const validation = normalizeRpcObject(await bridge.rpc("lc_import_prospec_backup", {
+        p_store_id: storeId,
+        p_payload: payload,
+        p_validate_only: true,
+      }));
+      if (importDraft?.nonce !== nonce) return;
+      openImportDialog(storeId, { ...draft, status: "ready", validation });
+    } catch (error) {
+      const message = readableError(error);
+      if (draft.payload && (!importDraft || importDraft.nonce !== nonce)) return;
+      openImportDialog(storeId, { ...draft, status: "error", error: message });
+      bridge.notify(message, "error");
+    }
+  }
+
+  function importResultMarkup(store, result) {
+    const counts = result.counts || {};
+    const prospectCounts = counts.prospects || {};
+    const professionalCounts = counts.professionals || {};
+    const tagCounts = counts.tags || {};
+    const repeated = result.already_imported === true;
+    return `<div class="prospection-import-result">
+      <span class="prospection-import-result-icon"><i class="fa-solid ${repeated ? "fa-shield" : "fa-circle-check"}"></i></span>
+      <div><p class="eyebrow">${repeated ? "Backup protegido" : "Importação concluída"}</p><h3>${repeated ? "Nenhum dado foi duplicado" : `Dados adicionados a ${escapeHtml(store.name)}`}</h3><span>${repeated ? "Este mesmo arquivo já havia sido processado nesta loja." : "O lote foi gravado de forma atômica e já está disponível nas análises."}</span></div>
+      <div class="prospection-import-metrics">
+        ${importMetricMarkup("fa-plus", prospectCounts.inserted || 0, "Prospecções novas")}
+        ${importMetricMarkup("fa-rotate", prospectCounts.updated || 0, "Atualizadas")}
+        ${importMetricMarkup("fa-user-plus", professionalCounts.created || 0, "Profissionais novos")}
+        ${importMetricMarkup("fa-tag", tagCounts.created || 0, "Etiquetas novas")}
+        ${importMetricMarkup("fa-shield-halved", prospectCounts.unchanged || 0, "Já sincronizadas")}
+      </div>
+      <button class="prospection-button" type="button" data-prospection-action="return-configuration" data-store-id="${escapeHtml(store.id)}"><i class="fa-solid fa-check"></i>Concluir e revisar</button>
+    </div>`;
+  }
+
+  async function executeBackupImport() {
+    const draft = importDraft;
+    if (!draft?.payload || !draft?.validation || draft.status === "importing") return;
+    const consent = root.querySelector("[data-prospection-import-consent]");
+    if (!consent?.checked) {
+      const message = root.querySelector("[data-dialog-message]");
+      if (message) message.textContent = "Confirme a loja de destino antes de importar.";
+      return;
+    }
+    const nonce = draft.nonce;
+    openImportDialog(draft.storeId, { ...draft, status: "importing" });
+    try {
+      const result = normalizeRpcObject(await bridge.rpc("lc_import_prospec_backup", {
+        p_store_id: draft.storeId,
+        p_payload: draft.payload,
+        p_validate_only: false,
+      }));
+      await reload({ configuration: true });
+      const store = storeById(draft.storeId);
+      if (importDraft?.nonce !== nonce || !store) return;
+      openDialog(dialogShell({
+        eyebrow: "Importação segura",
+        title: result.already_imported ? "Backup já conferido" : "Tudo pronto",
+        body: importResultMarkup(store, result),
+      }));
+      bridge.notify(result.already_imported ? "Este backup já estava importado; nada foi duplicado." : "Backup importado com sucesso.");
+    } catch (error) {
+      const message = readableError(error);
+      if (importDraft?.nonce === nonce) openImportDialog(draft.storeId, { ...draft, status: "ready", error: message });
+      bridge.notify(message, "error");
+    }
+  }
+
   function configurationRowMarkup(store) {
     const config = settingsFor(store.id);
     const storeProfessionals = professionalsFor(store.id, true);
     return `<article class="admin-store-settings-panel prospection-config-row" data-config-store="${store.id}">
-      <div class="prospection-config-row-header"><div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><strong>${escapeHtml(store.name)}</strong><span>Metas, identidade, categorias, subcategorias e equipe</span></div></div></div>
+      <div class="prospection-config-row-header"><div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><strong>${escapeHtml(store.name)}</strong><span>Metas, identidade, categorias, subcategorias e equipe</span></div></div>${["admin", "technician"].includes(bridge.profile.role) ? `<button class="secondary-button prospection-import-trigger" type="button" data-prospection-action="open-import" data-store-id="${escapeHtml(store.id)}"><i class="fa-solid fa-file-import"></i><span>Importar dados</span></button>` : ""}</div>
       <form class="store-settings-fields prospection-config-grid" data-prospection-settings-form data-store-id="${store.id}">
         <label class="prospection-field">Meta diária<input name="dailyGoal" type="number" min="1" max="9999" value="${config.dailyGoal}" required /></label>
         <label class="prospection-field">Compra mínima para bônus<input name="bonusMinimum" type="number" min="0" step="0.01" value="${config.bonusMinimum}" required /></label>
@@ -1698,6 +1913,15 @@
   });
 
   root.addEventListener("change", (event) => {
+    if (event.target.matches("[data-prospection-import-file]")) {
+      handleImportFile(event.target);
+      return;
+    }
+    if (event.target.matches("[data-prospection-import-consent]")) {
+      const confirmButton = root.querySelector('[data-prospection-action="confirm-import"]');
+      if (confirmButton) confirmButton.disabled = !event.target.checked;
+      return;
+    }
     if (event.target.matches("[data-prospection-period]")) {
       dashboardPeriod = event.target.value;
       filtersOpen = false;
@@ -1711,16 +1935,45 @@
     }
   });
 
+  root.addEventListener("dragover", (event) => {
+    const dropzone = event.target.closest(".prospection-import-dropzone");
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.add("is-dragging");
+  });
+
+  root.addEventListener("dragleave", (event) => {
+    const dropzone = event.target.closest(".prospection-import-dropzone");
+    if (!dropzone || dropzone.contains(event.relatedTarget)) return;
+    dropzone.classList.remove("is-dragging");
+  });
+
+  root.addEventListener("drop", (event) => {
+    const dropzone = event.target.closest(".prospection-import-dropzone");
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.remove("is-dragging");
+    const input = dropzone.querySelector("[data-prospection-import-file]");
+    const file = event.dataTransfer?.files?.[0];
+    if (input && file) handleImportFile(input, file);
+  });
+
   root.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-prospection-action]");
     if (!button) {
-      if (event.target.classList.contains("prospection-dialog-backdrop")) closeDialogs();
+      if (event.target.classList.contains("prospection-dialog-backdrop")) {
+        if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+        else closeDialogs();
+      }
       else if (filtersOpen && !event.target.closest(".filter-menu")) { filtersOpen = false; render(); }
       return;
     }
     const action = button.dataset.prospectionAction;
     const prospectId = button.dataset.prospectId || "";
-    if (action === "close-dialog") closeDialogs();
+    if (action === "close-dialog") {
+      if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+      else closeDialogs();
+    }
     else if (action === "toggle-theme") { document.querySelector("#themeToggle")?.click(); render(); }
     else if (action === "logout") document.querySelector("#logoutButton")?.click();
     else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
@@ -1756,6 +2009,9 @@
     else if (action === "open-store-bonus") openBonus(button.dataset.storeId);
     else if (action === "open-bonus") openBonus();
     else if (action === "open-configuration") openConfiguration(button.dataset.storeId || "");
+    else if (action === "open-import") openImportDialog(button.dataset.storeId || "");
+    else if (action === "return-configuration") openConfiguration(button.dataset.storeId || "");
+    else if (action === "confirm-import") await executeBackupImport();
     else if (action === "open-reports") openReports(button.dataset.storeId || "");
     else if (action === "apply-date-shortcut") applyDateShortcut(button.dataset.shortcutTarget || "analysis", button.dataset.shortcutValue || "this-month");
     else if (action === "set-analysis-period") setAnalysisPeriod(button.dataset.analysisPeriod || "monthly");
@@ -1796,7 +2052,10 @@
   });
 
   document.addEventListener("keydown", (event) => {
-    if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) closeDialogs();
+    if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) {
+      if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+      else closeDialogs();
+    }
   });
 
   window.ProspectionsModule = {

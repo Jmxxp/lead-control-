@@ -3518,6 +3518,487 @@ body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection
   background: #0d1728;
 }
 
+/* Importação de backups por loja */
+.prospection-import-trigger {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
+.prospection-import-shell {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.prospection-dialog:has(.prospection-import-shell) .prospection-dialog-body {
+  overflow-x: hidden;
+}
+
+.prospection-import-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--account-color) 28%, var(--line));
+  border-left: 4px solid var(--account-color);
+  border-radius: 11px;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--account-color) 9%, var(--surface)), var(--surface));
+}
+
+.prospection-import-target .prospection-account-identity > div {
+  min-width: 0;
+}
+
+.prospection-import-target .prospection-account-identity small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--account-color);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.prospection-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.31fr);
+  gap: 12px;
+  align-items: start;
+  max-width: 100%;
+}
+
+.prospection-import-main,
+.prospection-import-guardrails {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.prospection-import-dropzone {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 92px;
+  padding: 15px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 42%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface));
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.prospection-import-dropzone:hover,
+.prospection-import-dropzone:focus-within,
+.prospection-import-dropzone.is-dragging {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.prospection-import-dropzone.is-loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.prospection-import-dropzone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.prospection-import-file-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.prospection-import-dropzone.is-loading .prospection-import-file-icon i {
+  animation: prospection-import-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes prospection-import-pulse {
+  to { opacity: 0.45; transform: scale(0.9); }
+}
+
+.prospection-import-file-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prospection-import-file-copy strong,
+.prospection-import-file-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-import-file-copy strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.prospection-import-file-copy small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 720;
+}
+
+.prospection-import-empty,
+.prospection-import-validation-bar,
+.prospection-import-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.prospection-import-empty > i,
+.prospection-import-validation-bar > i,
+.prospection-import-alert > i {
+  margin-top: 2px;
+  color: var(--primary);
+}
+
+.prospection-import-empty > div,
+.prospection-import-validation-bar > div,
+.prospection-import-alert > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prospection-import-empty strong,
+.prospection-import-validation-bar strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.prospection-import-empty span,
+.prospection-import-validation-bar span,
+.prospection-import-alert span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+.prospection-import-validation-bar {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+}
+
+.prospection-import-validation-bar.is-repeated {
+  border-color: color-mix(in srgb, var(--prospection-amber) 35%, var(--line));
+  background: color-mix(in srgb, var(--prospection-amber) 8%, var(--surface));
+}
+
+.prospection-import-validation-bar.is-repeated > i {
+  color: var(--prospection-amber);
+}
+
+.prospection-import-alert {
+  border-color: color-mix(in srgb, var(--prospection-amber) 28%, var(--line));
+  background: color-mix(in srgb, var(--prospection-amber) 6%, var(--surface));
+}
+
+.prospection-import-alert > div span {
+  display: block;
+}
+
+.prospection-import-alert.is-error {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.prospection-import-alert.is-error > i,
+.prospection-import-alert.is-error span {
+  color: var(--danger);
+}
+
+.prospection-import-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prospection-import-metrics article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 7px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.prospection-import-metrics article i {
+  color: var(--primary);
+  font-size: 0.72rem;
+}
+
+.prospection-import-metrics article strong {
+  color: var(--text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.prospection-import-metrics article span {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-import-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prospection-import-details > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-soft) 58%, var(--surface));
+}
+
+.prospection-import-details span {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.prospection-import-details strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-import-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.prospection-import-consent input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: var(--primary);
+}
+
+.prospection-import-consent strong {
+  color: var(--text);
+}
+
+.prospection-import-footnote {
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.prospection-import-guardrails {
+  align-content: start;
+  gap: 10px;
+  background: var(--surface);
+}
+
+.prospection-import-guardrails .eyebrow {
+  margin: 2px 0 0;
+}
+
+.prospection-import-guardrails ul {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 5px;
+  padding: 0;
+  list-style: none;
+}
+
+.prospection-import-guardrails li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.prospection-import-guardrails li i {
+  margin-top: 1px;
+  color: var(--primary);
+  font-size: 0.62rem;
+}
+
+.prospection-import-guardrails ul.is-muted li {
+  color: var(--muted);
+}
+
+.prospection-import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.prospection-import-actions .prospection-button {
+  min-height: 40px;
+}
+
+.prospection-import-result {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  padding: 14px 4px 4px;
+  text-align: center;
+}
+
+.prospection-import-result > div:not(.prospection-import-metrics) {
+  display: grid;
+  gap: 5px;
+}
+
+.prospection-import-result h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.08rem;
+}
+
+.prospection-import-result > div > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.prospection-import-result-icon {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
+  border-radius: 19px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary);
+  box-shadow: 0 16px 35px color-mix(in srgb, var(--primary) 16%, transparent);
+  font-size: 1.25rem;
+}
+
+.prospection-import-result .prospection-import-metrics {
+  width: 100%;
+}
+
+body.is-dark .prospection-import-main,
+body.is-dark .prospection-import-guardrails,
+body.is-dark .prospection-import-dropzone,
+body.is-dark .prospection-import-empty,
+body.is-dark .prospection-import-alert,
+body.is-dark .prospection-import-metrics article {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+@media (max-width: 900px) {
+  .prospection-import-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-import-guardrails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-import-guardrails .eyebrow,
+  .prospection-import-guardrails ul {
+    margin: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .prospection-config-row-header,
+  .prospection-import-target,
+  .prospection-import-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prospection-import-trigger,
+  .prospection-import-actions .prospection-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .prospection-import-target .prospection-scope-lock {
+    align-self: flex-start;
+  }
+
+  .prospection-import-dropzone {
+    grid-template-columns: auto minmax(0, 1fr);
+    max-width: 100%;
+  }
+
+  .prospection-import-file-copy {
+    max-width: calc(100vw - 105px);
+  }
+
+  .prospection-import-dropzone .secondary-button {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .prospection-import-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-import-details,
+  .prospection-import-guardrails {
+    grid-template-columns: 1fr;
+  }
+}
+
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-identity,
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-custom-query,
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-filters {
