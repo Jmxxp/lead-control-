@@ -1360,6 +1360,10 @@ function showStoreDashboard() {
 }
 
 async function handleLogout() {
+  if (activeSystemModule === "prospections") {
+    const canLeave = await window.ProspectionsModule?.requestDeactivate?.();
+    if (canLeave === false) return;
+  }
   try {
     if (currentProfile?.sessionToken) {
       await rpc("lc_logout", { p_session_token: currentProfile.sessionToken });
@@ -1600,6 +1604,14 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
   if (nextModule === "attendances" && !window.AttendancesModule?.activate) {
     showAppNotification("O módulo de Atendimentos não foi carregado. Atualize a página.", "error");
     return;
+  }
+
+  if (activeSystemModule === "prospections" && nextModule !== "prospections") {
+    const canLeave = await window.ProspectionsModule?.requestDeactivate?.();
+    if (canLeave === false) {
+      updateSystemModuleControls();
+      return;
+    }
   }
 
   if (activeSystemModule === "leads" && nextModule !== "leads") {

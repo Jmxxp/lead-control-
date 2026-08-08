@@ -49,6 +49,9 @@
   let bonusProfessionalId = "all";
   let pendingPurchaseId = "";
   let importDraft = null;
+  let configurationSession = null;
+  let pendingConfigurationTransition = null;
+  let configurationNeedsRefresh = false;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -231,9 +234,10 @@
   function mapSettings(row) {
     return {
       storeId: row.store_id,
-      dailyGoal: Number(row.daily_goal || DEFAULT_SETTINGS.dailyGoal),
-      bonusMinimum: Number(row.bonus_minimum || DEFAULT_SETTINGS.bonusMinimum),
-      bonusAmount: Number(row.bonus_amount || DEFAULT_SETTINGS.bonusAmount),
+      revision: row.revision || "",
+      dailyGoal: Number(row.daily_goal ?? DEFAULT_SETTINGS.dailyGoal),
+      bonusMinimum: Number(row.bonus_minimum ?? DEFAULT_SETTINGS.bonusMinimum),
+      bonusAmount: Number(row.bonus_amount ?? DEFAULT_SETTINGS.bonusAmount),
       accentColor: row.accent_color || DEFAULT_SETTINGS.accentColor,
       logoBackgroundColor: row.logo_background_color || DEFAULT_SETTINGS.logoBackgroundColor,
     };
@@ -391,6 +395,7 @@
     professionals = (configuration.professionals || []).map(mapProfessional);
     tagCategories = (configuration.categories || []).map(mapTagCategory);
     tags = (configuration.tags || []).map(mapTag);
+    configurationNeedsRefresh = false;
   }
 
   async function reload({ configuration = false } = {}) {
@@ -453,16 +458,18 @@
     active = false;
     upgradePreview = false;
     archiveProspects = [];
-    closeDialogs();
+    forceCloseDialogs();
   }
 
   async function refreshContext(nextContext = {}) {
     if (!bridge) return;
     bridge = { ...bridge, ...nextContext };
     if (!active || upgradePreview) return;
+    const keepConfigurationOpen = Boolean(configurationSession && root.querySelector("[data-prospection-configuration-dialog]"));
     await loadData();
     if (selectedStoreId && !isLicensedStore(selectedStoreId)) selectedStoreId = "";
     render();
+    if (keepConfigurationOpen) renderConfigurationDialog({ preserveSession: true });
   }
 
   function render() {
@@ -805,15 +812,22 @@
     if (container && selectedStoreId) container.innerHTML = recordListMarkup(selectedStoreId);
   }
 
-  function closeDialogs() {
+  function forceCloseDialogs({ preserveConfiguration = false } = {}) {
     root.querySelectorAll(".prospection-dialog-backdrop").forEach((dialog) => dialog.remove());
+    root.querySelectorAll(".prospection-unsaved-backdrop").forEach((dialog) => dialog.remove());
     document.body.classList.remove("is-modal-open");
     pendingPurchaseId = "";
     importDraft = null;
+    pendingConfigurationTransition = null;
+    if (!preserveConfiguration) configurationSession = null;
+  }
+
+  function closeDialogs() {
+    forceCloseDialogs();
   }
 
   function openDialog(markup) {
-    closeDialogs();
+    forceCloseDialogs();
     root.insertAdjacentHTML("beforeend", markup);
     document.body.classList.add("is-modal-open");
     requestAnimationFrame(() => root.querySelector(".prospection-dialog-close")?.focus());
@@ -1310,12 +1324,249 @@
     return licensedScopedStores().map((store) => store.id);
   }
 
-  function openConfiguration(requestedStoreId = "") {
-    const storesToConfigure = configurationStoreIds(requestedStoreId).map(storeById).filter(Boolean);
+  function isPersistedConfigurationId(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+  }
+
+  function createConfigurationClientKey(prefix) {
+    if (window.crypto?.randomUUID) return `${prefix}:${window.crypto.randomUUID()}`;
+    return `${prefix}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function buildConfigurationPayload(draft) {
+    const numberValue = (value) => value === "" || value === null || value === undefined ? Number.NaN : Number(value);
+    const categoriesWithPending = [...draft.categories];
+    if (String(draft.pendingCategoryName || "").trim()) {
+      categoriesWithPending.push({
+        id: draft.pendingCategoryClientKey,
+        clientKey: draft.pendingCategoryClientKey,
+        name: draft.pendingCategoryName,
+        tags: [],
+      });
+    }
+    return {
+      schema_version: 1,
+      base_revision: draft.baseRevision,
+      settings: {
+        daily_goal: numberValue(draft.settings.dailyGoal),
+        bonus_minimum: numberValue(draft.settings.bonusMinimum),
+        bonus_amount: numberValue(draft.settings.bonusAmount),
+        accent_color: String(draft.settings.accentColor || DEFAULT_SETTINGS.accentColor).toLowerCase(),
+        logo_background_color: String(draft.settings.logoBackgroundColor || DEFAULT_SETTINGS.logoBackgroundColor).toLowerCase(),
+      },
+      categories: categoriesWithPending.map((category, categoryIndex) => ({
+        id: isPersistedConfigurationId(category.id) ? category.id : null,
+        client_key: category.clientKey || category.id,
+        name: String(category.name || "").trim(),
+        sort_order: (categoryIndex + 1) * 10,
+        tags: [
+          ...category.tags,
+          ...(String(category.pendingTagName || "").trim() ? [{
+            id: category.pendingTagClientKey,
+            clientKey: category.pendingTagClientKey,
+            label: category.pendingTagName,
+          }] : []),
+        ].map((tag, tagIndex) => ({
+          id: isPersistedConfigurationId(tag.id) ? tag.id : null,
+          client_key: tag.clientKey || tag.id,
+          label: String(tag.label || "").trim(),
+          sort_order: (tagIndex + 1) * 10,
+        })),
+      })),
+      professionals: [
+        ...draft.professionals,
+        ...(String(draft.pendingProfessionalName || "").trim() ? [{
+          id: draft.pendingProfessionalClientKey,
+          clientKey: draft.pendingProfessionalClientKey,
+          name: draft.pendingProfessionalName,
+          active: true,
+        }] : []),
+      ].map((professional) => ({
+        id: isPersistedConfigurationId(professional.id) ? professional.id : null,
+        client_key: professional.clientKey || professional.id,
+        name: String(professional.name || "").trim(),
+        is_active: professional.active !== false,
+      })),
+      deleted_category_ids: [...draft.deletedCategoryIds],
+      deleted_tag_ids: [...draft.deletedTagIds],
+    };
+  }
+
+  function createConfigurationDraft(storeId) {
+    const config = settingsFor(storeId);
+    const draft = {
+      storeId,
+      baseRevision: config.revision || "",
+      settings: { ...config },
+      categories: categoriesFor(storeId).map((category) => ({
+        ...category,
+        clientKey: `category:${category.id}`,
+        tags: tagsFor(storeId)
+          .filter((tag) => tag.categoryId === category.id)
+          .map((tag) => ({ ...tag, clientKey: `tag:${tag.id}` })),
+        pendingTagName: "",
+        pendingTagClientKey: createConfigurationClientKey("tag"),
+      })),
+      professionals: professionalsFor(storeId, true)
+        .map((professional) => ({ ...professional, clientKey: `professional:${professional.id}` })),
+      deletedCategoryIds: [],
+      deletedTagIds: [],
+      pendingCategoryName: "",
+      pendingCategoryClientKey: createConfigurationClientKey("category"),
+      pendingProfessionalName: "",
+      pendingProfessionalClientKey: createConfigurationClientKey("professional"),
+      dirty: false,
+      baseline: "",
+    };
+    draft.baseline = JSON.stringify(buildConfigurationPayload(draft));
+    return draft;
+  }
+
+  function configurationDraftFor(storeId) {
+    return configurationSession?.drafts.get(storeId) || null;
+  }
+
+  function syncConfigurationDirty(draft) {
+    if (!draft) return false;
+    draft.dirty = JSON.stringify(buildConfigurationPayload(draft)) !== draft.baseline;
+    const row = root.querySelector(`[data-config-store="${CSS.escape(draft.storeId)}"]`);
+    if (!row) return draft.dirty;
+    const isLocked = Boolean(configurationSession?.saving || configurationSession?.recoveryRequired);
+    row.classList.toggle("has-unsaved-changes", draft.dirty);
+    row.setAttribute("aria-busy", isLocked ? "true" : "false");
+    row.inert = isLocked;
+    const saveButton = row.querySelector('[data-prospection-action="save-configuration"]');
+    if (saveButton) {
+      saveButton.disabled = !draft.dirty || isLocked;
+      saveButton.classList.toggle("is-loading", Boolean(configurationSession?.saving));
+      saveButton.innerHTML = configurationSession?.saving
+        ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Salvando…'
+        : '<i class="fa-solid fa-check"></i>Salvar alterações';
+    }
+    const status = row.querySelector("[data-config-save-status]");
+    if (status) {
+      status.classList.toggle("is-dirty", draft.dirty);
+      status.innerHTML = configurationSession?.recoveryRequired
+        ? '<i class="fa-solid fa-cloud-arrow-down"></i><span><strong>Dados salvos</strong><small>Feche e reabra para carregar a versão atual.</small></span>'
+        : draft.dirty
+        ? '<i class="fa-solid fa-circle-exclamation"></i><span><strong>Alterações não salvas</strong><small>Revise e salve tudo de uma vez.</small></span>'
+        : '<i class="fa-solid fa-circle-check"></i><span><strong>Tudo salvo</strong><small>A configuração está sincronizada.</small></span>';
+    }
+    const dialogClose = root.querySelector("[data-prospection-configuration-dialog] .prospection-dialog-close");
+    if (dialogClose) dialogClose.disabled = Boolean(configurationSession?.saving);
+    return draft.dirty;
+  }
+
+  function setConfigurationSavingState(isSaving) {
+    if (!configurationSession) return;
+    configurationSession.saving = Boolean(isSaving);
+    configurationSession.drafts.forEach((draft) => syncConfigurationDirty(draft));
+    const unsavedDialog = root.querySelector(".prospection-unsaved-dialog");
+    if (unsavedDialog) {
+      unsavedDialog.setAttribute("aria-busy", isSaving ? "true" : "false");
+      unsavedDialog.querySelectorAll("button").forEach((button) => { button.disabled = Boolean(isSaving); });
+    }
+  }
+
+  function hasUnsavedConfiguration() {
+    return Boolean(configurationSession && [...configurationSession.drafts.values()].some((draft) => draft.dirty));
+  }
+
+  function configurationDialogMarkup(storesToConfigure, requestedStoreId) {
     const body = storesToConfigure.length
       ? `<div class="prospection-config-list">${storesToConfigure.map(configurationRowMarkup).join("")}</div>`
       : emptyMarkup("Nenhum cliente com Prospecções", "Libere uma licença para o cliente no módulo Leads antes de configurar categorias e equipe.");
-    openDialog(`<div class="analysis-overlay prospection-dialog-backdrop"><section class="admin-settings-panel" role="dialog" aria-modal="true" aria-labelledby="prospection-settings-title"><div class="admin-settings-header"><div><p class="eyebrow">${bridge.profile.role === "technician" ? "Configuração da Agência" : "Personalização"}</p><h2 id="prospection-settings-title">${requestedStoreId ? "Configurar cliente" : "Configurar clientes"}</h2></div><button class="icon-button prospection-dialog-close" type="button" data-prospection-action="close-dialog" aria-label="Fechar configurações">&#215;</button></div>${body}</section></div>`);
+    return `<div class="analysis-overlay prospection-dialog-backdrop" data-prospection-configuration-dialog><section class="admin-settings-panel" role="dialog" aria-modal="true" aria-labelledby="prospection-settings-title"><div class="admin-settings-header"><div><p class="eyebrow">${bridge.profile.role === "technician" ? "Configuração da Agência" : "Personalização"}</p><h2 id="prospection-settings-title">${requestedStoreId ? "Configurar cliente" : "Configurar clientes"}</h2></div><button class="icon-button prospection-dialog-close" type="button" data-prospection-action="close-dialog" aria-label="Fechar configurações">&#215;</button></div>${body}</section></div>`;
+  }
+
+  function renderConfigurationDialog({ preserveSession = false } = {}) {
+    if (!configurationSession) return;
+    const storesToConfigure = configurationSession.storeIds.map(storeById).filter(Boolean);
+    const previousPanel = root.querySelector("[data-prospection-configuration-dialog] .admin-settings-panel");
+    const previousScroll = previousPanel?.scrollTop ?? configurationSession.scrollTop ?? 0;
+    configurationSession.scrollTop = previousScroll;
+    if (!preserveSession) forceCloseDialogs({ preserveConfiguration: true });
+    else root.querySelector("[data-prospection-configuration-dialog]")?.remove();
+    root.insertAdjacentHTML("beforeend", configurationDialogMarkup(storesToConfigure, configurationSession.requestedStoreId));
+    document.body.classList.add("is-modal-open");
+    requestAnimationFrame(() => {
+      const panel = root.querySelector("[data-prospection-configuration-dialog] .admin-settings-panel");
+      if (panel) panel.scrollTop = previousScroll;
+      configurationSession?.drafts.forEach((draft) => syncConfigurationDirty(draft));
+      if (!preserveSession) root.querySelector(".prospection-dialog-close")?.focus();
+    });
+  }
+
+  function showUnsavedConfigurationDialog() {
+    if (root.querySelector(".prospection-unsaved-backdrop")) return;
+    const configurationDialog = root.querySelector("[data-prospection-configuration-dialog] .admin-settings-panel");
+    if (configurationDialog) configurationDialog.inert = true;
+    root.insertAdjacentHTML("beforeend", `<div class="prospection-unsaved-backdrop"><section class="prospection-unsaved-dialog" role="alertdialog" aria-modal="true" aria-labelledby="prospection-unsaved-title" aria-describedby="prospection-unsaved-description"><span class="prospection-unsaved-icon"><i class="fa-solid fa-pen-to-square"></i></span><div class="prospection-unsaved-copy"><p class="eyebrow">Alterações pendentes</p><h3 id="prospection-unsaved-title">Salvar antes de sair?</h3><p id="prospection-unsaved-description">Você alterou esta configuração. Escolha se deseja salvar tudo agora ou sair sem aplicar as mudanças.</p></div><div class="prospection-unsaved-actions"><button class="secondary-button" type="button" data-prospection-action="cancel-configuration-exit">Continuar editando</button><button class="secondary-button is-danger" type="button" data-prospection-action="discard-configuration-exit">Sair sem salvar</button><button class="primary-button" type="button" data-prospection-action="save-configuration-exit"><i class="fa-solid fa-check"></i>Salvar e sair</button></div></section></div>`);
+    requestAnimationFrame(() => root.querySelector('[data-prospection-action="save-configuration-exit"]')?.focus());
+  }
+
+  function requestConfigurationTransition(run = null) {
+    if (configurationSession?.saving) {
+      bridge.notify("Aguarde o salvamento terminar.");
+      return true;
+    }
+    if (pendingConfigurationTransition) return true;
+    if (!hasUnsavedConfiguration()) {
+      if (run) run();
+      return false;
+    }
+    pendingConfigurationTransition = { run, returnFocus: document.activeElement };
+    showUnsavedConfigurationDialog();
+    return true;
+  }
+
+  function requestDeactivate() {
+    if (configurationSession?.saving) {
+      bridge.notify("Aguarde o salvamento terminar.");
+      return Promise.resolve(false);
+    }
+    if (pendingConfigurationTransition) return Promise.resolve(false);
+    if (!active || !hasUnsavedConfiguration()) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      pendingConfigurationTransition = { resolve, returnFocus: document.activeElement };
+      showUnsavedConfigurationDialog();
+    });
+  }
+
+  function finishConfigurationTransition(allow) {
+    const transition = pendingConfigurationTransition;
+    pendingConfigurationTransition = null;
+    root.querySelector(".prospection-unsaved-backdrop")?.remove();
+    const configurationDialog = root.querySelector("[data-prospection-configuration-dialog] .admin-settings-panel");
+    if (configurationDialog) configurationDialog.inert = false;
+    if (!transition) return;
+    if (transition.resolve) transition.resolve(Boolean(allow));
+    if (allow && transition.run) transition.run();
+    if (!allow && transition.returnFocus instanceof HTMLElement) transition.returnFocus.focus();
+  }
+
+  async function openConfiguration(requestedStoreId = "", { preserveSession = false } = {}) {
+    if (configurationNeedsRefresh) {
+      try {
+        await loadData();
+        configurationNeedsRefresh = false;
+      } catch (error) {
+        bridge.notify(`Não foi possível recarregar a configuração: ${readableError(error)}`, "error");
+        return;
+      }
+    }
+    const storeIds = configurationStoreIds(requestedStoreId);
+    if (!preserveSession || !configurationSession) {
+      configurationSession = {
+        requestedStoreId,
+        storeIds,
+        drafts: new Map(storeIds.map((storeId) => [storeId, createConfigurationDraft(storeId)])),
+        saving: false,
+        recoveryRequired: false,
+        scrollTop: 0,
+      };
+    }
+    renderConfigurationDialog({ preserveSession });
   }
 
   function canImportProspectionBackup() {
@@ -1532,52 +1783,53 @@
   }
 
   function configurationRowMarkup(store) {
-    const config = settingsFor(store.id);
-    const storeProfessionals = professionalsFor(store.id, true);
-    return `<article class="admin-store-settings-panel prospection-config-row" data-config-store="${store.id}">
+    const draft = configurationDraftFor(store.id) || createConfigurationDraft(store.id);
+    const config = draft.settings;
+    return `<article class="admin-store-settings-panel prospection-config-row" data-config-store="${escapeHtml(store.id)}" style="--account-color:${escapeHtml(config.accentColor)}">
       <div class="prospection-config-row-header"><div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><strong>${escapeHtml(store.name)}</strong><span>Metas, identidade, categorias, subcategorias e equipe</span></div></div>${["admin", "technician"].includes(bridge.profile.role) ? `<button class="secondary-button prospection-import-trigger" type="button" data-prospection-action="open-import" data-store-id="${escapeHtml(store.id)}"><i class="fa-solid fa-file-import"></i><span>Importar dados</span></button>` : ""}</div>
-      <form class="store-settings-fields prospection-config-grid" data-prospection-settings-form data-store-id="${store.id}">
-        <label class="prospection-field">Meta diária<input name="dailyGoal" type="number" min="1" max="9999" value="${config.dailyGoal}" required /></label>
-        <label class="prospection-field">Compra mínima para bônus<input name="bonusMinimum" type="number" min="0" step="0.01" value="${config.bonusMinimum}" required /></label>
-        <label class="prospection-field">Bônus por compra válida<input name="bonusAmount" type="number" min="0" step="0.01" value="${config.bonusAmount}" required /></label>
-        <label class="prospection-field prospection-color-field"><span>Cor de destaque</span><span class="prospection-color-control"><input name="accentColor" type="color" value="${escapeHtml(config.accentColor)}" /><code>${escapeHtml(config.accentColor.toUpperCase())}</code></span></label>
-        <label class="prospection-field prospection-color-field"><span>Fundo da logo</span><span class="prospection-color-control"><input name="logoBackgroundColor" type="color" value="${escapeHtml(config.logoBackgroundColor)}" /><code>${escapeHtml(config.logoBackgroundColor.toUpperCase())}</code></span></label>
-        <button class="primary-button config-save-button" type="submit"><i class="fa-solid fa-check"></i>Salvar configuração</button>
-      </form>
-      <div class="store-managers-grid prospection-config-columns">
-        ${categoryManagerMarkup(store.id)}
-        <section class="store-mini-manager prospection-professional-manager"><div class="prospection-manager-heading"><div><span>Profissionais</span><small>Equipe responsável pelas prospecções</small></div></div><form class="store-manager-form prospection-inline-form" data-prospection-professional-form data-store-id="${store.id}"><input name="name" maxlength="100" placeholder="Nome do profissional" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Criar</button></form><div class="prospection-managed-items">${storeProfessionals.map((professional) => `<form class="store-professional-row prospection-managed-item" data-prospection-professional-update data-professional-id="${professional.id}"><input name="name" value="${escapeHtml(professional.name)}" maxlength="100" required /><label class="store-professional-active"><input name="active" type="checkbox"${professional.active ? " checked" : ""} /><span>${professional.active ? "Ativo" : "Inativo"}</span></label><button class="secondary-button" type="submit"><i class="fa-solid fa-check"></i>Salvar</button></form>`).join("") || `<small>Nenhum profissional cadastrado.</small>`}</div></section>
+      <div class="prospection-config-section-heading"><div><span>Metas e identidade</span><small>Regras comerciais e aparência desta loja.</small></div></div>
+      <div class="store-settings-fields prospection-config-grid" data-prospection-settings-editor data-store-id="${escapeHtml(store.id)}">
+        <label class="prospection-field">Meta diária<input name="dailyGoal" data-config-setting="dailyGoal" type="number" min="1" max="9999" value="${config.dailyGoal}" /></label>
+        <label class="prospection-field">Compra mínima para bônus<input name="bonusMinimum" data-config-setting="bonusMinimum" type="number" min="0" step="0.01" value="${config.bonusMinimum}" /></label>
+        <label class="prospection-field">Bônus por compra válida<input name="bonusAmount" data-config-setting="bonusAmount" type="number" min="0" step="0.01" value="${config.bonusAmount}" /></label>
+        <label class="prospection-field prospection-color-field"><span>Cor de destaque</span><span class="prospection-color-control"><input name="accentColor" data-config-setting="accentColor" type="color" value="${escapeHtml(config.accentColor)}" /><code>${escapeHtml(config.accentColor.toUpperCase())}</code></span></label>
+        <label class="prospection-field prospection-color-field"><span>Fundo da logo</span><span class="prospection-color-control"><input name="logoBackgroundColor" data-config-setting="logoBackgroundColor" type="color" value="${escapeHtml(config.logoBackgroundColor)}" /><code>${escapeHtml(config.logoBackgroundColor.toUpperCase())}</code></span></label>
       </div>
+      <div class="store-managers-grid prospection-config-columns">
+        ${categoryManagerMarkup(store.id, draft)}
+        <section class="store-mini-manager prospection-professional-manager"><div class="prospection-manager-heading"><div><span>Profissionais</span><small>Ative, desative ou renomeie a equipe.</small></div></div><form class="store-manager-form prospection-inline-form" data-prospection-professional-form data-store-id="${escapeHtml(store.id)}"><input name="name" maxlength="100" placeholder="Nome do profissional" value="${escapeHtml(draft.pendingProfessionalName)}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Criar</button></form><div class="prospection-managed-items prospection-professional-list">${draft.professionals.map((professional) => `<div class="store-professional-row prospection-managed-item" data-prospection-professional-update data-professional-id="${escapeHtml(professional.id)}"><input name="name" data-config-professional-name value="${escapeHtml(professional.name)}" maxlength="100" aria-label="Nome do profissional ${escapeHtml(professional.name)}" /><label class="store-professional-active"><input name="active" data-config-professional-active type="checkbox"${professional.active ? " checked" : ""} aria-label="Profissional ${escapeHtml(professional.name)} ativo" /><span class="prospection-toggle-track" aria-hidden="true"></span><em data-professional-status>${professional.active ? "Ativo" : "Inativo"}</em></label></div>`).join("") || `<div class="prospection-empty is-compact"><strong>Nenhum profissional</strong><span>Cadastre quem será responsável pelas prospecções.</span></div>`}</div></section>
+      </div>
+      <footer class="prospection-config-savebar"><div class="prospection-config-save-status${draft.dirty ? " is-dirty" : ""}" data-config-save-status aria-live="polite">${draft.dirty ? '<i class="fa-solid fa-circle-exclamation"></i><span><strong>Alterações não salvas</strong><small>Revise e salve tudo de uma vez.</small></span>' : '<i class="fa-solid fa-circle-check"></i><span><strong>Tudo salvo</strong><small>A configuração está sincronizada.</small></span>'}</div><button class="primary-button config-save-button" type="button" data-prospection-action="save-configuration" data-store-id="${escapeHtml(store.id)}"${draft.dirty ? "" : " disabled"}><i class="fa-solid fa-check"></i>Salvar alterações</button></footer>
     </article>`;
   }
 
-  function categoryManagerMarkup(storeId) {
-    const storeCategories = categoriesFor(storeId);
+  function categoryManagerMarkup(storeId, draft = configurationDraftFor(storeId)) {
+    const storeCategories = draft?.categories || [];
     return `<section class="store-mini-manager prospection-category-manager">
       <div class="prospection-manager-heading"><div><span>Categorias e subcategorias</span><small>Cada subcategoria/etiqueta fica dentro de uma categoria.</small></div></div>
-      <form class="store-manager-form prospection-inline-form" data-prospection-category-form data-store-id="${storeId}"><input name="name" maxlength="60" placeholder="Nova categoria" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Categoria</button></form>
+      <form class="store-manager-form prospection-inline-form" data-prospection-category-form data-store-id="${escapeHtml(storeId)}"><input name="name" maxlength="60" placeholder="Nova categoria" value="${escapeHtml(draft?.pendingCategoryName || "")}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Categoria</button></form>
       <div class="prospection-category-list">
-        ${storeCategories.map((category, categoryIndex) => categoryEditorMarkup(category, categoryIndex, storeCategories.length)).join("") || `<div class="prospection-empty is-compact"><strong>Nenhuma categoria</strong><span>Crie a primeira categoria para organizar as subcategorias.</span></div>`}
+        ${storeCategories.map((category, categoryIndex) => categoryEditorMarkup(category, categoryIndex, storeCategories.length, storeId)).join("") || `<div class="prospection-empty is-compact"><strong>Nenhuma categoria</strong><span>Crie a primeira categoria para organizar as subcategorias.</span></div>`}
       </div>
     </section>`;
   }
 
-  function categoryEditorMarkup(category, categoryIndex, categoryCount) {
-    const categoryTags = tagsFor(category.storeId).filter((tag) => tag.categoryId === category.id);
+  function categoryEditorMarkup(category, categoryIndex, categoryCount, storeId) {
+    const categoryTags = category.tags || [];
     return `<article class="prospection-category-card">
       <div class="prospection-category-header">
-        <form data-prospection-category-update data-store-id="${category.storeId}" data-category-id="${category.id}"><span class="prospection-drag-handle"><i class="fa-solid fa-grip-vertical"></i></span><input name="name" value="${escapeHtml(category.name)}" maxlength="60" aria-label="Nome da categoria" required /><button class="prospection-icon-action" type="submit" title="Salvar categoria" aria-label="Salvar categoria"><i class="fa-solid fa-check"></i></button></form>
-        <div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-category-id="${category.id}" data-direction="up"${categoryIndex === 0 ? " disabled" : ""} aria-label="Mover categoria para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-category-id="${category.id}" data-direction="down"${categoryIndex === categoryCount - 1 ? " disabled" : ""} aria-label="Mover categoria para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-category" data-category-id="${category.id}" aria-label="Excluir categoria"><i class="fa-solid fa-trash"></i></button></div>
+        <div class="prospection-category-name" data-prospection-category-update data-category-id="${escapeHtml(category.id)}"><span class="prospection-drag-handle"><i class="fa-solid fa-grip-vertical"></i></span><input name="name" data-config-category-name value="${escapeHtml(category.name)}" maxlength="60" aria-label="Nome da categoria" /></div>
+        <div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(category.id)}" data-direction="up"${categoryIndex === 0 ? " disabled" : ""} aria-label="Mover categoria para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-category" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(category.id)}" data-direction="down"${categoryIndex === categoryCount - 1 ? " disabled" : ""} aria-label="Mover categoria para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-category" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(category.id)}" aria-label="Excluir categoria"><i class="fa-solid fa-trash"></i></button></div>
       </div>
-      <form class="store-manager-form prospection-inline-form is-tag-form" data-prospection-tag-form data-store-id="${category.storeId}" data-category-id="${category.id}"><input name="label" maxlength="60" placeholder="Nova subcategoria em ${escapeHtml(category.name)}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Subcategoria</button></form>
+      <form class="store-manager-form prospection-inline-form is-tag-form" data-prospection-tag-form data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(category.id)}"><input name="label" maxlength="60" placeholder="Nova subcategoria em ${escapeHtml(category.name)}" value="${escapeHtml(category.pendingTagName || "")}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Subcategoria</button></form>
       <div class="prospection-tag-editor-list">
-        ${categoryTags.map((tag, tagIndex) => tagEditorMarkup(tag, tagIndex, categoryTags.length)).join("") || `<small>Nenhuma subcategoria nesta categoria.</small>`}
+        ${categoryTags.map((tag, tagIndex) => tagEditorMarkup(tag, tagIndex, categoryTags.length, storeId, category.id)).join("") || `<small>Nenhuma subcategoria nesta categoria.</small>`}
       </div>
     </article>`;
   }
 
-  function tagEditorMarkup(tag, tagIndex, tagCount) {
-    return `<form class="prospection-tag-editor-row" data-prospection-tag-update data-tag-id="${tag.id}" data-category-id="${tag.categoryId}"><span class="prospection-drag-handle"><i class="fa-solid fa-tag"></i></span><input name="label" value="${escapeHtml(tag.label)}" maxlength="60" aria-label="Nome da etiqueta" required /><div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-tag-id="${tag.id}" data-direction="up"${tagIndex === 0 ? " disabled" : ""} aria-label="Mover etiqueta para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-tag-id="${tag.id}" data-direction="down"${tagIndex === tagCount - 1 ? " disabled" : ""} aria-label="Mover etiqueta para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action" type="submit" aria-label="Salvar etiqueta"><i class="fa-solid fa-check"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-tag" data-tag-id="${tag.id}" aria-label="Excluir etiqueta"><i class="fa-solid fa-trash"></i></button></div></form>`;
+  function tagEditorMarkup(tag, tagIndex, tagCount, storeId, categoryId) {
+    return `<div class="prospection-tag-editor-row" data-prospection-tag-update data-store-id="${escapeHtml(storeId)}" data-tag-id="${escapeHtml(tag.id)}" data-category-id="${escapeHtml(categoryId)}"><span class="prospection-drag-handle"><i class="fa-solid fa-tag"></i></span><input name="label" data-config-tag-label value="${escapeHtml(tag.label)}" maxlength="60" aria-label="Nome da etiqueta" /><div class="prospection-order-actions"><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(categoryId)}" data-tag-id="${escapeHtml(tag.id)}" data-direction="up"${tagIndex === 0 ? " disabled" : ""} aria-label="Mover etiqueta para cima"><i class="fa-solid fa-chevron-up"></i></button><button class="prospection-icon-action" type="button" data-prospection-action="move-tag" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(categoryId)}" data-tag-id="${escapeHtml(tag.id)}" data-direction="down"${tagIndex === tagCount - 1 ? " disabled" : ""} aria-label="Mover etiqueta para baixo"><i class="fa-solid fa-chevron-down"></i></button><button class="prospection-icon-action is-danger" type="button" data-prospection-action="delete-tag" data-store-id="${escapeHtml(storeId)}" data-category-id="${escapeHtml(categoryId)}" data-tag-id="${escapeHtml(tag.id)}" aria-label="Excluir etiqueta"><i class="fa-solid fa-trash"></i></button></div></div>`;
   }
 
   function reportRows(storeIds) {
@@ -1715,22 +1967,113 @@
     if (editingId === prospectId) editingId = "";
   }
 
-  async function saveSettings(form) {
-    const data = new FormData(form);
-    const saved = await mutate(async () => {
-      await bridge.rpc("lc_save_prospection_store_settings", {
-        p_store_id: form.dataset.storeId,
-        p_daily_goal: Number(data.get("dailyGoal")),
-        p_bonus_minimum: Number(data.get("bonusMinimum")),
-        p_bonus_amount: Number(data.get("bonusAmount")),
-        p_accent_color: String(data.get("accentColor") || DEFAULT_SETTINGS.accentColor),
-      });
-      await bridge.rpc("lc_save_prospection_logo_background", {
-        p_store_id: form.dataset.storeId,
-        p_logo_background_color: String(data.get("logoBackgroundColor") || DEFAULT_SETTINGS.logoBackgroundColor),
-      });
-    }, "Configuração salva", { configuration: true });
-    if (saved) openConfiguration(form.dataset.storeId);
+  function validateConfigurationDraft(draft) {
+    const payload = buildConfigurationPayload(draft);
+    const { settings: nextSettings } = payload;
+    if (!Number.isInteger(nextSettings.daily_goal) || nextSettings.daily_goal < 1 || nextSettings.daily_goal > 9999) return "Informe uma meta diária entre 1 e 9.999.";
+    if (!Number.isFinite(nextSettings.bonus_minimum) || nextSettings.bonus_minimum < 0) return "A compra mínima não pode ser negativa.";
+    if (!Number.isFinite(nextSettings.bonus_amount) || nextSettings.bonus_amount < 0) return "O bônus por compra não pode ser negativo.";
+    if (!/^#[0-9a-f]{6}$/i.test(nextSettings.accent_color) || !/^#[0-9a-f]{6}$/i.test(nextSettings.logo_background_color)) return "Escolha cores válidas para a loja e para o fundo da logo.";
+
+    const categoryNames = new Set();
+    const tagNames = new Set();
+    for (const category of payload.categories) {
+      if (!category.name || category.name.length > 60) return "Toda categoria precisa de um nome com até 60 caracteres.";
+      const categoryKey = normalize(category.name);
+      if (categoryNames.has(categoryKey)) return `A categoria “${category.name}” está repetida.`;
+      categoryNames.add(categoryKey);
+      for (const tag of category.tags) {
+        if (!tag.label || tag.label.length > 60) return "Toda subcategoria precisa de um nome com até 60 caracteres.";
+        const tagKey = normalize(tag.label);
+        if (tagNames.has(tagKey)) return `A subcategoria “${tag.label}” está repetida.`;
+        tagNames.add(tagKey);
+      }
+    }
+
+    const professionalNames = new Set();
+    for (const professional of payload.professionals) {
+      if (!professional.name || professional.name.length > 100) return "Todo profissional precisa de um nome com até 100 caracteres.";
+      const professionalKey = normalize(professional.name);
+      if (professionalNames.has(professionalKey)) return `O profissional “${professional.name}” está repetido.`;
+      professionalNames.add(professionalKey);
+    }
+    return "";
+  }
+
+  async function saveConfigurationDraft(storeId, { renderAfter = true, notify = true } = {}) {
+    const draft = configurationDraftFor(storeId);
+    if (!draft || !draft.dirty) return true;
+    const validationMessage = validateConfigurationDraft(draft);
+    if (validationMessage) {
+      bridge.notify(validationMessage, "error");
+      return false;
+    }
+    if (configurationSession?.saving) return false;
+    const payload = buildConfigurationPayload(draft);
+    configurationSession.scrollTop = root.querySelector("[data-prospection-configuration-dialog] .admin-settings-panel")?.scrollTop || configurationSession.scrollTop || 0;
+    setConfigurationSavingState(true);
+    let committed = false;
+    try {
+      const result = normalizeRpcObject(await bridge.rpc("lc_save_prospection_configuration", {
+        p_store_id: storeId,
+        p_payload: payload,
+      }));
+      committed = true;
+      if (result.revision) draft.baseRevision = result.revision;
+      draft.baseline = JSON.stringify(buildConfigurationPayload(draft));
+      draft.dirty = false;
+
+      let reloadError = null;
+      for (const delay of [0, 250, 750]) {
+        if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay));
+        try {
+          await reload({ configuration: true });
+          reloadError = null;
+          break;
+        } catch (error) {
+          reloadError = error;
+        }
+      }
+      if (reloadError) {
+        configurationNeedsRefresh = true;
+        if (configurationSession) configurationSession.recoveryRequired = true;
+        bridge.notify("As alterações foram salvas, mas a tela não conseguiu atualizar. Feche e reabra a configuração para sincronizar.", "warning");
+        return true;
+      }
+      if (!configurationSession) return true;
+      configurationSession.drafts.set(storeId, createConfigurationDraft(storeId));
+      if (renderAfter) render();
+      if (notify) bridge.notify("Todas as alterações foram salvas.");
+      return true;
+    } catch (error) {
+      const message = readableError(error);
+      bridge.notify(committed ? `As alterações foram salvas, mas houve uma falha ao atualizar a tela: ${message}` : message, committed ? "warning" : "error");
+      return false;
+    } finally {
+      if (configurationSession) {
+        setConfigurationSavingState(false);
+        if (renderAfter && !configurationSession.recoveryRequired) renderConfigurationDialog({ preserveSession: true });
+        else configurationSession.drafts.forEach((item) => syncConfigurationDirty(item));
+      }
+    }
+  }
+
+  async function saveAllDirtyConfigurations({ renderAfter = true } = {}) {
+    if (!configurationSession) return true;
+    const storeIds = [...configurationSession.drafts.values()].filter((draft) => draft.dirty).map((draft) => draft.storeId);
+    for (const storeId of storeIds) {
+      const saved = await saveConfigurationDraft(storeId, { renderAfter: false, notify: storeIds.length === 1 });
+      if (!saved) {
+        if (renderAfter && configurationSession) renderConfigurationDialog({ preserveSession: true });
+        return false;
+      }
+    }
+    if (storeIds.length > 1) bridge.notify(`Configurações de ${storeIds.length} clientes salvas.`);
+    if (renderAfter && configurationSession && !configurationSession.recoveryRequired) {
+      render();
+      renderConfigurationDialog({ preserveSession: true });
+    }
+    return true;
   }
 
   function applyAnalysisFilters(form) {
@@ -1792,92 +2135,131 @@
     openAnalysis(analysisStoreId || selectedStoreId);
   }
 
-  async function addTag(form) {
-    const data = new FormData(form);
-    const saved = await mutate(() => bridge.rpc("lc_add_prospection_tag", {
-      p_store_id: form.dataset.storeId,
-      p_category_id: form.dataset.categoryId,
-      p_label: String(data.get("label") || "").trim(),
-    }), "Etiqueta criada", { configuration: true });
-    if (saved) openConfiguration(form.dataset.storeId);
+  function addTag(form) {
+    const draft = configurationDraftFor(form.dataset.storeId);
+    const category = draft?.categories.find((item) => item.id === form.dataset.categoryId);
+    const label = String(category?.pendingTagName || new FormData(form).get("label") || "").trim();
+    if (!draft || !category || !label) return;
+    const clientKey = category.pendingTagClientKey || createConfigurationClientKey("tag");
+    category.tags.push({ id: clientKey, clientKey, storeId: draft.storeId, categoryId: category.id, label, sortOrder: category.tags.length * 10 + 10 });
+    category.pendingTagName = "";
+    category.pendingTagClientKey = createConfigurationClientKey("tag");
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
   }
 
-  async function saveCategory(form) {
-    const data = new FormData(form);
-    const name = String(data.get("name") || "").trim();
-    if (!name) return;
-    const categoryId = form.dataset.categoryId || null;
-    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_category", {
-      p_store_id: form.dataset.storeId,
-      p_category_id: categoryId,
-      p_name: name,
-    }), categoryId ? "Categoria atualizada" : "Categoria criada", { configuration: true });
-    if (saved) openConfiguration(form.dataset.storeId);
+  function saveCategory(form) {
+    const draft = configurationDraftFor(form.dataset.storeId);
+    const name = String(draft?.pendingCategoryName || new FormData(form).get("name") || "").trim();
+    if (!draft || !name) return;
+    const clientKey = draft.pendingCategoryClientKey || createConfigurationClientKey("category");
+    draft.categories.push({ id: clientKey, clientKey, storeId: draft.storeId, name, sortOrder: draft.categories.length * 10 + 10, tags: [], pendingTagName: "", pendingTagClientKey: createConfigurationClientKey("tag") });
+    draft.pendingCategoryName = "";
+    draft.pendingCategoryClientKey = createConfigurationClientKey("category");
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
   }
 
-  async function updateTag(form) {
-    const data = new FormData(form);
-    const tag = tags.find((row) => row.id === form.dataset.tagId);
-    if (!tag) return;
-    const saved = await mutate(() => bridge.rpc("lc_update_prospection_tag", {
-      p_tag_id: tag.id,
-      p_category_id: form.dataset.categoryId,
-      p_label: String(data.get("label") || "").trim(),
-    }), "Etiqueta atualizada", { configuration: true });
-    if (saved) openConfiguration(tag.storeId);
-  }
-
-  async function moveCategory(categoryId, direction) {
-    const category = tagCategories.find((row) => row.id === categoryId);
-    if (!category) return;
-    const ordered = categoriesFor(category.storeId);
-    const index = ordered.findIndex((row) => row.id === category.id);
+  function moveCategory(storeId, categoryId, direction) {
+    const draft = configurationDraftFor(storeId);
+    if (!draft) return;
+    const index = draft.categories.findIndex((row) => row.id === categoryId);
     const nextIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
-    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
-    const saved = await mutate(() => bridge.rpc("lc_reorder_prospection_categories", {
-      p_store_id: category.storeId,
-      p_ordered_ids: ordered.map((row) => row.id),
-    }), "Ordem das categorias atualizada", { configuration: true });
-    if (saved) openConfiguration(category.storeId);
+    if (index < 0 || nextIndex < 0 || nextIndex >= draft.categories.length) return;
+    [draft.categories[index], draft.categories[nextIndex]] = [draft.categories[nextIndex], draft.categories[index]];
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
   }
 
-  async function moveTag(tagId, direction) {
-    const tag = tags.find((row) => row.id === tagId);
-    if (!tag) return;
-    const ordered = tagsFor(tag.storeId).filter((row) => row.categoryId === tag.categoryId);
-    const index = ordered.findIndex((row) => row.id === tag.id);
+  function moveTag(storeId, categoryId, tagId, direction) {
+    const draft = configurationDraftFor(storeId);
+    const category = draft?.categories.find((row) => row.id === categoryId);
+    if (!draft || !category) return;
+    const index = category.tags.findIndex((row) => row.id === tagId);
     const nextIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
-    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
-    const saved = await mutate(() => bridge.rpc("lc_reorder_prospection_tags", {
-      p_category_id: tag.categoryId,
-      p_ordered_ids: ordered.map((row) => row.id),
-    }), "Ordem das etiquetas atualizada", { configuration: true });
-    if (saved) openConfiguration(tag.storeId);
+    if (index < 0 || nextIndex < 0 || nextIndex >= category.tags.length) return;
+    [category.tags[index], category.tags[nextIndex]] = [category.tags[nextIndex], category.tags[index]];
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
   }
 
-  async function deleteCategory(categoryId) {
-    const category = tagCategories.find((row) => row.id === categoryId);
-    if (!category) return;
-    const deleted = await mutate(() => bridge.rpc("lc_delete_prospection_category", {
-      p_category_id: category.id,
-    }), "Categoria excluída", { configuration: true, closeDialog: true });
-    if (deleted) openConfiguration(category.storeId);
+  function deleteCategory(storeId, categoryId) {
+    const draft = configurationDraftFor(storeId);
+    const category = draft?.categories.find((row) => row.id === categoryId);
+    if (!draft || !category) return;
+    if (isPersistedConfigurationId(category.id)) draft.deletedCategoryIds.push(category.id);
+    category.tags.forEach((tag) => {
+      if (isPersistedConfigurationId(tag.id)) draft.deletedTagIds.push(tag.id);
+    });
+    draft.categories = draft.categories.filter((row) => row.id !== category.id);
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
+    bridge.notify("A categoria será excluída quando você salvar as alterações.");
   }
 
-  async function addProfessional(form) {
-    const data = new FormData(form);
-    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_professional", { p_store_id: form.dataset.storeId, p_professional_id: null, p_name: String(data.get("name") || "").trim(), p_is_active: true }), "Profissional criado", { configuration: true });
-    if (saved) openConfiguration(form.dataset.storeId);
+  function deleteTag(storeId, categoryId, tagId) {
+    const draft = configurationDraftFor(storeId);
+    const category = draft?.categories.find((row) => row.id === categoryId);
+    const tag = category?.tags.find((row) => row.id === tagId);
+    if (!draft || !category || !tag) return;
+    if (isPersistedConfigurationId(tag.id)) draft.deletedTagIds.push(tag.id);
+    category.tags = category.tags.filter((row) => row.id !== tag.id);
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
+    bridge.notify("A subcategoria será excluída quando você salvar as alterações.");
   }
 
-  async function updateProfessional(form) {
-    const data = new FormData(form);
-    const professional = professionals.find((row) => row.id === form.dataset.professionalId);
-    if (!professional) return;
-    const saved = await mutate(() => bridge.rpc("lc_upsert_prospection_professional", { p_store_id: professional.storeId, p_professional_id: professional.id, p_name: String(data.get("name") || "").trim(), p_is_active: data.get("active") === "on" }), "Profissional atualizado", { configuration: true });
-    if (saved) openConfiguration(professional.storeId);
+  function addProfessional(form) {
+    const draft = configurationDraftFor(form.dataset.storeId);
+    const name = String(draft?.pendingProfessionalName || new FormData(form).get("name") || "").trim();
+    if (!draft || !name) return;
+    const clientKey = draft.pendingProfessionalClientKey || createConfigurationClientKey("professional");
+    draft.professionals.push({ id: clientKey, clientKey, storeId: draft.storeId, name, active: true });
+    draft.pendingProfessionalName = "";
+    draft.pendingProfessionalClientKey = createConfigurationClientKey("professional");
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
+  }
+
+  function updateConfigurationDraftFromInput(input) {
+    const row = input.closest("[data-config-store]");
+    const draft = configurationDraftFor(row?.dataset.configStore || "");
+    if (!draft) return;
+    if (input.closest("[data-prospection-category-form]")) {
+      draft.pendingCategoryName = input.value;
+    } else if (input.closest("[data-prospection-tag-form]")) {
+      const categoryId = input.closest("[data-prospection-tag-form]")?.dataset.categoryId;
+      const category = draft.categories.find((item) => item.id === categoryId);
+      if (category) category.pendingTagName = input.value;
+    } else if (input.closest("[data-prospection-professional-form]")) {
+      draft.pendingProfessionalName = input.value;
+    } else if (input.dataset.configSetting) {
+      const field = input.dataset.configSetting;
+      draft.settings[field] = input.type === "number" ? (input.value === "" ? "" : Number(input.value)) : input.value;
+    } else if (input.matches("[data-config-category-name]")) {
+      const categoryId = input.closest("[data-category-id]")?.dataset.categoryId;
+      const category = draft.categories.find((item) => item.id === categoryId);
+      if (category) category.name = input.value;
+    } else if (input.matches("[data-config-tag-label]")) {
+      const tagId = input.closest("[data-tag-id]")?.dataset.tagId;
+      draft.categories.some((category) => {
+        const tag = category.tags.find((item) => item.id === tagId);
+        if (!tag) return false;
+        tag.label = input.value;
+        return true;
+      });
+    } else if (input.matches("[data-config-professional-name]")) {
+      const professionalId = input.closest("[data-professional-id]")?.dataset.professionalId;
+      const professional = draft.professionals.find((item) => item.id === professionalId);
+      if (professional) professional.name = input.value;
+    } else if (input.matches("[data-config-professional-active]")) {
+      const professionalRow = input.closest("[data-professional-id]");
+      const professional = draft.professionals.find((item) => item.id === professionalRow?.dataset.professionalId);
+      if (professional) professional.active = input.checked;
+      const status = professionalRow?.querySelector("[data-professional-status]");
+      if (status) status.textContent = input.checked ? "Ativo" : "Inativo";
+    } else return;
+    syncConfigurationDirty(draft);
   }
 
   root.addEventListener("submit", (event) => {
@@ -1887,15 +2269,13 @@
     else if (form.id === "prospectionPurchaseForm") savePurchase(form);
     else if (form.id === "prospectionAnalysisFilters") applyAnalysisFilters(form);
     else if (form.id === "prospectionBonusFilters") applyBonusFilters(form);
-    else if (form.matches("[data-prospection-settings-form]")) saveSettings(form);
-    else if (form.matches("[data-prospection-category-form], [data-prospection-category-update]")) saveCategory(form);
+    else if (form.matches("[data-prospection-category-form]")) saveCategory(form);
     else if (form.matches("[data-prospection-tag-form]")) addTag(form);
-    else if (form.matches("[data-prospection-tag-update]")) updateTag(form);
     else if (form.matches("[data-prospection-professional-form]")) addProfessional(form);
-    else if (form.matches("[data-prospection-professional-update]")) updateProfessional(form);
   });
 
   root.addEventListener("input", (event) => {
+    if (event.target.closest("[data-config-store]")) updateConfigurationDraftFromInput(event.target);
     if (event.target.matches("[data-prospection-search]")) {
       listSearch = event.target.value;
       renderRecordList();
@@ -1913,6 +2293,7 @@
   });
 
   root.addEventListener("change", (event) => {
+    if (event.target.closest("[data-config-store]")) updateConfigurationDraftFromInput(event.target);
     if (event.target.matches("[data-prospection-import-file]")) {
       handleImportFile(event.target);
       return;
@@ -1961,8 +2342,11 @@
   root.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-prospection-action]");
     if (!button) {
-      if (event.target.classList.contains("prospection-dialog-backdrop")) {
+      if (event.target.classList.contains("prospection-unsaved-backdrop")) {
+        finishConfigurationTransition(false);
+      } else if (event.target.classList.contains("prospection-dialog-backdrop")) {
         if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+        else if (event.target.matches("[data-prospection-configuration-dialog]")) requestConfigurationTransition(() => forceCloseDialogs());
         else closeDialogs();
       }
       else if (filtersOpen && !event.target.closest(".filter-menu")) { filtersOpen = false; render(); }
@@ -1972,10 +2356,11 @@
     const prospectId = button.dataset.prospectId || "";
     if (action === "close-dialog") {
       if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+      else if (button.closest("[data-prospection-configuration-dialog]")) requestConfigurationTransition(() => forceCloseDialogs());
       else closeDialogs();
     }
     else if (action === "toggle-theme") { document.querySelector("#themeToggle")?.click(); render(); }
-    else if (action === "logout") document.querySelector("#logoutButton")?.click();
+    else if (action === "logout") requestConfigurationTransition(() => document.querySelector("#logoutButton")?.click());
     else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
     else if (action === "manage-access") bridge.openStoreAccess?.(button.dataset.storeId || "");
     else if (action === "export-archive") exportArchivedProspections();
@@ -2009,9 +2394,29 @@
     else if (action === "open-store-bonus") openBonus(button.dataset.storeId);
     else if (action === "open-bonus") openBonus();
     else if (action === "open-configuration") openConfiguration(button.dataset.storeId || "");
-    else if (action === "open-import") openImportDialog(button.dataset.storeId || "");
+    else if (action === "open-import") requestConfigurationTransition(() => openImportDialog(button.dataset.storeId || ""));
     else if (action === "return-configuration") openConfiguration(button.dataset.storeId || "");
     else if (action === "confirm-import") await executeBackupImport();
+    else if (action === "save-configuration") await saveConfigurationDraft(button.dataset.storeId || "");
+    else if (action === "cancel-configuration-exit") finishConfigurationTransition(false);
+    else if (action === "discard-configuration-exit") {
+      configurationSession = null;
+      finishConfigurationTransition(true);
+    }
+    else if (action === "save-configuration-exit") {
+      const exitButton = button;
+      exitButton.disabled = true;
+      exitButton.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Salvando…';
+      const saved = await saveAllDirtyConfigurations({ renderAfter: false });
+      if (saved) {
+        render();
+        configurationSession = null;
+        finishConfigurationTransition(true);
+      } else {
+        exitButton.disabled = false;
+        exitButton.innerHTML = '<i class="fa-solid fa-check"></i>Salvar e sair';
+      }
+    }
     else if (action === "open-reports") openReports(button.dataset.storeId || "");
     else if (action === "apply-date-shortcut") applyDateShortcut(button.dataset.shortcutTarget || "analysis", button.dataset.shortcutValue || "this-month");
     else if (action === "set-analysis-period") setAnalysisPeriod(button.dataset.analysisPeriod || "monthly");
@@ -2032,35 +2437,52 @@
     else if (action === "confirm-unmark-purchased") await setOutcome(prospectId, { purchased: false, closeDialog: true }, "Compra removida");
     else if (action === "confirm-delete") openConfirmDialog({ title: "Excluir esta prospecção?", message: "O registro e seus resultados serão removidos definitivamente.", action: "delete-prospect", id: prospectId });
     else if (action === "delete-prospect") await deleteProspect(prospectId);
-    else if (action === "move-category") await moveCategory(button.dataset.categoryId, button.dataset.direction);
-    else if (action === "delete-category") {
-      const category = tagCategories.find((row) => row.id === button.dataset.categoryId);
-      if (category) openConfirmDialog({ title: `Excluir ${category.name}?`, message: "A categoria e todas as etiquetas dentro dela serão excluídas definitivamente.", action: "confirm-delete-category", id: category.id, idName: "category", cancelStoreId: category.storeId });
-    } else if (action === "confirm-delete-category") await deleteCategory(button.dataset.categoryId);
-    else if (action === "move-tag") await moveTag(button.dataset.tagId, button.dataset.direction);
-    else if (action === "delete-tag") {
-      const tag = tags.find((row) => row.id === button.dataset.tagId);
-      if (tag) openConfirmDialog({ title: `Excluir ${tag.label}?`, message: "A etiqueta será removida desta configuração. Registros históricos permanecem preservados.", action: "confirm-delete-tag", id: tag.id, idName: "tag", cancelStoreId: tag.storeId });
-    } else if (action === "confirm-delete-tag") {
-      const tag = tags.find((row) => row.id === button.dataset.tagId);
-      const deleted = tag ? await mutate(() => bridge.rpc("lc_delete_prospection_tag", { p_tag_id: tag.id }), "Etiqueta excluída", { configuration: true }) : false;
-      if (deleted) openConfiguration(tag.storeId);
-    } else if (action === "calendar-prev" || action === "calendar-next") {
+    else if (action === "move-category") moveCategory(button.dataset.storeId, button.dataset.categoryId, button.dataset.direction);
+    else if (action === "delete-category") deleteCategory(button.dataset.storeId, button.dataset.categoryId);
+    else if (action === "move-tag") moveTag(button.dataset.storeId, button.dataset.categoryId, button.dataset.tagId, button.dataset.direction);
+    else if (action === "delete-tag") deleteTag(button.dataset.storeId, button.dataset.categoryId, button.dataset.tagId);
+    else if (action === "calendar-prev" || action === "calendar-next") {
       calendarDate = addMonths(calendarDate, action === "calendar-prev" ? -1 : 1);
       openAnalysis(analysisStoreId || selectedStoreId);
     }
   });
 
   document.addEventListener("keydown", (event) => {
-    if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) {
+    const unsavedDialog = active ? root.querySelector(".prospection-unsaved-dialog") : null;
+    if (unsavedDialog && event.key === "Tab") {
+      const focusable = [...unsavedDialog.querySelectorAll("button:not([disabled])")];
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    } else if (active && event.key === "Escape" && root.querySelector(".prospection-unsaved-backdrop")) {
+      finishConfigurationTransition(false);
+    } else if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) {
       if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
+      else if (root.querySelector("[data-prospection-configuration-dialog]")) requestConfigurationTransition(() => forceCloseDialogs());
       else closeDialogs();
     }
+  });
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!active || !hasUnsavedConfiguration()) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 
   window.ProspectionsModule = {
     activate,
     deactivate,
+    requestDeactivate,
     refreshContext,
     renderFatalError,
   };

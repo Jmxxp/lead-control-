@@ -3999,6 +3999,571 @@ body.is-dark .prospection-import-metrics article {
   }
 }
 
+/* Editor único de cliente — compacto, respirado e com salvamento em lote. */
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] {
+  width: 100vw;
+  max-width: 100vw;
+  padding: 16px;
+  overflow: hidden;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-panel {
+  display: block;
+  width: min(1440px, 100%);
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-radius: 16px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-header {
+  align-items: center;
+  flex-direction: row;
+  padding: 13px 16px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-header .eyebrow {
+  margin: 0 0 3px;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-header h2 {
+  font-size: clamp(1.18rem, 1.5vw, 1.34rem);
+  line-height: 1.15;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-header .icon-button {
+  flex-basis: 40px;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 1.1rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-panel > .prospection-config-list {
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 16px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-row {
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-row.has-unsaved-changes {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--line));
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-row-header {
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 12px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-account-identity {
+  gap: 10px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-account-icon {
+  flex-basis: 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-account-identity strong {
+  font-size: 0.9rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-account-identity span {
+  margin-top: 2px;
+  font-size: 0.7rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-import-trigger {
+  width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.prospection-config-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: -7px;
+}
+
+.prospection-config-section-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.prospection-config-section-heading span {
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.prospection-config-section-heading small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-settings-fields.prospection-config-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-field {
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.7rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] input:not([type="checkbox"]):not([type="color"]),
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] select {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-color-control {
+  grid-template-columns: 36px minmax(0, 1fr);
+  min-height: 38px;
+  height: 38px;
+  gap: 7px;
+  padding: 3px 8px 3px 3px;
+  border-radius: 8px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-color-control input[type="color"] {
+  width: 32px;
+  min-width: 32px;
+  height: 30px;
+  min-height: 30px;
+  padding: 2px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-columns {
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
+  align-items: start;
+  gap: 16px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-manager,
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-professional-manager {
+  min-width: 0;
+  max-width: 100%;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-manager-heading span {
+  font-size: 0.75rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-manager-heading small {
+  font-size: 0.68rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-inline-form {
+  gap: 8px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-inline-form .secondary-button {
+  width: auto;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-list,
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-tag-editor-list,
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-managed-items {
+  gap: 7px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-card {
+  gap: 8px;
+  padding: 9px;
+  border-radius: 9px;
+}
+
+.prospection-category-name {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-header {
+  gap: 7px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-icon-action {
+  flex-basis: 34px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 0.68rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-tag-editor-row {
+  gap: 6px;
+  padding: 5px;
+  border-radius: 8px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-professional-list {
+  max-height: min(420px, 45vh);
+  padding-right: 3px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-professional-row {
+  grid-template-columns: minmax(130px, 1fr) auto;
+  gap: 9px;
+  min-height: 50px;
+  padding: 6px;
+  border-radius: 9px;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-professional-active {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 86px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.67rem;
+  font-weight: 850;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-professional-active input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  opacity: 0;
+}
+
+.prospection-toggle-track {
+  position: relative;
+  display: block;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 20%, var(--surface));
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.prospection-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.24);
+  transition: transform 160ms ease;
+}
+
+.store-professional-active input:checked + .prospection-toggle-track {
+  border-color: color-mix(in srgb, var(--primary) 72%, var(--line));
+  background: var(--primary);
+}
+
+.store-professional-active input:checked + .prospection-toggle-track::after {
+  transform: translateX(14px);
+}
+
+.store-professional-active input:focus-visible + .prospection-toggle-track {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.store-professional-active em {
+  min-width: 42px;
+  color: inherit;
+  font-style: normal;
+}
+
+.prospection-config-savebar {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 -8px 28px color-mix(in srgb, var(--text) 7%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.prospection-config-save-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--primary);
+}
+
+.prospection-config-save-status > i {
+  font-size: 0.86rem;
+}
+
+.prospection-config-save-status > span {
+  display: grid;
+  gap: 1px;
+}
+
+.prospection-config-save-status strong,
+.prospection-config-save-status small {
+  display: block;
+}
+
+.prospection-config-save-status strong {
+  color: var(--text);
+  font-size: 0.7rem;
+}
+
+.prospection-config-save-status small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.prospection-config-save-status.is-dirty {
+  color: #d48616;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-savebar .config-save-button {
+  width: auto;
+  min-width: 184px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-savebar .config-save-button:disabled {
+  box-shadow: none;
+  opacity: 0.48;
+}
+
+.prospection-unsaved-backdrop {
+  position: fixed;
+  z-index: 4000;
+  inset: 0;
+  display: grid;
+  padding: 18px;
+  place-items: center;
+  background: rgba(7, 10, 15, 0.68);
+  backdrop-filter: blur(18px) saturate(0.85);
+}
+
+.prospection-unsaved-dialog {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  width: min(480px, 100%);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.42);
+}
+
+.prospection-unsaved-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, #d48616 30%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, #d48616 11%, var(--surface));
+  color: #d48616;
+}
+
+.prospection-unsaved-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.prospection-unsaved-copy .eyebrow {
+  margin: 0;
+  color: #d48616;
+  font-size: 0.65rem;
+}
+
+.prospection-unsaved-copy h3,
+.prospection-unsaved-copy p {
+  margin: 0;
+}
+
+.prospection-unsaved-copy h3 {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.prospection-unsaved-copy p:last-child {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.prospection-unsaved-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+body.is-prospections-module #appView .prospection-view .prospection-unsaved-actions button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.prospection-unsaved-actions .is-danger {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  color: var(--danger);
+}
+
+@media (max-width: 1040px) {
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-settings-fields.prospection-config-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-columns {
+    grid-template-columns: 1fr;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-professional-list {
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 700px) {
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] {
+    padding: 7px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-panel {
+    width: calc(100vw - 14px);
+    max-height: calc(100vh - 14px);
+    border-radius: 12px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .admin-settings-panel > .prospection-config-list {
+    padding: 10px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-row {
+    gap: 13px;
+    padding: 10px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-row-header {
+    align-items: stretch;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-settings-fields.prospection-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-manager,
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-professional-manager {
+    padding: 10px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-icon-action {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-category-header {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-config-savebar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-config-savebar .config-save-button {
+    width: 100%;
+  }
+
+  .prospection-unsaved-dialog {
+    grid-template-columns: 1fr;
+    padding: 15px;
+  }
+
+  .prospection-unsaved-actions {
+    grid-column: 1;
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  body.is-prospections-module #appView .prospection-view .prospection-unsaved-actions button {
+    width: 100%;
+  }
+}
+
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-identity,
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-custom-query,
 body.is-dark .prospection-dialog:has(.prospection-prospec-analysis) .prospection-insight-filters {
