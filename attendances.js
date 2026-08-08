@@ -390,9 +390,14 @@
     </section>`;
   }
 
-  function professionalOptions() {
+  function registeredProfessionalOptions() {
     const unique = new Map();
     state.professionals.forEach((professional) => unique.set(normalizeText(professional.name), professional.name));
+    return [...unique.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
+
+  function professionalOptions() {
+    const unique = new Map(registeredProfessionalOptions().map((name) => [normalizeText(name), name]));
     state.records.forEach((record) => {
       if (record.professionalName && record.professionalName !== "Não informado") unique.set(normalizeText(record.professionalName), record.professionalName);
     });
@@ -454,19 +459,25 @@
   }
 
   function renderForm() {
-    const professionals = professionalOptions();
+    const professionals = registeredProfessionalOptions();
     const draft = state.drafts.get(state.selectedStoreId) || { tag: "budget" };
+    const draftedProfessional = professionals.find((name) => normalizeText(name) === normalizeText(draft.professionalName));
+    const selectedProfessional = draftedProfessional || (professionals.length === 1 ? professionals[0] : "");
+    const hasProfessionals = professionals.length > 0;
     return `<article class="attendance-panel attendance-form-panel">
       <header class="attendance-panel-header">
         <div><p class="attendance-eyebrow">Novo registro</p><h2>Registrar atendimento</h2><span>O sistema procura o telefone em Leads e Prospecções ao salvar.</span></div>
         <span class="attendance-header-badge"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Vínculo automático</span>
       </header>
-      <form class="attendance-form" data-attendance-form novalidate aria-busy="${state.saving ? "true" : "false"}">
+      <form class="attendance-form" data-attendance-form data-professionals-ready="${hasProfessionals ? "true" : "false"}" novalidate aria-busy="${state.saving ? "true" : "false"}">
         <div class="attendance-form-grid">
           <label class="attendance-field attendance-field--wide">
             <span>Atendimento realizado por <b>*</b></span>
-            <span class="attendance-input-wrap"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><input name="professional_name" list="attendanceProfessionalList" autocomplete="off" placeholder="Selecione ou informe o profissional" value="${escapeHtml(draft.professionalName || "")}" required /></span>
-            <datalist id="attendanceProfessionalList">${professionals.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>
+            <span class="attendance-input-wrap attendance-input-wrap--select"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><select name="professional_name" required ${hasProfessionals ? "" : "disabled"}>
+              <option value="">${hasProfessionals ? "Selecione o profissional" : "Nenhum profissional cadastrado"}</option>
+              ${professionals.map((name) => `<option value="${escapeHtml(name)}" ${name === selectedProfessional ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select></span>
+            <small class="attendance-professional-source ${hasProfessionals ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${hasProfessionals ? "Equipe sincronizada com o cadastro de Prospecções." : "Cadastre ao menos um profissional nas configurações de Prospecções para registrar atendimentos."}</small>
           </label>
           <label class="attendance-field">
             <span>Cliente <b>*</b></span>
@@ -506,7 +517,7 @@
         </section>
 
         <div class="attendance-form-error" data-attendance-form-error role="alert" hidden></div>
-        <button class="attendance-primary-button" type="submit" data-attendance-save ${state.saving ? "disabled" : ""}>
+        <button class="attendance-primary-button" type="submit" data-attendance-save ${state.saving || !hasProfessionals ? "disabled" : ""}>
           <span class="attendance-button-idle"><i class="fa-solid fa-check" aria-hidden="true"></i>Salvar atendimento</span>
           <span class="attendance-button-loading"><span class="attendance-mini-spinner" aria-hidden="true"></span>Salvando com segurança</span>
         </button>
@@ -732,7 +743,7 @@
     const form = state.root?.querySelector("[data-attendance-form]");
     const button = state.root?.querySelector("[data-attendance-save]");
     if (form) form.setAttribute("aria-busy", String(Boolean(busy)));
-    if (button) button.disabled = Boolean(busy);
+    if (button) button.disabled = Boolean(busy) || registeredProfessionalOptions().length === 0;
   }
 
   function createIdempotencyKey() {
@@ -742,7 +753,10 @@
 
   function validateForm(form) {
     const values = Object.fromEntries(new FormData(form).entries());
-    const professionalName = String(values.professional_name || "").trim();
+    const submittedProfessionalName = String(values.professional_name || "").trim();
+    const professionalName = registeredProfessionalOptions().find(
+      (name) => normalizeText(name) === normalizeText(submittedProfessionalName),
+    ) || "";
     const customerName = String(values.customer_name || "").trim();
     const phone = onlyDigits(values.phone).replace(/^55(?=\d{10,11}$)/, "");
     const description = String(values.description || "").trim();
@@ -751,7 +765,7 @@
     const purchaseValue = normalizeMoney(values.purchase_value);
     const serviceOrder = String(values.service_order || "").trim();
 
-    if (!professionalName) throw new Error("Informe quem realizou o atendimento.");
+    if (!professionalName) throw new Error("Selecione um profissional ativo cadastrado em Prospecções.");
     if (!customerName) throw new Error("Informe o nome do cliente.");
     if (![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
     if (!description) throw new Error("Descreva o atendimento realizado.");

@@ -252,6 +252,7 @@ body.is-dark .attendance-shell,
 .attendance-select-wrap select,
 .attendance-input-wrap input,
 .attendance-input-wrap textarea,
+.attendance-input-wrap select,
 .attendance-search input,
 .attendance-list-tools > select {
   width: 100%;
@@ -272,6 +273,7 @@ body.is-dark .attendance-shell,
 .attendance-select-wrap select:hover,
 .attendance-input-wrap input:hover,
 .attendance-input-wrap textarea:hover,
+.attendance-input-wrap select:hover,
 .attendance-search input:hover,
 .attendance-list-tools > select:hover {
   border-color: var(--att-line-strong);
@@ -280,6 +282,7 @@ body.is-dark .attendance-shell,
 .attendance-select-wrap select:focus,
 .attendance-input-wrap input:focus,
 .attendance-input-wrap textarea:focus,
+.attendance-input-wrap select:focus,
 .attendance-search input:focus,
 .attendance-list-tools > select:focus {
   border-color: var(--att-blue);
@@ -432,9 +435,43 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-input-wrap input,
-.attendance-input-wrap textarea {
+.attendance-input-wrap textarea,
+.attendance-input-wrap select {
   min-height: 48px;
   padding: 0 14px 0 41px;
+}
+
+.attendance-input-wrap select {
+  appearance: none;
+  padding-right: 43px;
+}
+
+.attendance-input-wrap--select::after {
+  position: absolute;
+  right: 17px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--att-muted);
+  border-bottom: 2px solid var(--att-muted);
+  content: "";
+  pointer-events: none;
+  transform: translateY(-3px) rotate(45deg);
+}
+
+.attendance-input-wrap select:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.attendance-professional-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--att-green) !important;
+}
+
+.attendance-professional-source.is-empty {
+  color: var(--att-danger) !important;
 }
 
 .attendance-input-wrap textarea {
@@ -636,6 +673,20 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
+.attendance-form[data-professionals-ready="false"] .attendance-primary-button:disabled {
+  background: var(--att-panel-muted);
+  color: var(--att-muted);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.attendance-form[aria-busy="true"] .attendance-primary-button:disabled {
+  background: linear-gradient(135deg, #2f72e8, #2561cb);
+  color: #fff;
   cursor: wait;
   opacity: 0.78;
 }

@@ -819,15 +819,16 @@ begin
   where pp.store_id = v_store_id
     and pp.admin_user_id = v_session.admin_user_id
     and pp.is_active = true
-    and lower(pp.name) = lower(v_professional_name)
+    and lower(btrim(pp.name)) = lower(v_professional_name)
   order by pp.created_at
   limit 1;
   v_professional_found := found;
-  if v_professional_found then
-    -- Aproveita o cadastro quando existe, mas o módulo de Atendimentos não
-    -- depende de licença nem de configuração prévia de Prospecções.
-    v_professional_name := v_professional.name;
+  if not v_professional_found then
+    raise exception 'Selecione um profissional ativo cadastrado em Prospecções.';
   end if;
+  -- Atendimentos e Prospecções compartilham exatamente o mesmo cadastro de
+  -- equipe; o snapshot preserva o nome exibido mesmo se ele mudar no futuro.
+  v_professional_name := v_professional.name;
 
   select coalesce(ps.bonus_minimum, 300), coalesce(ps.bonus_amount, 20)
   into v_bonus_minimum, v_bonus_amount
