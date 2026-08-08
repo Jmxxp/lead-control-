@@ -1422,6 +1422,8 @@ create table if not exists public.prospection_professionals (
   admin_user_id uuid not null references public.app_users(id) on delete cascade,
   name text not null check (length(btrim(name)) > 0),
   is_active boolean not null default true,
+  archived_at timestamptz,
+  archived_by uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint prospection_professionals_store_admin_fk
@@ -1429,6 +1431,12 @@ create table if not exists public.prospection_professionals (
     references public.stores(id, admin_user_id)
     on delete cascade
 );
+
+-- Mantém o consolidado idempotente também em bases criadas por versões
+-- anteriores, nas quais CREATE TABLE IF NOT EXISTS não adiciona colunas.
+alter table public.prospection_professionals
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid references public.app_users(id) on delete set null;
 
 create unique index if not exists prospection_professionals_store_name_uidx
   on public.prospection_professionals (store_id, lower(name));
@@ -1615,6 +1623,50 @@ as $$
   );
 $$;
 
+create or replace function app_private.prospection_configuration_revision(
+  p_store_id uuid
+)
+returns text
+language sql
+stable
+security definer
+set search_path = app_private, public, extensions
+as $$
+  select encode(
+    extensions.digest(
+      jsonb_build_object(
+        'settings', jsonb_build_object(
+          'daily_goal', coalesce(ps.daily_goal, 15),
+          'bonus_minimum', coalesce(ps.bonus_minimum, 300),
+          'bonus_amount', coalesce(ps.bonus_amount, 20),
+          'accent_color', coalesce(ps.accent_color, '#16855f'),
+          'logo_background_color', coalesce(ps.logo_background_color, '#ffffff')
+        ),
+        'categories', coalesce((
+          select jsonb_agg(jsonb_build_array(pc.id, pc.name, pc.sort_order) order by pc.id)
+          from public.prospection_tag_categories pc
+          where pc.store_id = p_store_id
+        ), '[]'::jsonb),
+        'tags', coalesce((
+          select jsonb_agg(jsonb_build_array(pt.id, pt.category_id, pt.label, pt.sort_order) order by pt.id)
+          from public.prospection_tags pt
+          where pt.store_id = p_store_id
+        ), '[]'::jsonb),
+        'professionals', coalesce((
+          select jsonb_agg(jsonb_build_array(pp.id, pp.name, pp.is_active) order by pp.id)
+          from public.prospection_professionals pp
+          where pp.store_id = p_store_id
+            and pp.archived_at is null
+        ), '[]'::jsonb)
+      )::text,
+      'sha256'
+    ),
+    'hex'
+  )
+  from (select 1) seed
+  left join public.prospection_store_settings ps on ps.store_id = p_store_id;
+$$;
+
 create or replace function app_private.rpc_get_prospection_configuration(p_session_token text)
 returns jsonb
 language plpgsql
@@ -1635,7 +1687,8 @@ begin
         'bonus_minimum', coalesce(ps.bonus_minimum, 300),
         'bonus_amount', coalesce(ps.bonus_amount, 20),
         'accent_color', coalesce(ps.accent_color, '#16855f'),
-        'logo_background_color', coalesce(ps.logo_background_color, '#ffffff')
+        'logo_background_color', coalesce(ps.logo_background_color, '#ffffff'),
+        'revision', app_private.prospection_configuration_revision(st.id)
       ) order by st.name)
       from public.stores st
       left join public.prospection_store_settings ps on ps.store_id = st.id
@@ -1659,6 +1712,7 @@ begin
       ) order by pp.name)
       from public.prospection_professionals pp
       where pp.admin_user_id = v_session.admin_user_id
+        and pp.archived_at is null
         and app_private.prospection_store_allowed(
           v_session.admin_user_id,
           v_session.user_id,
@@ -1870,12 +1924,16 @@ begin
   end if;
 
   if p_professional_id is not null then
+    -- Bloqueia apenas o cadastro escolhido até concluir a gravação. Uma
+    -- exclusão concorrente aguarda, sem serializar toda a operação da loja.
     select pp.name into v_professional_name
     from public.prospection_professionals pp
     where pp.id = p_professional_id
       and pp.store_id = v_store_id
       and pp.admin_user_id = v_session.admin_user_id
-      and pp.is_active = true;
+      and pp.is_active = true
+      and pp.archived_at is null
+    for share;
 
     if not found then
       raise exception 'Profissional nao encontrado para este cliente.';
@@ -2432,31 +2490,52 @@ begin
   select * into v_session from app_private.session_user(p_session_token);
   v_name := btrim(coalesce(p_name, ''));
 
-  if not app_private.prospection_store_allowed(v_session.admin_user_id, v_session.user_id, v_session.user_role, v_session.user_store_id, p_store_id, true) then
+  if not app_private.prospection_store_allowed(
+    v_session.admin_user_id, v_session.user_id, v_session.user_role,
+    v_session.user_store_id, p_store_id, true
+  ) then
     raise exception 'Sem permissao para configurar este cliente.';
   end if;
   if length(v_name) = 0 then raise exception 'Informe o nome do profissional.'; end if;
 
+  perform 1
+  from public.stores st
+  where st.id = p_store_id
+    and st.admin_user_id = v_session.admin_user_id
+  for update;
+
   if p_professional_id is null then
     select pp.id into v_professional_id
     from public.prospection_professionals pp
-    where pp.store_id = p_store_id and lower(pp.name) = lower(v_name);
+    where pp.store_id = p_store_id
+      and pp.admin_user_id = v_session.admin_user_id
+      and lower(pp.name) = lower(v_name)
+    order by (pp.archived_at is null) desc, pp.created_at
+    limit 1
+    for update;
 
     if v_professional_id is null then
-      insert into public.prospection_professionals (store_id, admin_user_id, name, is_active)
-      values (p_store_id, v_session.admin_user_id, v_name, coalesce(p_is_active, true))
-      returning id into v_professional_id;
+      insert into public.prospection_professionals (
+        store_id, admin_user_id, name, is_active
+      ) values (
+        p_store_id, v_session.admin_user_id, v_name, coalesce(p_is_active, true)
+      ) returning id into v_professional_id;
     else
-      update public.prospection_professionals
-      set name = v_name, is_active = coalesce(p_is_active, true)
-      where id = v_professional_id;
+      update public.prospection_professionals pp
+      set name = v_name,
+          is_active = coalesce(p_is_active, true),
+          archived_at = null,
+          archived_by = null
+      where pp.id = v_professional_id;
     end if;
   else
     update public.prospection_professionals pp
-    set name = v_name, is_active = coalesce(p_is_active, true)
+    set name = v_name,
+        is_active = coalesce(p_is_active, true)
     where pp.id = p_professional_id
       and pp.store_id = p_store_id
       and pp.admin_user_id = v_session.admin_user_id
+      and pp.archived_at is null
     returning pp.id into v_professional_id;
 
     if not found then raise exception 'Profissional nao encontrado.'; end if;
@@ -2693,6 +2772,7 @@ grant select, insert, update, delete on table public.prospection_tags to service
 grant select, insert, update, delete on table public.prospections to service_role;
 
 revoke all on function app_private.prospection_store_allowed(uuid, uuid, public.app_user_role, uuid, uuid, boolean) from public, anon, authenticated;
+revoke all on function app_private.prospection_configuration_revision(uuid) from public, anon, authenticated;
 revoke all on function app_private.rpc_get_prospection_configuration(text) from public, anon, authenticated;
 revoke all on function app_private.rpc_list_prospections(text) from public, anon, authenticated;
 revoke all on function app_private.rpc_upsert_prospection(text, uuid, uuid, text, text, text, text, text, text[], uuid) from public, anon, authenticated;

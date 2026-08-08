@@ -22,6 +22,8 @@ declare
   v_template_id uuid;
   v_campaign_id uuid;
   v_professional_id uuid;
+  v_inactive_professional_id uuid;
+  v_archived_professional_id uuid;
   v_created jsonb;
   v_entitlements jsonb;
   v_workspace jsonb;
@@ -248,11 +250,58 @@ begin
   -- Atendimentos usa exatamente o mesmo entitlement de Prospeccoes.
   perform public.lc_set_technician_prospection_limit(v_admin_token, v_agency_id, 1);
   perform public.lc_set_store_prospection_access(v_agency_token, v_store_one_id, true);
-  insert into public.prospection_professionals (id, store_id, admin_user_id, name)
-  values (gen_random_uuid(), v_store_one_id, v_admin_id, 'QA Professional')
+  insert into public.prospection_professionals (id, store_id, admin_user_id, name, is_active)
+  values (gen_random_uuid(), v_store_one_id, v_admin_id, 'QA Professional', true)
   returning id into v_professional_id;
+  insert into public.prospection_professionals (id, store_id, admin_user_id, name, is_active)
+  values (gen_random_uuid(), v_store_one_id, v_admin_id, 'QA Inactive Professional', false)
+  returning id into v_inactive_professional_id;
+  insert into public.prospection_professionals (
+    id, store_id, admin_user_id, name, is_active, archived_at, archived_by
+  ) values (
+    gen_random_uuid(), v_store_one_id, v_admin_id, 'QA Archived Professional', false,
+    now(), v_agency_id
+  ) returning id into v_archived_professional_id;
 
   v_workspace := public.lc_get_attendance_workspace(v_agency_token, v_store_one_id);
+  if not exists (
+    select 1
+    from jsonb_array_elements(v_workspace->'professionals') item(value)
+    where item.value->>'id' = v_inactive_professional_id::text
+      and coalesce((item.value->>'is_active')::boolean, true) = false
+  ) then
+    raise exception 'QA: profissional inativo em Prospeccoes nao apareceu em Atendimentos.';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v_workspace->'professionals') item(value)
+    where item.value->>'id' = v_archived_professional_id::text
+  ) then
+    raise exception 'QA: profissional excluido apareceu na equipe de Atendimentos.';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.lc_upsert_attendance(
+      v_agency_token,
+      v_store_one_id,
+      'QA Archived Professional',
+      'QA Archived Customer',
+      '11999999997',
+      'QA archived professional attendance',
+      'other',
+      10,
+      null,
+      null,
+      gen_random_uuid()::text
+    );
+  exception when others then
+    v_expected_error := position('profissional cadastrado' in lower(sqlerrm)) > 0;
+  end;
+  if not v_expected_error then
+    raise exception 'QA: profissional excluido conseguiu receber um novo Atendimento.';
+  end if;
+
   v_attendance := public.lc_upsert_attendance(
     v_agency_token,
     v_store_one_id,
@@ -266,11 +315,24 @@ begin
     null,
     gen_random_uuid()::text
   );
+  v_attendance := public.lc_upsert_attendance(
+    v_agency_token,
+    v_store_one_id,
+    'QA Inactive Professional',
+    'QA Inactive Customer',
+    '11999999998',
+    'QA inactive professional attendance',
+    'other',
+    50,
+    null,
+    null,
+    gen_random_uuid()::text
+  );
   select count(*) into v_before_count
   from public.attendances
   where store_id = v_store_one_id;
-  if v_before_count <> 1 then
-    raise exception 'QA: o atendimento de controle nao foi salvo.';
+  if v_before_count <> 2 then
+    raise exception 'QA: os atendimentos com profissionais ativo e inativo nao foram salvos.';
   end if;
 
   perform public.lc_set_store_prospection_access(v_agency_token, v_store_one_id, false);

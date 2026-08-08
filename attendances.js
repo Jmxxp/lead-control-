@@ -275,7 +275,7 @@
     return {
       records: Array.isArray(records) ? records.map(normalizeRecord) : [],
       professionals: Array.isArray(professionals)
-        ? professionals.map(normalizeProfessional).filter((item) => item.name && item.active)
+        ? professionals.map(normalizeProfessional).filter((item) => item.name)
         : [],
       metrics: payload.metrics && typeof payload.metrics === "object" ? payload.metrics : {},
     };
@@ -438,10 +438,14 @@
     </section>`;
   }
 
-  function registeredProfessionalOptions() {
+  function registeredProfessionalRecords() {
     const unique = new Map();
-    state.professionals.forEach((professional) => unique.set(normalizeText(professional.name), professional.name));
-    return [...unique.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    state.professionals.forEach((professional) => unique.set(normalizeText(professional.name), professional));
+    return [...unique.values()].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, "pt-BR"));
+  }
+
+  function registeredProfessionalOptions() {
+    return registeredProfessionalRecords().map((professional) => professional.name);
   }
 
   function professionalOptions() {
@@ -507,7 +511,8 @@
   }
 
   function renderForm() {
-    const professionals = registeredProfessionalOptions();
+    const professionalRecords = registeredProfessionalRecords();
+    const professionals = professionalRecords.map((professional) => professional.name);
     const draft = state.drafts.get(state.selectedStoreId) || { tag: "budget" };
     const draftedProfessional = professionals.find((name) => normalizeText(name) === normalizeText(draft.professionalName));
     const selectedProfessional = draftedProfessional || (professionals.length === 1 ? professionals[0] : "");
@@ -523,9 +528,9 @@
             <span>Atendimento realizado por <b>*</b></span>
             <span class="attendance-input-wrap attendance-input-wrap--select"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><select name="professional_name" required ${hasProfessionals ? "" : "disabled"}>
               <option value="">${hasProfessionals ? "Selecione o profissional" : "Nenhum profissional cadastrado"}</option>
-              ${professionals.map((name) => `<option value="${escapeHtml(name)}" ${name === selectedProfessional ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+              ${professionalRecords.map((professional) => `<option value="${escapeHtml(professional.name)}" ${professional.name === selectedProfessional ? "selected" : ""}>${escapeHtml(professional.name)}${professional.active ? "" : " · inativo em Prospecções"}</option>`).join("")}
             </select></span>
-            <small class="attendance-professional-source ${hasProfessionals ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${hasProfessionals ? "Equipe sincronizada com o cadastro de Prospecções." : "Cadastre ao menos um profissional nas configurações de Prospecções para registrar atendimentos."}</small>
+            <small class="attendance-professional-source ${hasProfessionals ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${hasProfessionals ? "Equipe completa sincronizada; inativos em Prospecções continuam disponíveis aqui." : "Cadastre ao menos um profissional nas configurações de Prospecções para registrar atendimentos."}</small>
           </label>
           <label class="attendance-field">
             <span>Cliente <b>*</b></span>
@@ -813,7 +818,7 @@
     const purchaseValue = normalizeMoney(values.purchase_value);
     const serviceOrder = String(values.service_order || "").trim();
 
-    if (!professionalName) throw new Error("Selecione um profissional ativo cadastrado em Prospecções.");
+    if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
     if (!customerName) throw new Error("Informe o nome do cliente.");
     if (![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
     if (!description) throw new Error("Descreva o atendimento realizado.");

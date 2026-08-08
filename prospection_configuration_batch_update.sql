@@ -6,6 +6,10 @@
 
 begin;
 
+alter table public.prospection_professionals
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid references public.app_users(id) on delete set null;
+
 create or replace function app_private.prospection_configuration_revision(
   p_store_id uuid
 )
@@ -48,6 +52,7 @@ as $$
           )
           from public.prospection_professionals pp
           where pp.store_id = p_store_id
+            and pp.archived_at is null
         ), '[]'::jsonb)
       )::text,
       'sha256'
@@ -103,6 +108,7 @@ begin
       ) order by pp.name)
       from public.prospection_professionals pp
       where pp.admin_user_id = v_session.admin_user_id
+        and pp.archived_at is null
         and app_private.prospection_store_allowed(
           v_session.admin_user_id, v_session.user_id, v_session.user_role,
           v_session.user_store_id, pp.store_id, false
@@ -143,6 +149,207 @@ begin
 end;
 $$;
 
+-- Compatibilidade com telas antigas: um nome arquivado restaura a mesma
+-- identidade, enquanto IDs arquivados não podem ser alterados diretamente.
+create or replace function app_private.rpc_upsert_prospection_professional(
+  p_session_token text,
+  p_store_id uuid,
+  p_professional_id uuid,
+  p_name text,
+  p_is_active boolean default true
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = app_private, public, extensions
+as $$
+declare
+  v_session record;
+  v_professional_id uuid;
+  v_name text;
+begin
+  select * into v_session from app_private.session_user(p_session_token);
+  v_name := btrim(coalesce(p_name, ''));
+
+  if not app_private.prospection_store_allowed(
+    v_session.admin_user_id, v_session.user_id, v_session.user_role,
+    v_session.user_store_id, p_store_id, true
+  ) then
+    raise exception 'Sem permissao para configurar este cliente.';
+  end if;
+  if length(v_name) = 0 then raise exception 'Informe o nome do profissional.'; end if;
+
+  perform 1
+  from public.stores st
+  where st.id = p_store_id
+    and st.admin_user_id = v_session.admin_user_id
+  for update;
+
+  if p_professional_id is null then
+    select pp.id into v_professional_id
+    from public.prospection_professionals pp
+    where pp.store_id = p_store_id
+      and pp.admin_user_id = v_session.admin_user_id
+      and lower(pp.name) = lower(v_name)
+    order by (pp.archived_at is null) desc, pp.created_at
+    limit 1
+    for update;
+
+    if v_professional_id is null then
+      insert into public.prospection_professionals (
+        store_id, admin_user_id, name, is_active
+      ) values (
+        p_store_id, v_session.admin_user_id, v_name, coalesce(p_is_active, true)
+      ) returning id into v_professional_id;
+    else
+      update public.prospection_professionals pp
+      set name = v_name,
+          is_active = coalesce(p_is_active, true),
+          archived_at = null,
+          archived_by = null
+      where pp.id = v_professional_id;
+    end if;
+  else
+    update public.prospection_professionals pp
+    set name = v_name,
+        is_active = coalesce(p_is_active, true)
+    where pp.id = p_professional_id
+      and pp.store_id = p_store_id
+      and pp.admin_user_id = v_session.admin_user_id
+      and pp.archived_at is null
+    returning pp.id into v_professional_id;
+
+    if not found then raise exception 'Profissional nao encontrado.'; end if;
+  end if;
+
+  return v_professional_id;
+end;
+$$;
+
+-- O responsável selecionado recebe um lock de leitura até o fim da gravação.
+-- Uma exclusão concorrente aguarda sem serializar toda a operação da loja.
+create or replace function app_private.rpc_upsert_prospection(
+  p_session_token text,
+  p_prospection_id uuid,
+  p_store_id uuid,
+  p_name text,
+  p_phone text default null,
+  p_cpf text default null,
+  p_notes text default null,
+  p_probability text default 'blue',
+  p_tags text[] default '{}'::text[],
+  p_professional_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = app_private, public, extensions
+as $$
+declare
+  v_session record;
+  v_store_id uuid;
+  v_prospection_id uuid;
+  v_professional_name text;
+  v_tags text[];
+begin
+  select * into v_session from app_private.session_user(p_session_token);
+  v_store_id := case when v_session.user_role::text = 'store' then v_session.user_store_id else p_store_id end;
+
+  if not app_private.prospection_store_allowed(
+    v_session.admin_user_id,
+    v_session.user_id,
+    v_session.user_role,
+    v_session.user_store_id,
+    v_store_id,
+    false
+  ) then
+    raise exception 'Cliente nao encontrado ou sem permissao.';
+  end if;
+
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'Informe o nome da prospeccao.';
+  end if;
+
+  if coalesce(p_probability, '') not in ('red', 'yellow', 'blue', 'green') then
+    raise exception 'Probabilidade invalida.';
+  end if;
+
+  if p_professional_id is not null then
+    select pp.name into v_professional_name
+    from public.prospection_professionals pp
+    where pp.id = p_professional_id
+      and pp.store_id = v_store_id
+      and pp.admin_user_id = v_session.admin_user_id
+      and pp.is_active = true
+      and pp.archived_at is null
+    for share;
+
+    if not found then
+      raise exception 'Profissional nao encontrado para este cliente.';
+    end if;
+  end if;
+
+  select coalesce(array_agg(pt.label order by pt.label), '{}'::text[])
+  into v_tags
+  from public.prospection_tags pt
+  where pt.store_id = v_store_id
+    and pt.admin_user_id = v_session.admin_user_id
+    and pt.label = any(coalesce(p_tags, '{}'::text[]));
+
+  if p_prospection_id is null then
+    insert into public.prospections (
+      admin_user_id,
+      store_id,
+      name,
+      phone,
+      cpf,
+      notes,
+      probability,
+      tags,
+      professional_id,
+      professional_name_snapshot,
+      created_by,
+      updated_by
+    ) values (
+      v_session.admin_user_id,
+      v_store_id,
+      btrim(p_name),
+      nullif(btrim(coalesce(p_phone, '')), ''),
+      nullif(btrim(coalesce(p_cpf, '')), ''),
+      nullif(btrim(coalesce(p_notes, '')), ''),
+      p_probability,
+      v_tags,
+      p_professional_id,
+      v_professional_name,
+      v_session.user_id,
+      v_session.user_id
+    ) returning id into v_prospection_id;
+  else
+    update public.prospections pr
+    set
+      name = btrim(p_name),
+      phone = nullif(btrim(coalesce(p_phone, '')), ''),
+      cpf = nullif(btrim(coalesce(p_cpf, '')), ''),
+      notes = nullif(btrim(coalesce(p_notes, '')), ''),
+      probability = p_probability,
+      tags = v_tags,
+      professional_id = p_professional_id,
+      professional_name_snapshot = v_professional_name,
+      updated_by = v_session.user_id
+    where pr.id = p_prospection_id
+      and pr.admin_user_id = v_session.admin_user_id
+      and pr.store_id = v_store_id
+    returning pr.id into v_prospection_id;
+
+    if not found then
+      raise exception 'Prospeccao nao encontrada ou sem permissao.';
+    end if;
+  end if;
+
+  return v_prospection_id;
+end;
+$$;
+
 create or replace function app_private.rpc_save_prospection_configuration(
   p_session_token text,
   p_store_id uuid,
@@ -160,12 +367,14 @@ declare
   v_professionals jsonb;
   v_deleted_categories_json jsonb;
   v_deleted_tags_json jsonb;
+  v_deleted_professionals_json jsonb;
 
   v_category_ids uuid[] := array[]::uuid[];
   v_tag_ids uuid[] := array[]::uuid[];
   v_professional_ids uuid[] := array[]::uuid[];
   v_deleted_category_ids uuid[] := array[]::uuid[];
   v_deleted_tag_ids uuid[] := array[]::uuid[];
+  v_deleted_professional_ids uuid[] := array[]::uuid[];
 
   v_daily_goal integer;
   v_bonus_minimum numeric(12,2);
@@ -195,6 +404,8 @@ declare
   v_categories_created integer := 0;
   v_tags_created integer := 0;
   v_professionals_created integer := 0;
+  v_professionals_restored integer := 0;
+  v_professionals_archived integer := 0;
   v_categories_deleted integer := 0;
   v_tags_deleted integer := 0;
 begin
@@ -245,12 +456,14 @@ begin
   v_professionals := p_payload->'professionals';
   v_deleted_categories_json := coalesce(p_payload->'deleted_category_ids', '[]'::jsonb);
   v_deleted_tags_json := coalesce(p_payload->'deleted_tag_ids', '[]'::jsonb);
+  v_deleted_professionals_json := coalesce(p_payload->'deleted_professional_ids', '[]'::jsonb);
 
   if jsonb_typeof(v_settings) is distinct from 'object'
      or jsonb_typeof(v_categories) is distinct from 'array'
      or jsonb_typeof(v_professionals) is distinct from 'array'
      or jsonb_typeof(v_deleted_categories_json) is distinct from 'array'
-     or jsonb_typeof(v_deleted_tags_json) is distinct from 'array' then
+     or jsonb_typeof(v_deleted_tags_json) is distinct from 'array'
+     or jsonb_typeof(v_deleted_professionals_json) is distinct from 'array' then
     raise exception 'O snapshot de configuracao esta incompleto.';
   end if;
 
@@ -415,6 +628,10 @@ begin
     select 1
     from jsonb_array_elements_text(v_deleted_tags_json) deleted(value)
     where deleted.value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ) or exists (
+    select 1
+    from jsonb_array_elements_text(v_deleted_professionals_json) deleted(value)
+    where deleted.value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ) then
     raise exception 'A lista de exclusoes possui um identificador invalido.';
   end if;
@@ -491,6 +708,10 @@ begin
     select count(*) from jsonb_array_elements_text(v_deleted_tags_json)
   ) <> (
     select count(distinct value) from jsonb_array_elements_text(v_deleted_tags_json) item(value)
+  ) or (
+    select count(*) from jsonb_array_elements_text(v_deleted_professionals_json)
+  ) <> (
+    select count(distinct value) from jsonb_array_elements_text(v_deleted_professionals_json) item(value)
   ) then
     raise exception 'A lista de exclusoes repete identificadores.';
   end if;
@@ -519,8 +740,13 @@ begin
   into v_deleted_tag_ids
   from jsonb_array_elements_text(v_deleted_tags_json) item(value);
 
+  select coalesce(array_agg(item.value::uuid), array[]::uuid[])
+  into v_deleted_professional_ids
+  from jsonb_array_elements_text(v_deleted_professionals_json) item(value);
+
   if v_category_ids && v_deleted_category_ids
-     or v_tag_ids && v_deleted_tag_ids then
+     or v_tag_ids && v_deleted_tag_ids
+     or v_professional_ids && v_deleted_professional_ids then
     raise exception 'Um item nao pode ser salvo e excluido ao mesmo tempo.';
   end if;
 
@@ -572,6 +798,16 @@ begin
       on pp.id = received.id
      and pp.store_id = p_store_id
      and pp.admin_user_id = v_session.admin_user_id
+     and pp.archived_at is null
+    where pp.id is null
+  ) or exists (
+    select 1
+    from unnest(v_deleted_professional_ids) received(id)
+    left join public.prospection_professionals pp
+      on pp.id = received.id
+     and pp.store_id = p_store_id
+     and pp.admin_user_id = v_session.admin_user_id
+     and pp.archived_at is null
     where pp.id is null
   ) then
     raise exception 'Profissional nao encontrado ou pertencente a outro cliente.';
@@ -584,7 +820,9 @@ begin
     from public.prospection_professionals pp
     where pp.store_id = p_store_id
       and pp.admin_user_id = v_session.admin_user_id
+      and pp.archived_at is null
       and not (pp.id = any(v_professional_ids))
+      and not (pp.id = any(v_deleted_professional_ids))
   ) then
     raise exception 'A lista de profissionais esta incompleta. Recarregue a configuracao.';
   end if;
@@ -638,6 +876,16 @@ begin
     and pc.admin_user_id = v_session.admin_user_id
     and pc.id = any(v_deleted_category_ids);
   get diagnostics v_categories_deleted = row_count;
+
+  update public.prospection_professionals pp
+  set is_active = false,
+      archived_at = clock_timestamp(),
+      archived_by = v_session.user_id
+  where pp.store_id = p_store_id
+    and pp.admin_user_id = v_session.admin_user_id
+    and pp.archived_at is null
+    and pp.id = any(v_deleted_professional_ids);
+  get diagnostics v_professionals_archived = row_count;
 
   -- Libera temporariamente os indices case-insensitive para suportar trocas de
   -- nomes como Ana <-> Beatriz e Etiqueta A <-> Etiqueta B.
@@ -759,14 +1007,34 @@ begin
     v_client_key := nullif(btrim(coalesce(v_professional->>'client_key', '')), '');
 
     if nullif(v_professional->>'id', '') is null then
-      v_professional_id := gen_random_uuid();
-      insert into public.prospection_professionals (
-        id, store_id, admin_user_id, name, is_active
-      ) values (
-        v_professional_id, p_store_id, v_session.admin_user_id,
-        v_name, v_active
-      );
-      v_professionals_created := v_professionals_created + 1;
+      select pp.id into v_professional_id
+      from public.prospection_professionals pp
+      where pp.store_id = p_store_id
+        and pp.admin_user_id = v_session.admin_user_id
+        and pp.archived_at is not null
+        and lower(pp.name) = lower(v_name)
+      order by pp.created_at
+      limit 1
+      for update;
+
+      if v_professional_id is null then
+        v_professional_id := gen_random_uuid();
+        insert into public.prospection_professionals (
+          id, store_id, admin_user_id, name, is_active
+        ) values (
+          v_professional_id, p_store_id, v_session.admin_user_id,
+          v_name, v_active
+        );
+        v_professionals_created := v_professionals_created + 1;
+      else
+        update public.prospection_professionals pp
+        set name = v_name,
+            is_active = v_active,
+            archived_at = null,
+            archived_by = null
+        where pp.id = v_professional_id;
+        v_professionals_restored := v_professionals_restored + 1;
+      end if;
     else
       v_professional_id := (v_professional->>'id')::uuid;
       update public.prospection_professionals pp
@@ -774,7 +1042,8 @@ begin
           is_active = v_active
       where pp.id = v_professional_id
         and pp.store_id = p_store_id
-        and pp.admin_user_id = v_session.admin_user_id;
+        and pp.admin_user_id = v_session.admin_user_id
+        and pp.archived_at is null;
     end if;
 
     if v_client_key is not null then
@@ -801,7 +1070,9 @@ begin
       'tags_created', v_tags_created,
       'tags_deleted', v_tags_deleted,
       'professionals_upserted', jsonb_array_length(v_professionals),
-      'professionals_created', v_professionals_created
+      'professionals_created', v_professionals_created,
+      'professionals_restored', v_professionals_restored,
+      'professionals_archived', v_professionals_archived
     ),
     'id_map', jsonb_build_object(
       'categories', v_category_id_map,
@@ -831,6 +1102,14 @@ $$;
 
 revoke all on function app_private.prospection_configuration_revision(uuid)
   from public, anon, authenticated;
+revoke all on function app_private.rpc_upsert_prospection_professional(text, uuid, uuid, text, boolean)
+  from public, anon, authenticated;
+grant execute on function app_private.rpc_upsert_prospection_professional(text, uuid, uuid, text, boolean)
+  to anon, authenticated;
+revoke all on function app_private.rpc_upsert_prospection(text, uuid, uuid, text, text, text, text, text, text[], uuid)
+  from public, anon, authenticated;
+grant execute on function app_private.rpc_upsert_prospection(text, uuid, uuid, text, text, text, text, text, text[], uuid)
+  to anon, authenticated;
 revoke all on function app_private.rpc_get_prospection_configuration(text)
   from public, anon, authenticated;
 grant execute on function app_private.rpc_get_prospection_configuration(text)

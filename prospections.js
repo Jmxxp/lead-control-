@@ -1389,6 +1389,7 @@
       })),
       deleted_category_ids: [...draft.deletedCategoryIds],
       deleted_tag_ids: [...draft.deletedTagIds],
+      deleted_professional_ids: [...draft.deletedProfessionalIds],
     };
   }
 
@@ -1411,6 +1412,8 @@
         .map((professional) => ({ ...professional, clientKey: `professional:${professional.id}` })),
       deletedCategoryIds: [],
       deletedTagIds: [],
+      deletedProfessionalIds: [],
+      removedProfessionals: [],
       pendingCategoryName: "",
       pendingCategoryClientKey: createConfigurationClientKey("category"),
       pendingProfessionalName: "",
@@ -1797,7 +1800,7 @@
       </div>
       <div class="store-managers-grid prospection-config-columns">
         ${categoryManagerMarkup(store.id, draft)}
-        <section class="store-mini-manager prospection-professional-manager"><div class="prospection-manager-heading"><div><span>Profissionais</span><small>Ative, desative ou renomeie a equipe.</small></div></div><form class="store-manager-form prospection-inline-form" data-prospection-professional-form data-store-id="${escapeHtml(store.id)}"><input name="name" maxlength="100" placeholder="Nome do profissional" value="${escapeHtml(draft.pendingProfessionalName)}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Criar</button></form><div class="prospection-managed-items prospection-professional-list">${draft.professionals.map((professional) => `<div class="store-professional-row prospection-managed-item" data-prospection-professional-update data-professional-id="${escapeHtml(professional.id)}"><input name="name" data-config-professional-name value="${escapeHtml(professional.name)}" maxlength="100" aria-label="Nome do profissional ${escapeHtml(professional.name)}" /><label class="store-professional-active"><input name="active" data-config-professional-active type="checkbox"${professional.active ? " checked" : ""} aria-label="Profissional ${escapeHtml(professional.name)} ativo" /><span class="prospection-toggle-track" aria-hidden="true"></span><em data-professional-status>${professional.active ? "Ativo" : "Inativo"}</em></label></div>`).join("") || `<div class="prospection-empty is-compact"><strong>Nenhum profissional</strong><span>Cadastre quem será responsável pelas prospecções.</span></div>`}</div></section>
+        ${professionalManagerMarkup(store.id, draft)}
       </div>
       <footer class="prospection-config-savebar"><div class="prospection-config-save-status${draft.dirty ? " is-dirty" : ""}" data-config-save-status aria-live="polite">${draft.dirty ? '<i class="fa-solid fa-circle-exclamation"></i><span><strong>Alterações não salvas</strong><small>Revise e salve tudo de uma vez.</small></span>' : '<i class="fa-solid fa-circle-check"></i><span><strong>Tudo salvo</strong><small>A configuração está sincronizada.</small></span>'}</div><button class="primary-button config-save-button" type="button" data-prospection-action="save-configuration" data-store-id="${escapeHtml(store.id)}"${draft.dirty ? "" : " disabled"}><i class="fa-solid fa-check"></i>Salvar alterações</button></footer>
     </article>`;
@@ -1812,6 +1815,12 @@
         ${storeCategories.map((category, categoryIndex) => categoryEditorMarkup(category, categoryIndex, storeCategories.length, storeId)).join("") || `<div class="prospection-empty is-compact"><strong>Nenhuma categoria</strong><span>Crie a primeira categoria para organizar as subcategorias.</span></div>`}
       </div>
     </section>`;
+  }
+
+  function professionalManagerMarkup(storeId, draft = configurationDraftFor(storeId)) {
+    const professionalsMarkup = draft.professionals.map((professional) => `<div class="store-professional-row prospection-managed-item" data-prospection-professional-update data-professional-id="${escapeHtml(professional.id)}"><input name="name" data-config-professional-name value="${escapeHtml(professional.name)}" maxlength="100" aria-label="Nome do profissional ${escapeHtml(professional.name)}" /><label class="store-professional-active"><input name="active" data-config-professional-active type="checkbox"${professional.active ? " checked" : ""} aria-label="Profissional ${escapeHtml(professional.name)} ativo em Prospecções" /><span class="prospection-toggle-track" aria-hidden="true"></span><em data-professional-status>${professional.active ? "Ativo" : "Inativo"}</em></label><button class="prospection-icon-action is-danger prospection-professional-delete" type="button" data-prospection-action="delete-professional" data-store-id="${escapeHtml(storeId)}" data-professional-id="${escapeHtml(professional.id)}" aria-label="Excluir profissional ${escapeHtml(professional.name)}"><i class="fa-solid fa-trash"></i></button></div>`).join("");
+    const removalsMarkup = draft.removedProfessionals.map(({ professional, persisted }) => `<div class="prospection-professional-removal"><span><i class="fa-solid fa-user-slash"></i><strong>${escapeHtml(professional.name)}</strong> ${persisted ? "sairá da equipe ao salvar" : "foi removido do rascunho"}</span><button type="button" data-prospection-action="undo-delete-professional" data-store-id="${escapeHtml(storeId)}" data-professional-id="${escapeHtml(professional.id)}"><i class="fa-solid fa-rotate-left"></i>Desfazer</button></div>`).join("");
+    return `<section class="store-mini-manager prospection-professional-manager"><div class="prospection-manager-heading"><div><span>Profissionais</span><small>Ative para Prospecções; inativos continuam disponíveis em Atendimentos.</small></div></div><form class="store-manager-form prospection-inline-form" data-prospection-professional-form data-store-id="${escapeHtml(storeId)}"><input name="name" maxlength="100" placeholder="Nome do profissional" value="${escapeHtml(draft.pendingProfessionalName)}" required /><button class="secondary-button" type="submit"><i class="fa-solid fa-plus"></i>Criar</button></form><div class="prospection-managed-items prospection-professional-list">${professionalsMarkup || `<div class="prospection-empty is-compact"><strong>Nenhum profissional</strong><span>Cadastre quem será responsável pelos atendimentos.</span></div>`}</div>${removalsMarkup ? `<div class="prospection-professional-removal-list" aria-label="Profissionais aguardando exclusão">${removalsMarkup}</div>` : ""}</section>`;
   }
 
   function categoryEditorMarkup(category, categoryIndex, categoryCount, storeId) {
@@ -2221,6 +2230,37 @@
     renderConfigurationDialog({ preserveSession: true });
   }
 
+  function deleteProfessional(storeId, professionalId) {
+    const draft = configurationDraftFor(storeId);
+    const index = draft?.professionals.findIndex((professional) => professional.id === professionalId) ?? -1;
+    if (!draft || index < 0) return;
+    const [professional] = draft.professionals.splice(index, 1);
+    const persisted = isPersistedConfigurationId(professional.id);
+    if (persisted) {
+      if (!draft.deletedProfessionalIds.includes(professional.id)) draft.deletedProfessionalIds.push(professional.id);
+    }
+    draft.removedProfessionals.push({ professional, index, persisted });
+    bridge.notify(persisted
+      ? `O cadastro de ${professional.name} será excluído quando você salvar. O histórico será preservado.`
+      : `A criação de ${professional.name} foi removida do rascunho.`);
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
+    root.querySelector(`[data-prospection-action="undo-delete-professional"][data-professional-id="${CSS.escape(professional.id)}"]`)?.focus();
+  }
+
+  function undoDeleteProfessional(storeId, professionalId) {
+    const draft = configurationDraftFor(storeId);
+    const removalIndex = draft?.removedProfessionals.findIndex(({ professional }) => professional.id === professionalId) ?? -1;
+    if (!draft || removalIndex < 0) return;
+    const [{ professional, index }] = draft.removedProfessionals.splice(removalIndex, 1);
+    draft.deletedProfessionalIds = draft.deletedProfessionalIds.filter((id) => id !== professional.id);
+    draft.professionals.splice(Math.min(index, draft.professionals.length), 0, professional);
+    syncConfigurationDirty(draft);
+    renderConfigurationDialog({ preserveSession: true });
+    root.querySelector(`[data-prospection-action="delete-professional"][data-professional-id="${CSS.escape(professional.id)}"]`)?.focus();
+    bridge.notify(`${professional.name} voltou para a equipe.`);
+  }
+
   function updateConfigurationDraftFromInput(input) {
     const row = input.closest("[data-config-store]");
     const draft = configurationDraftFor(row?.dataset.configStore || "");
@@ -2441,6 +2481,8 @@
     else if (action === "delete-category") deleteCategory(button.dataset.storeId, button.dataset.categoryId);
     else if (action === "move-tag") moveTag(button.dataset.storeId, button.dataset.categoryId, button.dataset.tagId, button.dataset.direction);
     else if (action === "delete-tag") deleteTag(button.dataset.storeId, button.dataset.categoryId, button.dataset.tagId);
+    else if (action === "delete-professional") deleteProfessional(button.dataset.storeId, button.dataset.professionalId);
+    else if (action === "undo-delete-professional") undoDeleteProfessional(button.dataset.storeId, button.dataset.professionalId);
     else if (action === "calendar-prev" || action === "calendar-next") {
       calendarDate = addMonths(calendarDate, action === "calendar-prev" ? -1 : 1);
       openAnalysis(analysisStoreId || selectedStoreId);

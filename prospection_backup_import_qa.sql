@@ -14,6 +14,7 @@ declare
   v_other_agency_id uuid := gen_random_uuid();
   v_store_id uuid := gen_random_uuid();
   v_store_user_id uuid := gen_random_uuid();
+  v_existing_professional_id uuid := gen_random_uuid();
   v_admin_token text := 'qa-import-admin-' || gen_random_uuid()::text;
   v_agency_token text := 'qa-import-agency-' || gen_random_uuid()::text;
   v_other_token text := 'qa-import-other-' || gen_random_uuid()::text;
@@ -71,6 +72,15 @@ begin
     (v_agency_id, encode(digest(v_agency_token, 'sha256'), 'hex'), now() + interval '1 hour'),
     (v_other_agency_id, encode(digest(v_other_token, 'sha256'), 'hex'), now() + interval '1 hour'),
     (v_store_user_id, encode(digest(v_store_token, 'sha256'), 'hex'), now() + interval '1 hour');
+
+  -- Um nome previamente excluído deve ser restaurado com o mesmo ID para que
+  -- todos os vínculos e relatórios históricos continuem íntegros.
+  insert into public.prospection_professionals (
+    id, store_id, admin_user_id, name, is_active, archived_at, archived_by
+  ) values (
+    v_existing_professional_id, v_store_id, v_admin_id, 'Ana QA', false,
+    now() - interval '1 day', v_agency_id
+  );
 
   v_payload := jsonb_build_object(
     'format', 'prospec-backup',
@@ -167,7 +177,8 @@ begin
 
   v_result := public.lc_import_prospec_backup(v_agency_token, v_store_id, v_payload, false);
   if coalesce((v_result #>> '{counts,prospects,inserted}')::integer, -1) <> 1
-     or coalesce((v_result #>> '{counts,professionals,created}')::integer, -1) <> 1
+     or coalesce((v_result #>> '{counts,professionals,created}')::integer, -1) <> 0
+     or coalesce((v_result #>> '{counts,professionals,reused}')::integer, -1) <> 1
      or coalesce((v_result #>> '{counts,tags,created}')::integer, -1) <> 2 then
     raise exception 'QA importacao: o resultado da gravacao esta incorreto: %', v_result;
   end if;
@@ -184,7 +195,11 @@ begin
       and pr.import_source_id = 'prospect-one'
       and pr.name like 'Contato importado · %'
       and pr.tags @> array['Aniversario', 'Captados']::text[]
+      and pp.id = v_existing_professional_id
       and pp.name = 'Ana QA'
+      and pp.is_active = true
+      and pp.archived_at is null
+      and pp.archived_by is null
       and pr.returned_at is not null
       and pr.purchased_at is not null
       and pr.purchase_amount = 499.90

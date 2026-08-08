@@ -26,6 +26,12 @@ begin
   end if;
 end $$;
 
+-- O status ativo controla apenas o uso em Prospecções. Arquivamento é a
+-- exclusão lógica definitiva para novos registros, preservando todo histórico.
+alter table public.prospection_professionals
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid references public.app_users(id) on delete set null;
+
 -- Canoniza telefones brasileiros sem depender do modulo WhatsApp. O retorno
 -- contem apenas digitos: DDD+número recebe o prefixo 55; números que já têm
 -- DDI são preservados. A função é imutável para permitir índices funcionais.
@@ -812,17 +818,20 @@ begin
     raise exception 'Valor da compra e OS só podem ser informados na etiqueta Compra.';
   end if;
 
+  -- Mantém apenas o cadastro escolhido estável até o atendimento concluir;
+  -- uma exclusão concorrente aguarda sem bloquear os demais profissionais.
   select pp.* into v_professional
   from public.prospection_professionals pp
   where pp.store_id = v_store_id
     and pp.admin_user_id = v_session.admin_user_id
-    and pp.is_active = true
+    and pp.archived_at is null
     and lower(btrim(pp.name)) = lower(v_professional_name)
   order by pp.created_at
-  limit 1;
+  limit 1
+  for share;
   v_professional_found := found;
   if not v_professional_found then
-    raise exception 'Selecione um profissional ativo cadastrado em Prospecções.';
+    raise exception 'Selecione um profissional cadastrado para esta empresa.';
   end if;
   -- Atendimentos e Prospecções compartilham exatamente o mesmo cadastro de
   -- equipe; o snapshot preserva o nome exibido mesmo se ele mudar no futuro.
@@ -1225,7 +1234,7 @@ begin
   from public.prospection_professionals pp
   where pp.store_id = v_store_id
     and pp.admin_user_id = v_session.admin_user_id
-    and pp.is_active = true;
+    and pp.archived_at is null;
 
   v_metrics := app_private.attendance_metrics_json(v_session.admin_user_id, v_store_id);
   v_recent := app_private.rpc_list_attendances(

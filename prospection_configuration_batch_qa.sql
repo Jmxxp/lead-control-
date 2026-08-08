@@ -25,7 +25,9 @@ declare
   v_tag_cascade_id uuid := gen_random_uuid();
   v_professional_one_id uuid := gen_random_uuid();
   v_professional_two_id uuid := gen_random_uuid();
+  v_professional_delete_id uuid := gen_random_uuid();
   v_prospection_id uuid := gen_random_uuid();
+  v_archived_prospection_id uuid := gen_random_uuid();
 
   v_admin_token text := 'qa-config-admin-' || gen_random_uuid()::text;
   v_agency_token text := 'qa-config-agency-' || gen_random_uuid()::text;
@@ -37,10 +39,13 @@ declare
   v_payload jsonb;
   v_incomplete_payload jsonb;
   v_stale_payload jsonb;
+  v_restore_payload jsonb;
   v_result jsonb;
+  v_restore_result jsonb;
   v_expected_error boolean;
   v_new_category_id uuid;
   v_new_tag_id uuid;
+  v_return_tag_id uuid;
   v_new_professional_id uuid;
 begin
   select id into v_admin_id
@@ -143,22 +148,21 @@ begin
     id, store_id, admin_user_id, name, is_active
   ) values
     (v_professional_one_id, v_store_id, v_admin_id, 'Ana', true),
-    (v_professional_two_id, v_store_id, v_admin_id, 'Bia', true);
+    (v_professional_two_id, v_store_id, v_admin_id, 'Bia', true),
+    (v_professional_delete_id, v_store_id, v_admin_id, 'Daniel', true);
 
   insert into public.prospections (
     id, admin_user_id, store_id, name, probability, tags,
     professional_id, professional_name_snapshot, created_by, updated_by
-  ) values (
-    v_prospection_id,
-    v_admin_id,
-    v_store_id,
-    'Cliente historico QA',
-    'blue',
-    array['Aniversario', 'Etiqueta excluida']::text[],
-    v_professional_one_id,
-    'Ana',
-    v_agency_id,
-    v_agency_id
+  ) values
+  (
+    v_prospection_id, v_admin_id, v_store_id, 'Cliente historico QA', 'blue',
+    array['Aniversario', 'Etiqueta excluida']::text[], v_professional_one_id,
+    'Ana', v_agency_id, v_agency_id
+  ),
+  (
+    v_archived_prospection_id, v_admin_id, v_store_id, 'Cliente do arquivado QA', 'green',
+    array[]::text[], v_professional_delete_id, 'Daniel', v_agency_id, v_agency_id
   );
 
   v_revision := app_private.prospection_configuration_revision(v_store_id);
@@ -240,7 +244,8 @@ begin
       )
     ),
     'deleted_category_ids', jsonb_build_array(v_category_delete_id),
-    'deleted_tag_ids', jsonb_build_array(v_tag_delete_id)
+    'deleted_tag_ids', jsonb_build_array(v_tag_delete_id),
+    'deleted_professional_ids', jsonb_build_array(v_professional_delete_id)
   );
 
   -- Cliente e Agencia alheia nunca podem configurar a loja.
@@ -326,7 +331,8 @@ begin
      or coalesce((v_result #>> '{counts,categories_deleted}')::integer, -1) <> 1
      or coalesce((v_result #>> '{counts,tags_created}')::integer, -1) <> 2
      or coalesce((v_result #>> '{counts,tags_deleted}')::integer, -1) <> 2
-     or coalesce((v_result #>> '{counts,professionals_created}')::integer, -1) <> 1 then
+     or coalesce((v_result #>> '{counts,professionals_created}')::integer, -1) <> 1
+     or coalesce((v_result #>> '{counts,professionals_archived}')::integer, -1) <> 1 then
     raise exception 'QA configuracao: contagens incorretas no resultado: %', v_result;
   end if;
 
@@ -385,8 +391,27 @@ begin
   ) or not exists (
     select 1 from public.prospections
     where id = v_prospection_id and professional_id = v_professional_one_id
+  ) or not exists (
+    select 1 from public.prospection_professionals
+    where id = v_professional_delete_id
+      and is_active = false
+      and archived_at is not null
+      and archived_by = v_agency_id
+  ) or not exists (
+    select 1 from public.prospections
+    where id = v_archived_prospection_id
+      and professional_id = v_professional_delete_id
+      and professional_name_snapshot = 'Daniel'
   ) then
     raise exception 'QA configuracao: profissionais ou seus vinculos historicos foram corrompidos.';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(public.lc_get_prospection_configuration(v_agency_token)->'professionals') item(value)
+    where item.value->>'id' = v_professional_delete_id::text
+  ) then
+    raise exception 'QA configuracao: profissional arquivado continuou visivel na configuracao.';
   end if;
 
   -- Etiquetas historicas sao snapshots imutaveis; configuracao nao reescreve
@@ -403,6 +428,7 @@ begin
 
   v_new_category_id := (v_result->'id_map'->'categories'->>'category-new')::uuid;
   v_new_tag_id := (v_result->'id_map'->'tags'->>'tag-new')::uuid;
+  v_return_tag_id := (v_result->'id_map'->'tags'->>'tag-retorno')::uuid;
   v_new_professional_id := (v_result->'id_map'->'professionals'->>'professional-new')::uuid;
 
   if not exists (
@@ -422,6 +448,79 @@ begin
      or v_result->>'revision' <> app_private.prospection_configuration_revision(v_store_id)
      or v_result->>'revision' = v_revision then
     raise exception 'QA configuracao: a revisao final nao representa o snapshot salvo.';
+  end if;
+
+  -- Recriar um nome arquivado restaura exatamente o mesmo ID. Isso evita
+  -- duplicidade e mantém intactos os vínculos históricos e de bonificação.
+  v_restore_payload := jsonb_build_object(
+    'schema_version', 1,
+    'base_revision', v_result->>'revision',
+    'settings', jsonb_build_object(
+      'daily_goal', 22,
+      'bonus_minimum', 450.50,
+      'bonus_amount', 35.25,
+      'accent_color', '#2463eb',
+      'logo_background_color', '#f4f7fb'
+    ),
+    'categories', jsonb_build_array(
+      jsonb_build_object(
+        'id', v_category_one_id,
+        'name', 'Resultado',
+        'tags', jsonb_build_array(
+          jsonb_build_object('id', v_tag_one_id, 'label', 'Mensagem'),
+          jsonb_build_object('id', v_return_tag_id, 'label', 'Retorno')
+        )
+      ),
+      jsonb_build_object(
+        'id', v_category_two_id,
+        'name', 'Origem',
+        'tags', jsonb_build_array(
+          jsonb_build_object('id', v_tag_two_id, 'label', 'Aniversario')
+        )
+      ),
+      jsonb_build_object(
+        'id', v_new_category_id,
+        'name', 'Nova categoria',
+        'tags', jsonb_build_array(
+          jsonb_build_object('id', v_new_tag_id, 'label', 'Novo marcador')
+        )
+      )
+    ),
+    'professionals', jsonb_build_array(
+      jsonb_build_object('id', v_professional_one_id, 'name', 'Bia', 'is_active', false),
+      jsonb_build_object('id', v_professional_two_id, 'name', 'Ana', 'is_active', true),
+      jsonb_build_object('id', v_new_professional_id, 'name', 'Carla', 'is_active', true),
+      jsonb_build_object(
+        'id', null,
+        'client_key', 'professional-restored',
+        'name', 'Daniel',
+        'is_active', true
+      )
+    ),
+    'deleted_category_ids', '[]'::jsonb,
+    'deleted_tag_ids', '[]'::jsonb,
+    'deleted_professional_ids', '[]'::jsonb
+  );
+
+  v_restore_result := public.lc_save_prospection_configuration(
+    v_agency_token,
+    v_store_id,
+    v_restore_payload
+  );
+
+  if coalesce((v_restore_result #>> '{counts,professionals_created}')::integer, -1) <> 0
+     or coalesce((v_restore_result #>> '{counts,professionals_restored}')::integer, -1) <> 1
+     or (v_restore_result->'id_map'->'professionals'->>'professional-restored')::uuid <> v_professional_delete_id
+     or not exists (
+       select 1
+       from public.prospection_professionals pp
+       where pp.id = v_professional_delete_id
+         and pp.name = 'Daniel'
+         and pp.is_active = true
+         and pp.archived_at is null
+         and pp.archived_by is null
+     ) then
+    raise exception 'QA configuracao: profissional arquivado nao foi restaurado com a mesma identidade: %', v_restore_result;
   end if;
 end;
 $$;
