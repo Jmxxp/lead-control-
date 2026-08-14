@@ -28,20 +28,18 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260808-entitlements-1" />
+    <link rel="stylesheet" href="styles.css?v=20260814-modules-3-1" />
     <link rel="stylesheet" href="marketing.css?v=20260806-attribution-core-4" />
-    <link rel="stylesheet" href="prospections.css?v=20260808-attendance-pipeline-2" />
-    <link rel="stylesheet" href="whatsapp.css?v=20260808-entitlements-1" />
-    <link rel="stylesheet" href="attendances.css?v=20260808-attendance-avatar-1" />
-    <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260808-attendance-pipeline-2" disabled />
-    <link rel="stylesheet" href="mobile.css?v=20260813-date-card-6" />
+    <link rel="stylesheet" href="prospections.css?v=20260814-modules-3-1" />
+    <link rel="stylesheet" href="attendances.css?v=20260814-modules-3-1" />
+    <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260814-modules-3-1" disabled />
+    <link rel="stylesheet" href="mobile.css?v=20260814-modules-3-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260808-config-batch-1" defer></script>
+    <script src="app.js?v=20260814-modules-3-1" defer></script>
     <script src="marketing.js?v=20260806-attribution-core-4" defer></script>
-    <script src="prospections.js?v=20260808-attendance-pipeline-2" defer></script>
-    <script src="whatsapp.js?v=20260808-entitlements-1" defer></script>
-    <script src="attendances.js?v=20260808-professional-lifecycle-1" defer></script>
+    <script src="prospections.js?v=20260814-modules-3-1" defer></script>
+    <script src="attendances.js?v=20260814-modules-3-1" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -98,10 +96,6 @@
           <button id="moduleProspectionsButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="prospectionView" tabindex="-1" data-system-module="prospections">
             <i class="fa-solid fa-phone" aria-hidden="true"></i>
             <span>Prospecções</span>
-          </button>
-          <button id="moduleWhatsAppButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="whatsappView" tabindex="-1" data-system-module="whatsapp">
-            <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
-            <span>WhatsApp</span>
           </button>
           <button id="moduleAttendancesButton" class="module-switcher-button" type="button" role="tab" aria-selected="false" aria-controls="attendanceView" tabindex="-1" data-system-module="attendances">
             <i class="fa-solid fa-clipboard-check" aria-hidden="true"></i>
@@ -370,24 +364,8 @@
             </div>
             <div id="featureCapacitySummary" class="feature-capacity-summary" aria-label="Licenças de recursos premium">
               <span id="prospectionCapacityBadge"><i class="fa-solid fa-phone" aria-hidden="true"></i><b>0 de 0</b> Prospecções + Atendimentos</span>
-              <span id="whatsappCapacityBadge"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><b>0 de 0</b> WhatsApp</span>
             </div>
           </section>
-
-          <form id="agencyContactForm" class="agency-contact-panel" autocomplete="off" hidden>
-            <span class="agency-contact-icon" aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></span>
-            <div class="agency-contact-copy">
-              <span>Contato comercial da agência</span>
-              <strong>WhatsApp para pedidos de upgrade</strong>
-              <small>Pedidos de upgrade de Prospecções, Atendimentos ou WhatsApp chegarão neste número com a empresa e o usuário identificados.</small>
-            </div>
-            <label class="field agency-contact-field">
-              <span>Número com DDD</span>
-              <input id="agencyContactWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required />
-            </label>
-            <button class="primary-button compact-primary" type="submit"><i class="fa-solid fa-check"></i>Salvar WhatsApp</button>
-            <p id="agencyContactMessage" class="form-message" role="status" aria-live="polite"></p>
-          </form>
 
           <section id="adminAnalyticsPanel" class="analytics-panel" aria-label="Análise individual das campanhas" hidden>
             <div class="analytics-toolbar">
@@ -929,12 +907,6 @@
               </label>
 
               <label class="field">
-                <span>WhatsApp comercial</span>
-                <input id="technicianWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required />
-                <small class="field-help">Usado pelos clientes para solicitar upgrade de Prospecções, Atendimentos ou WhatsApp.</small>
-              </label>
-
-              <label class="field">
                 <span>Login da agência</span>
                 <input id="technicianNick" type="text" placeholder="ex: agencia-prime" required />
               </label>
@@ -959,12 +931,6 @@
                 <span>Clientes com Prospecções</span>
                 <input id="technicianProspectionLimit" type="number" min="0" max="9999" step="1" value="0" required />
                 <small class="field-help">Franquia adicional: Prospecções e Atendimentos são liberados juntos para cada cliente.</small>
-              </label>
-
-              <label class="field">
-                <span>Clientes com WhatsApp</span>
-                <input id="technicianWhatsappLimit" type="number" min="0" max="9999" step="1" value="0" required />
-                <small class="field-help">Quantidade de clientes que poderão usar a integração oficial do WhatsApp.</small>
               </label>
 
               <div class="field avatar-field">
@@ -1380,16 +1346,6 @@
             </div>
           </div>
         </section>
-        <section id="whatsappView" class="whatsapp-view" role="tabpanel" aria-labelledby="moduleWhatsAppButton" hidden>
-          <div class="whatsapp-loading-card" role="status">
-            <span class="whatsapp-loading-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-            <div>
-              <p class="eyebrow">WhatsApp Business</p>
-              <h2>Preparando a central de comunicação</h2>
-              <span>Carregando conexões, conversas e permissões da empresa.</span>
-            </div>
-          </div>
-        </section>
         <section id="attendanceView" class="attendance-view" role="tabpanel" aria-labelledby="moduleAttendancesButton" hidden>
           <div class="attendance-loading-card" role="status">
             <span class="attendance-loading-icon"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i></span>
@@ -1639,12 +1595,6 @@
             <input id="managedAccountName" type="text" placeholder="Nome" required />
           </label>
 
-          <label id="managedAccountWhatsappField" class="field" hidden>
-            <span>WhatsApp comercial da agência</span>
-            <input id="managedAccountWhatsapp" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" />
-            <small class="field-help">Recebe os pedidos de upgrade já identificados pelo cliente.</small>
-          </label>
-
           <label id="managedAccountTechnicianField" class="field" hidden>
             <span>Agência responsável</span>
             <select id="managedAccountTechnician">
@@ -1680,12 +1630,6 @@
             <small id="managedAccountProspectionLimitHelp" class="field-help">Prospecções e Atendimentos usam a mesma licença. Ao reduzir o plano, novas liberações ficam bloqueadas enquanto houver excesso.</small>
           </label>
 
-          <label id="managedAccountWhatsappLimitField" class="field" hidden>
-            <span>Clientes com WhatsApp</span>
-            <input id="managedAccountWhatsappLimit" type="number" min="0" max="9999" step="1" />
-            <small id="managedAccountWhatsappLimitHelp" class="field-help">Defina quantos clientes desta agência podem usar a API Oficial do WhatsApp.</small>
-          </label>
-
           <div id="managedAccountProspectionField" class="feature-access-card" hidden>
             <div class="feature-access-copy">
               <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
@@ -1701,53 +1645,10 @@
             </label>
           </div>
 
-          <div id="managedAccountWhatsappAccessField" class="feature-access-card is-whatsapp" hidden>
-            <div class="feature-access-copy">
-              <span class="feature-access-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-              <div>
-                <strong>WhatsApp Business Oficial</strong>
-                <span id="managedAccountWhatsappAccessHelp">Libere a central oficial de conversas para este cliente.</span>
-              </div>
-            </div>
-            <label class="feature-access-toggle">
-              <input id="managedAccountWhatsappAccess" type="checkbox" />
-              <span aria-hidden="true"></span>
-              <em id="managedAccountWhatsappAccessStatus">Ativo</em>
-            </label>
-          </div>
-
           <p id="managedAccountMessage" class="form-message" role="status" aria-live="polite"></p>
           <div class="modal-actions">
             <button class="ghost-button" type="button" id="managedAccountCancel">Cancelar</button>
             <button class="primary-button compact-primary" type="submit">Salvar alterações</button>
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <div id="agencyWhatsappModal" class="modal-backdrop agency-whatsapp-backdrop" hidden>
-      <section class="modal-dialog agency-whatsapp-dialog" role="dialog" aria-modal="true" aria-labelledby="agencyWhatsappTitle">
-        <div class="agency-whatsapp-hero">
-          <span aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></span>
-          <div>
-            <p class="eyebrow">Contato obrigatório</p>
-            <h2 id="agencyWhatsappTitle">Cadastre o WhatsApp da agência</h2>
-            <p>Seus clientes usarão este número para pedir upgrades de Prospecções, Atendimentos ou WhatsApp com uma mensagem pronta e identificada.</p>
-          </div>
-        </div>
-        <form id="agencyWhatsappForm" class="account-form" autocomplete="off">
-          <label class="field">
-            <span>WhatsApp comercial com DDD</span>
-            <input id="agencyWhatsappInput" type="tel" inputmode="tel" maxlength="20" placeholder="(19) 99999-9999" required autofocus />
-          </label>
-          <div class="agency-whatsapp-preview">
-            <i class="fa-solid fa-message"></i>
-            <span>O pedido informará o nome da empresa, o responsável logado e o login da conta.</span>
-          </div>
-          <p id="agencyWhatsappMessage" class="form-message" role="alert" aria-live="polite"></p>
-          <div class="modal-actions">
-            <button id="agencyWhatsappLogout" class="ghost-button" type="button">Sair</button>
-            <button class="primary-button compact-primary" type="submit"><i class="fa-brands fa-whatsapp"></i>Salvar e continuar</button>
           </div>
         </form>
       </section>

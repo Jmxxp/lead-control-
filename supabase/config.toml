@@ -9,12 +9,3 @@ verify_jwt = false
 
 [functions.marketing-worker]
 verify_jwt = false
-
-[functions.whatsapp-api]
-verify_jwt = false
-
-[functions.whatsapp-webhook]
-verify_jwt = false
-
-[functions.whatsapp-worker]
-verify_jwt = false

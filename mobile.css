@@ -18,7 +18,6 @@ body,
 .admin-view,
 #storeView,
 .prospection-view,
-.whatsapp-view,
 .attendance-view {
   min-width: 0;
 }
@@ -80,7 +79,6 @@ video {
     #appView,
     .modal-backdrop,
     .prospection-view,
-    .whatsapp-view,
     .attendance-view
   ) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
     max-width: 100%;
@@ -98,12 +96,6 @@ video {
     display: grid !important;
   }
 
-  .whatsapp-view .wa-header-identity > div > span,
-  .whatsapp-view .wa-connection-status,
-  .whatsapp-view :is(.wa-event-row, .wa-log-row, .wa-webhook-row) time,
-  .whatsapp-view .wa-webhook-row .wa-event-meta {
-    display: inline-flex;
-  }
 }
 
 @media (max-width: 720px) {
@@ -356,7 +348,7 @@ video {
   #appView .module-switcher,
   body #appView .module-switcher {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     gap: 3px;
     min-width: 0;
     padding: 3px;
@@ -402,7 +394,6 @@ video {
     #appView,
     .modal-backdrop,
     .prospection-view,
-    .whatsapp-view,
     .attendance-view
   ) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
     width: 100%;
@@ -416,7 +407,6 @@ video {
     #appView,
     .modal-backdrop,
     .prospection-view,
-    .whatsapp-view,
     .attendance-view
   ) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select) {
     min-height: var(--mobile-control);
@@ -570,18 +560,6 @@ video {
     .prospection-record-card,
     .attendance-metric,
     .attendance-record
-  ),
-  .whatsapp-view :where(
-    .wa-card,
-    .wa-campaign-card,
-    .wa-connection-card,
-    .wa-contact-card,
-    .wa-data-card,
-    .wa-metric-card,
-    .wa-security-card,
-    .wa-settings-card,
-    .wa-stat-card,
-    .wa-template-card
   ) {
     border-radius: var(--mobile-radius);
   }
@@ -716,7 +694,7 @@ video {
 
   .feature-capacity-summary {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 5px;
     padding-top: 8px;
   }
@@ -725,22 +703,6 @@ video {
     min-height: 30px;
     padding: 4px 7px;
     font-size: 0.6rem;
-  }
-
-  .agency-contact-panel {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 11px;
-  }
-
-  .agency-contact-field,
-  .agency-contact-panel > .form-message {
-    grid-column: 1 / -1;
-  }
-
-  .agency-contact-panel > .primary-button {
-    grid-column: auto;
-    width: auto;
   }
 
   .backup-hero,
@@ -988,9 +950,8 @@ video {
     grid-template-areas:
       "heading heading"
       "name login"
-      "phone password"
-      "store-limit prospect-limit"
-      "whatsapp-limit whatsapp-limit"
+      "password store-limit"
+      "prospect-limit prospect-limit"
       "avatar avatar"
       "message message"
       "submit submit";
@@ -998,12 +959,10 @@ video {
 
   #technicianForm > .panel-heading { grid-area: heading; }
   #technicianForm > .field:has(#technicianName) { grid-area: name; }
-  #technicianForm > .field:has(#technicianWhatsapp) { grid-area: phone; }
   #technicianForm > .field:has(#technicianNick) { grid-area: login; }
   #technicianForm > .field:has(#technicianPassword) { grid-area: password; }
   #technicianForm > .field:has(#technicianStoreLimit) { grid-area: store-limit; }
   #technicianForm > .field:has(#technicianProspectionLimit) { grid-area: prospect-limit; }
-  #technicianForm > .field:has(#technicianWhatsappLimit) { grid-area: whatsapp-limit; }
   #technicianForm > .avatar-field { grid-area: avatar; }
   #technicianForm > .form-message { grid-area: message; }
   #technicianForm > button[type="submit"] { grid-area: submit; }
@@ -1443,249 +1402,6 @@ video {
     max-width: none;
     max-height: calc(100dvh - 16px);
     border-radius: 10px;
-  }
-
-  /* WhatsApp: cabecalho em duas linhas compactas e tabelas preservadas. */
-  .whatsapp-view .wa-shell {
-    --wa-radius-xl: 10px;
-    --wa-radius-lg: 8px;
-    --wa-radius-md: 8px;
-    --wa-radius-sm: 7px;
-    min-height: 0;
-    border-radius: var(--mobile-radius);
-  }
-
-  .whatsapp-view .wa-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 7px;
-    min-height: 0;
-    padding: 9px;
-  }
-
-  .whatsapp-view .wa-header-identity {
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .whatsapp-view .wa-brand-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    font-size: 1rem;
-  }
-
-  .whatsapp-view .wa-header-identity h2 {
-    font-size: 1rem;
-  }
-
-  .whatsapp-view .wa-header-identity > div > span {
-    display: block;
-    width: 100%;
-    margin-top: 2px;
-    overflow: hidden;
-    font-size: 0.6rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .whatsapp-view .wa-header-actions {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-    gap: 5px;
-    width: 100%;
-    max-width: none;
-  }
-
-  .whatsapp-view .wa-header-actions > :nth-child(1),
-  .whatsapp-view .wa-header-actions > :nth-child(2) {
-    grid-column: span 3;
-  }
-
-  .whatsapp-view .wa-header-actions > :nth-child(3) {
-    grid-column: span 3;
-  }
-
-  .whatsapp-view .wa-header-actions > :nth-child(4) {
-    grid-column: span 1;
-  }
-
-  .whatsapp-view .wa-header-actions > :nth-child(5) {
-    grid-column: span 2;
-  }
-
-  .whatsapp-view .wa-header-actions > :where(.wa-store-selector, .wa-connection-selector, .wa-store-fixed, .wa-connection-status) {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
-  }
-
-  .whatsapp-view .wa-store-selector {
-    gap: 2px;
-  }
-
-  .whatsapp-view .wa-store-selector > span {
-    font-size: 0.5rem;
-  }
-
-  .whatsapp-view .wa-store-selector select,
-  .whatsapp-view .wa-store-fixed,
-  .whatsapp-view .wa-connection-status,
-  .whatsapp-view .wa-header-actions > :where(.wa-icon-button, .wa-button) {
-    min-height: 36px !important;
-    height: 36px;
-    padding-inline: 8px;
-    font-size: 0.63rem !important;
-  }
-
-  .whatsapp-view .wa-header-actions > :where(.wa-icon-button, .wa-button) {
-    width: 100% !important;
-  }
-
-  .whatsapp-view .wa-header-actions > .wa-button i {
-    font-size: 0.65rem !important;
-  }
-
-  .whatsapp-view .wa-navigation {
-    position: sticky;
-    top: 0;
-    z-index: 8;
-    padding: 5px 7px;
-    background: color-mix(in srgb, var(--wa-panel) 94%, transparent);
-    backdrop-filter: blur(18px);
-  }
-
-  .whatsapp-view .wa-nav-button {
-    min-height: 34px;
-    font-size: 0.62rem;
-  }
-
-  .whatsapp-view .wa-content,
-  .whatsapp-view .wa-section {
-    padding: 8px;
-  }
-
-  .whatsapp-view .wa-section-heading {
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .whatsapp-view .wa-section-heading > div:first-child {
-    flex: 1 1 150px;
-  }
-
-  .whatsapp-view .wa-heading-actions,
-  .whatsapp-view .wa-toolbar-group,
-  .whatsapp-view .wa-toolbar-actions,
-  .whatsapp-view .wa-filter-group {
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 5px;
-    width: auto;
-  }
-
-  .whatsapp-view .wa-heading-actions .wa-button {
-    width: auto;
-  }
-
-  .whatsapp-view .wa-toolbar {
-    display: flex;
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .whatsapp-view .wa-search {
-    flex: 1 1 180px;
-  }
-
-  .whatsapp-view .wa-filter-control,
-  .whatsapp-view .wa-filter-control select {
-    width: auto;
-    min-width: 108px;
-  }
-
-  .whatsapp-view .wa-metrics,
-  .whatsapp-view .wa-metric-grid,
-  .whatsapp-view .wa-stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .whatsapp-view .wa-metric,
-  .whatsapp-view .wa-metric-card {
-    min-height: 72px;
-    padding: 9px;
-  }
-
-  .whatsapp-view .wa-table-wrap {
-    overflow-x: auto !important;
-    border: 1px solid var(--wa-line) !important;
-    background: var(--wa-panel) !important;
-    overscroll-behavior-x: contain;
-  }
-
-  .whatsapp-view .wa-table {
-    display: table !important;
-    width: max-content !important;
-    min-width: 100% !important;
-  }
-
-  .whatsapp-view .wa-table thead {
-    display: table-header-group !important;
-  }
-
-  .whatsapp-view .wa-table tbody {
-    display: table-row-group !important;
-  }
-
-  .whatsapp-view .wa-table tr {
-    display: table-row !important;
-    width: auto !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-
-  .whatsapp-view .wa-table th,
-  .whatsapp-view .wa-table td,
-  .whatsapp-view .wa-table tbody tr > td {
-    display: table-cell !important;
-    width: auto !important;
-    min-width: 112px;
-    padding: 8px 9px !important;
-    border-bottom: 1px solid var(--wa-line) !important;
-    white-space: nowrap !important;
-  }
-
-  .whatsapp-view .wa-table tbody tr > td::before {
-    display: none !important;
-    content: none !important;
-  }
-
-  .whatsapp-view .wa-chat-actions,
-  .whatsapp-view .wa-composer-tools {
-    display: flex;
-    overflow-x: auto;
-  }
-
-  .whatsapp-view .wa-chat-actions .wa-icon-button:nth-child(2),
-  .whatsapp-view .wa-composer-tools .wa-icon-button:nth-child(1) {
-    display: inline-grid;
-  }
-
-  .whatsapp-view .wa-conversation-workspace {
-    grid-template-rows: minmax(240px, 36dvh) minmax(470px, 66dvh);
-  }
-
-  .whatsapp-view .wa-chat {
-    min-height: 470px;
   }
 
   /* Atendimentos. */
