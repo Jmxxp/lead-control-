@@ -538,7 +538,7 @@
           </label>
           <label class="attendance-field">
             <span>Telefone <b>*</b></span>
-            <span class="attendance-input-wrap"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><input name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${escapeHtml(draft.phone || "")}" required /></span>
+            <span class="attendance-input-wrap"><i class="fa-solid fa-phone" aria-hidden="true"></i><input name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${escapeHtml(draft.phone || "")}" required /></span>
             <small>Usado para encontrar Lead e Prospecção.</small>
           </label>
           <label class="attendance-field attendance-field--wide">

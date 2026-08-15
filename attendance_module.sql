@@ -32,7 +32,7 @@ alter table public.prospection_professionals
   add column if not exists archived_at timestamptz,
   add column if not exists archived_by uuid references public.app_users(id) on delete set null;
 
--- Canoniza telefones brasileiros sem depender do modulo WhatsApp. O retorno
+-- Canoniza telefones brasileiros para vincular registros entre os modulos. O retorno
 -- contem apenas digitos: DDD+número recebe o prefixo 55; números que já têm
 -- DDI são preservados. A função é imutável para permitir índices funcionais.
 create or replace function app_private.attendance_normalize_phone(p_value text)

@@ -76,8 +76,6 @@ let legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pendin
 let pendingLegalTerms = null;
 let legalTermsGateResolve = null;
 let legalTermsRecheckInFlight = false;
-let agencyWhatsappGateResolve = null;
-let agencyWhatsappContext = null;
 let legalSignatureHasInk = false;
 let legalSignatureDrawing = false;
 let currentLegalDocument = null;
@@ -134,12 +132,10 @@ const appView = $("#appView");
 const adminView = $("#adminView");
 const storeView = $("#storeView");
 const prospectionView = $("#prospectionView");
-const whatsappView = $("#whatsappView");
 const attendanceView = $("#attendanceView");
 const appMainTitle = $("#appMainTitle");
 const moduleLeadsButton = $("#moduleLeadsButton");
 const moduleProspectionsButton = $("#moduleProspectionsButton");
-const moduleWhatsAppButton = $("#moduleWhatsAppButton");
 const moduleAttendancesButton = $("#moduleAttendancesButton");
 const moduleSwitcher = $("#moduleSwitcher");
 const sessionRole = $("#sessionRole");
@@ -168,12 +164,10 @@ const technicianForm = $("#technicianForm");
 const technicianName = $("#technicianName");
 const technicianNick = $("#technicianNick");
 const technicianPassword = $("#technicianPassword");
-const technicianWhatsapp = $("#technicianWhatsapp");
 const technicianAvatar = $("#technicianAvatar");
 const technicianAvatarPreview = $("#technicianAvatarPreview");
 const technicianStoreLimit = $("#technicianStoreLimit");
 const technicianProspectionLimit = $("#technicianProspectionLimit");
-const technicianWhatsappLimit = $("#technicianWhatsappLimit");
 const technicianMessage = $("#technicianMessage");
 const technicianEmptyState = $("#technicianEmptyState");
 const technicianList = $("#technicianList");
@@ -204,8 +198,6 @@ const managedAccountType = $("#managedAccountType");
 const managedAccountId = $("#managedAccountId");
 const managedAccountName = $("#managedAccountName");
 const managedAccountNameLabel = $("#managedAccountNameLabel");
-const managedAccountWhatsappField = $("#managedAccountWhatsappField");
-const managedAccountWhatsapp = $("#managedAccountWhatsapp");
 const managedAccountTechnicianField = $("#managedAccountTechnicianField");
 const managedAccountTechnician = $("#managedAccountTechnician");
 const managedAccountNick = $("#managedAccountNick");
@@ -221,22 +213,7 @@ const managedAccountProspectionField = $("#managedAccountProspectionField");
 const managedAccountProspectionAccess = $("#managedAccountProspectionAccess");
 const managedAccountProspectionHelp = $("#managedAccountProspectionHelp");
 const managedAccountProspectionStatus = $("#managedAccountProspectionStatus");
-const managedAccountWhatsappLimitField = $("#managedAccountWhatsappLimitField");
-const managedAccountWhatsappLimit = $("#managedAccountWhatsappLimit");
-const managedAccountWhatsappLimitHelp = $("#managedAccountWhatsappLimitHelp");
-const managedAccountWhatsappAccessField = $("#managedAccountWhatsappAccessField");
-const managedAccountWhatsappAccess = $("#managedAccountWhatsappAccess");
-const managedAccountWhatsappAccessHelp = $("#managedAccountWhatsappAccessHelp");
-const managedAccountWhatsappAccessStatus = $("#managedAccountWhatsappAccessStatus");
 const managedAccountMessage = $("#managedAccountMessage");
-const agencyContactForm = $("#agencyContactForm");
-const agencyContactWhatsapp = $("#agencyContactWhatsapp");
-const agencyContactMessage = $("#agencyContactMessage");
-const agencyWhatsappModal = $("#agencyWhatsappModal");
-const agencyWhatsappForm = $("#agencyWhatsappForm");
-const agencyWhatsappInput = $("#agencyWhatsappInput");
-const agencyWhatsappMessage = $("#agencyWhatsappMessage");
-const agencyWhatsappLogout = $("#agencyWhatsappLogout");
 const clientCapacityPanel = $("#clientCapacityPanel");
 const clientCapacityEyebrow = $("#clientCapacityEyebrow");
 const clientCapacityTitle = $("#clientCapacityTitle");
@@ -245,7 +222,6 @@ const clientCapacityProgress = $("#clientCapacityProgress");
 const clientCapacityPercent = $("#clientCapacityPercent");
 const featureCapacitySummary = $("#featureCapacitySummary");
 const prospectionCapacityBadge = $("#prospectionCapacityBadge");
-const whatsappCapacityBadge = $("#whatsappCapacityBadge");
 const totalStoresLabel = $("#totalStoresLabel");
 const totalStoresHint = $("#totalStoresHint");
 const storeListTitle = $("#storeListTitle");
@@ -547,7 +523,6 @@ function bindEvents() {
   loginForm.addEventListener("submit", handleLogin);
   moduleLeadsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("leads")));
   moduleProspectionsButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("prospections")));
-  moduleWhatsAppButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("whatsapp")));
   moduleAttendancesButton.addEventListener("click", () => guardUnsavedOptions(() => setSystemModule("attendances")));
   moduleSwitcher.addEventListener("keydown", handleModuleSwitcherKeydown);
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
@@ -571,33 +546,13 @@ function bindEvents() {
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountProspectionToggle();
   });
-  managedAccountWhatsappAccess?.addEventListener("change", () => {
-    syncManagedStoreEntitlementQuotas();
-    syncManagedAccountWhatsappToggle();
-  });
   managedAccountTechnician?.addEventListener("change", () => {
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountProspectionToggle();
-    syncManagedAccountWhatsappToggle();
-  });
-  managedAccountWhatsapp?.addEventListener("input", () => {
-    managedAccountWhatsapp.value = formatWhatsAppInput(managedAccountWhatsapp.value);
   });
   storeForm.addEventListener("submit", handleCreateStore);
   storeTechnician.addEventListener("input", syncStoreCreationAvailability);
   technicianForm.addEventListener("submit", handleCreateTechnician);
-  technicianWhatsapp?.addEventListener("input", () => {
-    technicianWhatsapp.value = formatWhatsAppInput(technicianWhatsapp.value);
-  });
-  agencyContactWhatsapp?.addEventListener("input", () => {
-    agencyContactWhatsapp.value = formatWhatsAppInput(agencyContactWhatsapp.value);
-  });
-  agencyWhatsappInput?.addEventListener("input", () => {
-    agencyWhatsappInput.value = formatWhatsAppInput(agencyWhatsappInput.value);
-  });
-  agencyContactForm?.addEventListener("submit", handleAgencyContactSubmit);
-  agencyWhatsappForm?.addEventListener("submit", handleRequiredAgencyWhatsappSubmit);
-  agencyWhatsappLogout?.addEventListener("click", handleAgencyWhatsappLogout);
   adminAccountForm.addEventListener("submit", handleAdminAccountSubmit);
   storeOptionsList.addEventListener("click", handleOptionsEditorClick);
   storeOptionsList.addEventListener("input", handleOptionsEditorInput);
@@ -942,9 +897,6 @@ async function openProfile(profile) {
   if (!legalAccessGranted) return;
   appView.hidden = false;
   await refreshRemoteState();
-  const agencyContactReady = await ensureAgencyWhatsappRegistration();
-  if (!agencyContactReady) return;
-  appView.hidden = false;
 
   if (["admin", "technician"].includes(profile.role)) {
     await refreshCentralAiSettings({ silent: true });
@@ -960,7 +912,7 @@ async function openProfile(profile) {
   }
 
   const preferredModule = localStorage.getItem(getSystemModuleStorageKey()) || "leads";
-  if (["prospections", "whatsapp", "attendances"].includes(preferredModule)) {
+  if (["prospections", "attendances"].includes(preferredModule)) {
     await setSystemModule(preferredModule, { persist: false });
   } else {
     updateSystemModuleControls();
@@ -1033,7 +985,6 @@ async function recheckLegalTermsForActiveSession() {
     || !authScreen.hidden
     || !legalTermsModal?.hidden
     || legalTermsGateResolve
-    || !agencyWhatsappModal?.hidden
   ) return;
 
   legalTermsRecheckInFlight = true;
@@ -1046,91 +997,6 @@ async function recheckLegalTermsForActiveSession() {
   } finally {
     legalTermsRecheckInFlight = false;
   }
-}
-
-function getAgencyWhatsappValue() {
-  return String(
-    agencyWhatsappContext?.profile?.agency_whatsapp
-      || currentProfile?.agencyWhatsapp
-      || "",
-  );
-}
-
-function ensureAgencyWhatsappRegistration() {
-  if (currentProfile?.role !== "technician" || !agencyWhatsappContext) return true;
-  if (isValidWhatsAppNumber(getAgencyWhatsappValue())) return true;
-
-  appView.hidden = true;
-  agencyWhatsappForm.reset();
-  agencyWhatsappInput.value = "";
-  agencyWhatsappMessage.textContent = "";
-  agencyWhatsappModal.hidden = false;
-  syncModalLock();
-  requestAnimationFrame(() => agencyWhatsappInput.focus());
-
-  return new Promise((resolve) => {
-    agencyWhatsappGateResolve = resolve;
-  });
-}
-
-async function saveAgencyWhatsapp(value, technicianId = null) {
-  if (!isValidWhatsAppNumber(value)) {
-    throw new Error("Informe um WhatsApp válido com DDD.");
-  }
-  const args = { p_whatsapp: value };
-  if (technicianId) args.p_technician_id = technicianId;
-  const result = firstRow(await authenticatedRpc("lc_set_agency_whatsapp", args));
-  const normalized = String(result?.whatsapp || normalizeWhatsAppNumber(value));
-  currentProfile.agencyWhatsapp = normalized;
-  if (agencyWhatsappContext?.profile && currentProfile.role === "technician") {
-    agencyWhatsappContext.profile.agency_whatsapp = normalized;
-  }
-  if (accountUsage && currentProfile.role === "technician") accountUsage.whatsappPhone = normalized;
-  return normalized;
-}
-
-async function handleRequiredAgencyWhatsappSubmit(event) {
-  event.preventDefault();
-  agencyWhatsappMessage.textContent = "";
-  try {
-    setFormBusy(agencyWhatsappForm, true);
-    await saveAgencyWhatsapp(agencyWhatsappInput.value);
-    agencyWhatsappModal.hidden = true;
-    syncModalLock();
-    const resolveGate = agencyWhatsappGateResolve;
-    agencyWhatsappGateResolve = null;
-    resolveGate?.(true);
-  } catch (error) {
-    agencyWhatsappMessage.textContent = readableError(error);
-  } finally {
-    setFormBusy(agencyWhatsappForm, false);
-  }
-}
-
-async function handleAgencyContactSubmit(event) {
-  event.preventDefault();
-  agencyContactMessage.textContent = "";
-  try {
-    setFormBusy(agencyContactForm, true);
-    const normalized = await saveAgencyWhatsapp(agencyContactWhatsapp.value);
-    agencyContactWhatsapp.value = formatWhatsAppInput(normalized);
-    agencyContactMessage.textContent = "WhatsApp atualizado. Seus clientes já podem solicitar o upgrade por aqui.";
-    agencyContactMessage.classList.add("success");
-  } catch (error) {
-    agencyContactMessage.classList.remove("success");
-    agencyContactMessage.textContent = readableError(error);
-  } finally {
-    setFormBusy(agencyContactForm, false);
-  }
-}
-
-async function handleAgencyWhatsappLogout() {
-  agencyWhatsappModal.hidden = true;
-  syncModalLock();
-  const resolveGate = agencyWhatsappGateResolve;
-  agencyWhatsappGateResolve = null;
-  resolveGate?.(false);
-  await handleLogout();
 }
 
 function renderLegalTermsMarkup(content) {
@@ -1409,11 +1275,9 @@ function showAuth() {
   closeManagedAccountModal();
   closeAiChat();
   window.ProspectionsModule?.deactivate?.();
-  window.WhatsAppModule?.deactivate?.();
   window.AttendancesModule?.resetSession?.();
   activeSystemModule = "leads";
   setProspectionVisualMode(false);
-  setWhatsAppVisualMode(false);
   setAttendanceVisualMode(false);
   leadModuleSnapshot = null;
   attendanceStoreSelectionId = "";
@@ -1423,13 +1287,9 @@ function showAuth() {
   adminView.hidden = true;
   storeView.hidden = true;
   prospectionView.hidden = true;
-  whatsappView.hidden = true;
   attendanceView.hidden = true;
   if (legalTermsModal) legalTermsModal.hidden = true;
   if (legalDocumentModal) legalDocumentModal.hidden = true;
-  if (agencyWhatsappModal) agencyWhatsappModal.hidden = true;
-  agencyWhatsappContext = null;
-  agencyWhatsappGateResolve = null;
   pendingLegalTerms = null;
   legalTermsModal?.classList.remove("is-unavailable");
   if (legalTermsRetry) legalTermsRetry.hidden = true;
@@ -1447,7 +1307,7 @@ function getSystemModuleStorageKey() {
 
 function handleModuleSwitcherKeydown(event) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const buttons = [moduleLeadsButton, moduleProspectionsButton, moduleWhatsAppButton, moduleAttendancesButton]
+  const buttons = [moduleLeadsButton, moduleProspectionsButton, moduleAttendancesButton]
     .filter((button) => !button.disabled);
   if (!buttons.length) return;
   const currentIndex = Math.max(0, buttons.indexOf(document.activeElement));
@@ -1464,37 +1324,26 @@ function handleModuleSwitcherKeydown(event) {
 function updateSystemModuleControls() {
   const isLeads = activeSystemModule === "leads";
   const isProspections = activeSystemModule === "prospections";
-  const isWhatsApp = activeSystemModule === "whatsapp";
   const isAttendances = activeSystemModule === "attendances";
   const prospectionsAllowed = canUseProspections();
-  const whatsappAllowed = canUseWhatsApp();
   moduleLeadsButton.classList.toggle("is-active", isLeads);
   moduleProspectionsButton.classList.toggle("is-active", isProspections);
-  moduleWhatsAppButton.classList.toggle("is-active", isWhatsApp);
   moduleAttendancesButton.classList.toggle("is-active", isAttendances);
   moduleProspectionsButton.classList.toggle("is-locked", !prospectionsAllowed);
-  moduleWhatsAppButton.classList.toggle("is-locked", !whatsappAllowed);
   moduleAttendancesButton.classList.toggle("is-locked", !prospectionsAllowed);
   moduleProspectionsButton.disabled = !currentProfile;
-  moduleWhatsAppButton.disabled = !currentProfile;
   moduleAttendancesButton.disabled = !currentProfile;
   moduleLeadsButton.setAttribute("aria-selected", String(isLeads));
   moduleProspectionsButton.setAttribute("aria-selected", String(isProspections));
-  moduleWhatsAppButton.setAttribute("aria-selected", String(isWhatsApp));
   moduleAttendancesButton.setAttribute("aria-selected", String(isAttendances));
   moduleLeadsButton.tabIndex = isLeads ? 0 : -1;
   moduleProspectionsButton.tabIndex = isProspections ? 0 : -1;
-  moduleWhatsAppButton.tabIndex = isWhatsApp ? 0 : -1;
   moduleAttendancesButton.tabIndex = isAttendances ? 0 : -1;
   moduleProspectionsButton.setAttribute("aria-disabled", "false");
-  moduleWhatsAppButton.setAttribute("aria-disabled", String(!currentProfile));
   moduleAttendancesButton.setAttribute("aria-disabled", String(!currentProfile));
   moduleProspectionsButton.title = prospectionsAllowed
     ? "Abrir Prospecções"
     : "Conhecer Prospecções e solicitar upgrade";
-  moduleWhatsAppButton.title = whatsappAllowed
-    ? "Abrir WhatsApp Business"
-    : "WhatsApp ainda não está liberado para este cliente";
   moduleAttendancesButton.title = prospectionsAllowed
     ? "Registrar e acompanhar atendimentos"
     : "Atendimentos é liberado junto com Prospecções";
@@ -1509,30 +1358,11 @@ function canUseProspections() {
   return Boolean(profileStore?.prospectionEnabled ?? currentProfile.prospectionEnabled);
 }
 
-function canUseWhatsApp() {
-  if (!currentProfile) return false;
-  if (["admin", "technician"].includes(currentProfile.role)) {
-    if (activeStoreContext) return activeStoreContext.whatsappEnabled === true;
-    const scopedStores = currentProfile.role === "technician"
-      ? stores.filter((store) => store.technicianId === currentProfile.id)
-      : activeTechnicianContext
-        ? stores.filter((store) => store.technicianId === activeTechnicianContext.id)
-        : stores;
-    return scopedStores.some((store) => store.whatsappEnabled === true);
-  }
-  const profileStore = stores.find((store) => store.id === currentProfile.storeId);
-  return Boolean(profileStore?.whatsappEnabled ?? currentProfile.whatsappEnabled);
-}
-
 function setProspectionVisualMode(enabled, operation = false) {
   const stylesheet = document.querySelector("#prospecOriginalStyles");
   if (stylesheet) stylesheet.disabled = !(enabled && operation);
   document.body.classList.toggle("is-prospections-module", enabled);
   document.body.classList.toggle("is-prospections-operation", enabled && operation);
-}
-
-function setWhatsAppVisualMode(enabled) {
-  document.body.classList.toggle("is-whatsapp-module", enabled);
 }
 
 function setAttendanceVisualMode(enabled) {
@@ -1565,15 +1395,7 @@ function restoreLeadModuleSnapshot() {
 
 async function setSystemModule(moduleName, { persist = true } = {}) {
   if (!currentProfile) return;
-  const nextModule = ["leads", "prospections", "whatsapp", "attendances"].includes(moduleName) ? moduleName : "leads";
-
-  if (nextModule === "whatsapp" && !canUseWhatsApp()) {
-    if (currentProfile.role !== "store" && activeStoreContext) {
-      showAppNotification("O WhatsApp Business não está liberado para este cliente. Ative uma licença no gerenciamento de acessos.", "warning");
-      updateSystemModuleControls();
-      return;
-    }
-  }
+  const nextModule = ["leads", "prospections", "attendances"].includes(moduleName) ? moduleName : "leads";
 
   if (nextModule === "attendances" && !canUseProspections()) {
     if (currentProfile.role === "store") {
@@ -1596,11 +1418,6 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     return;
   }
 
-  if (nextModule === "whatsapp" && !window.WhatsAppModule?.activate) {
-    showAppNotification("O módulo WhatsApp não foi carregado. Atualize a página.", "error");
-    return;
-  }
-
   if (nextModule === "attendances" && !window.AttendancesModule?.activate) {
     showAppNotification("O módulo de Atendimentos não foi carregado. Atualize a página.", "error");
     return;
@@ -1619,13 +1436,10 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
   }
 
   window.ProspectionsModule?.deactivate?.();
-  window.WhatsAppModule?.deactivate?.();
   window.AttendancesModule?.deactivate?.();
   prospectionView.hidden = true;
-  whatsappView.hidden = true;
   attendanceView.hidden = true;
   setProspectionVisualMode(false);
-  setWhatsAppVisualMode(false);
   setAttendanceVisualMode(false);
 
   if (nextModule === "prospections") {
@@ -1664,53 +1478,6 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
       renderCurrentSessionAvatar();
     } catch (error) {
       window.ProspectionsModule?.renderFatalError?.(readableError(error));
-      showAppNotification(readableError(error), "error");
-    }
-  } else if (nextModule === "whatsapp") {
-    setWhatsAppVisualMode(true);
-    activeSystemModule = "whatsapp";
-    updateSystemModuleControls();
-    appMainTitle.textContent = "WhatsApp Business";
-    adminView.hidden = true;
-    storeView.hidden = true;
-    whatsappView.hidden = false;
-    appointmentMonitorToggle.hidden = true;
-    appointmentMonitorPanel.hidden = true;
-    backAdminButton.hidden = true;
-    settingsButton.hidden = true;
-    closeAiChat();
-
-    try {
-      await window.WhatsAppModule.activate({
-        profile: { ...currentProfile },
-        stores: stores.map((store) => ({ ...store })),
-        agencies: technicians.map((technician) => ({ ...technician })),
-        whatsappAccessGranted: canUseWhatsApp(),
-        initialStoreId: activeStoreContext?.id || currentProfile.storeId || "",
-        initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
-        rpc: authenticatedRpc,
-        edge: callWhatsAppEdge,
-        upload: callWhatsAppUpload,
-        download: callWhatsAppDownload,
-        notify: showAppNotification,
-        supabaseUrl: SUPABASE_URL,
-        onAccessRevoked: (storeId) => {
-          const store = stores.find((item) => item.id === storeId);
-          if (store) store.whatsappEnabled = false;
-          if (currentProfile.role === "store" && currentProfile.storeId === storeId) currentProfile.whatsappEnabled = false;
-          if (activeStoreContext?.id === storeId) activeStoreContext.whatsappEnabled = false;
-          updateSystemModuleControls();
-        },
-        openLeadsForStore: async (storeId) => {
-          await setSystemModule("leads");
-          if (["admin", "technician"].includes(currentProfile?.role) && storeId) {
-            await openStoreAsAdmin(storeId);
-          }
-        },
-      });
-      renderCurrentSessionAvatar();
-    } catch (error) {
-      window.WhatsAppModule?.renderFatalError?.(readableError(error));
       showAppNotification(readableError(error), "error");
     }
   } else if (nextModule === "attendances") {
@@ -1787,31 +1554,6 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
   if (persist) localStorage.setItem(getSystemModuleStorageKey(), activeSystemModule);
 }
 
-async function callWhatsAppEdge(action, payload = {}) {
-  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
-  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-app-session": currentProfile.sessionToken,
-    },
-    body: JSON.stringify({ action, ...payload }),
-  }, 45000);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
-    const error = new Error(payloadError.message || data?.error || data?.message || `Falha no serviço WhatsApp (${response.status}).`);
-    error.code = payloadError.code || data?.code || `HTTP_${response.status}`;
-    error.details = payloadError.details || data?.details || null;
-    error.retryable = payloadError.retryable === true;
-    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
-    throw error;
-  }
-  return data;
-}
-
 async function callMarketingEdge(action, payload = {}) {
   if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
   const controller = new AbortController();
@@ -1852,86 +1594,6 @@ async function callMarketingEdge(action, payload = {}) {
     throw requestError;
   }
   return data;
-}
-
-async function callWhatsAppUpload({ connectionId, file }) {
-  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
-  if (!connectionId) throw new Error("Selecione uma conexão do WhatsApp antes de anexar arquivos.");
-  if (!(file instanceof File)) throw new Error("Selecione um arquivo válido.");
-  const body = new FormData();
-  body.set("action", "upload-media");
-  body.set("connection_id", connectionId);
-  body.set("file", file, file.name);
-  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-app-session": currentProfile.sessionToken,
-    },
-    body,
-  }, 120000);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data?.ok === false) {
-    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
-    const error = new Error(payloadError.message || data?.message || `Falha ao enviar mídia (${response.status}).`);
-    error.code = payloadError.code || `HTTP_${response.status}`;
-    error.details = payloadError.details || null;
-    error.retryable = payloadError.retryable === true;
-    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
-    throw error;
-  }
-  return data;
-}
-
-async function callWhatsAppDownload({ attachmentId }) {
-  if (!currentProfile?.sessionToken) throw new Error("Sessão inválida. Entre novamente.");
-  if (!attachmentId) throw new Error("Anexo inválido.");
-  const response = await fetchWhatsAppWithTimeout(`${SUPABASE_URL}/functions/v1/whatsapp-api`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-app-session": currentProfile.sessionToken,
-    },
-    body: JSON.stringify({ action: "download-media", attachment_id: attachmentId }),
-  }, 120000);
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    const payloadError = data?.error && typeof data.error === "object" ? data.error : {};
-    const error = new Error(payloadError.message || data?.message || `Falha ao baixar mídia (${response.status}).`);
-    error.code = payloadError.code || `HTTP_${response.status}`;
-    error.details = payloadError.details || null;
-    error.retryable = payloadError.retryable === true;
-    error.correlationId = data?.correlation_id || response.headers.get("x-correlation-id") || "";
-    throw error;
-  }
-  const disposition = response.headers.get("content-disposition") || "";
-  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `midia-whatsapp-${attachmentId}`;
-  return {
-    blob: await response.blob(),
-    filename,
-    mimeType: response.headers.get("content-type") || "application/octet-stream",
-  };
-}
-
-async function fetchWhatsAppWithTimeout(url, options, timeoutMs) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      const timeoutError = new Error("A integração do WhatsApp demorou demais para responder. Tente novamente.");
-      timeoutError.code = "WHATSAPP_TIMEOUT";
-      timeoutError.retryable = true;
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 async function handleCreateStore(event) {
@@ -1991,7 +1653,6 @@ async function handleCreateTechnician(event) {
   const username = normalizeNick(technicianNick.value);
   const storeLimit = Number.parseInt(technicianStoreLimit.value, 10);
   const prospectionLimit = Number.parseInt(technicianProspectionLimit.value, 10);
-  const whatsappLimit = Number.parseInt(technicianWhatsappLimit.value, 10);
   if (!username) {
     showTechnicianMessage("Digite um login válido para a agência.");
     return;
@@ -2007,17 +1668,6 @@ async function handleCreateTechnician(event) {
     return;
   }
 
-  if (!Number.isInteger(whatsappLimit) || whatsappLimit < 0 || whatsappLimit > storeLimit) {
-    showTechnicianMessage("A franquia de WhatsApp deve ficar entre zero e o limite total de clientes.");
-    return;
-  }
-
-  if (!isValidWhatsAppNumber(technicianWhatsapp.value)) {
-    showTechnicianMessage("Informe um WhatsApp comercial válido com DDD.");
-    technicianWhatsapp.focus();
-    return;
-  }
-
   try {
     setFormBusy(technicianForm, true);
     const avatarUrl = await avatarFileToDataUrl(technicianAvatar.files?.[0]);
@@ -2026,9 +1676,7 @@ async function handleCreateTechnician(event) {
       p_nick: username,
       p_password: technicianPassword.value,
       p_store_limit: storeLimit,
-      p_whatsapp: technicianWhatsapp.value,
       p_prospection_limit: prospectionLimit,
-      p_whatsapp_limit: whatsappLimit,
     }));
     if (avatarUrl && createdTechnician?.id) {
       await authenticatedRpc("lc_set_profile_avatar", {
@@ -2043,7 +1691,6 @@ async function handleCreateTechnician(event) {
     await refreshRemoteState();
     technicianStoreLimit.value = "5";
     technicianProspectionLimit.value = "0";
-    technicianWhatsappLimit.value = "0";
     showTechnicianMessage("Agência criada.", "success");
     renderAll();
   } catch (error) {
@@ -2192,12 +1839,6 @@ async function deleteManagedAccount(type, id) {
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
       });
-    } else if (activeSystemModule === "whatsapp") {
-      await window.WhatsAppModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
-        agencies: technicians.map((technician) => ({ ...technician })),
-        whatsappAccessGranted: canUseWhatsApp(),
-      });
     } else if (activeSystemModule === "attendances") {
       await window.AttendancesModule?.refreshContext?.({
         stores: stores.map((store) => ({ ...store })),
@@ -2227,9 +1868,6 @@ function openManagedAccountModal(type, id) {
   managedAccountTitle.textContent = type === "store" ? "Editar cliente" : "Editar agência";
   managedAccountNameLabel.textContent = type === "store" ? "Nome do cliente" : "Nome da agência";
   managedAccountName.value = type === "store" ? record.name : record.fullName || record.username;
-  managedAccountWhatsappField.hidden = type !== "technician";
-  managedAccountWhatsapp.required = type === "technician";
-  managedAccountWhatsapp.value = type === "technician" ? formatWhatsAppInput(record.whatsappPhone || "") : "";
   const canAssignCompany = type === "store" && currentProfile?.role === "admin";
   managedAccountTechnicianField.hidden = !canAssignCompany;
   managedAccountTechnician.required = canAssignCompany;
@@ -2257,22 +1895,10 @@ function openManagedAccountModal(type, id) {
       ? `${activeAccesses} cliente${activeAccesses === 1 ? " está" : "s estão"} com acesso. Se o novo limite for menor, a agência escolherá quais clientes desativar.`
       : "Defina quantos clientes desta agência podem usar Prospecções.";
   }
-  managedAccountWhatsappLimitField.hidden = type !== "technician";
-  managedAccountWhatsappLimit.required = type === "technician";
-  managedAccountWhatsappLimit.value = type === "technician" ? String(record.whatsappStoreLimit ?? 0) : "";
-  if (type === "technician" && managedAccountWhatsappLimitHelp) {
-    const activeAccesses = record.whatsappStoreCount ?? 0;
-    managedAccountWhatsappLimitHelp.textContent = activeAccesses > 0
-      ? `${activeAccesses} cliente${activeAccesses === 1 ? " está" : "s estão"} com WhatsApp. Reduzir a cota bloqueia novas ativações até a agência ajustar os acessos.`
-      : "Defina quantos clientes desta agência podem usar a API Oficial do WhatsApp.";
-  }
   managedAccountProspectionField.hidden = type !== "store";
   managedAccountProspectionAccess.checked = type === "store" && Boolean(record.prospectionEnabled);
-  managedAccountWhatsappAccessField.hidden = type !== "store";
-  managedAccountWhatsappAccess.checked = type === "store" && Boolean(record.whatsappEnabled);
   syncManagedStoreEntitlementQuotas();
   syncManagedAccountProspectionToggle();
-  syncManagedAccountWhatsappToggle();
   clearManagedAccountMessage();
   managedAccountModal.hidden = false;
   syncModalLock();
@@ -2288,27 +1914,16 @@ function closeManagedAccountModal() {
   setAvatarFileName(managedAccountAvatar);
   managedAccountTechnicianField.hidden = true;
   managedAccountTechnician.required = false;
-  managedAccountWhatsappField.hidden = true;
-  managedAccountWhatsapp.required = false;
-  managedAccountWhatsapp.value = "";
   managedAccountLimitField.hidden = true;
   managedAccountLimit.required = false;
   managedAccountProspectionLimitField.hidden = true;
   managedAccountProspectionLimit.required = false;
-  managedAccountWhatsappLimitField.hidden = true;
-  managedAccountWhatsappLimit.required = false;
   managedAccountProspectionField.hidden = true;
   managedAccountProspectionAccess.checked = false;
   managedAccountProspectionAccess.disabled = false;
   delete managedAccountProspectionAccess.dataset.quotaLocked;
   delete managedAccountProspectionAccess.dataset.transferBlocked;
-  managedAccountWhatsappAccessField.hidden = true;
-  managedAccountWhatsappAccess.checked = false;
-  managedAccountWhatsappAccess.disabled = false;
-  delete managedAccountWhatsappAccess.dataset.quotaLocked;
-  delete managedAccountWhatsappAccess.dataset.transferBlocked;
   syncManagedAccountProspectionToggle();
-  syncManagedAccountWhatsappToggle();
   clearManagedAccountMessage();
   syncModalLock();
 }
@@ -2327,7 +1942,6 @@ async function handleManagedAccountSubmit(event) {
   const password = managedAccountPassword.value;
   const storeLimit = Number.parseInt(managedAccountLimit.value, 10);
   const prospectionLimit = Number.parseInt(managedAccountProspectionLimit.value, 10);
-  const whatsappLimit = Number.parseInt(managedAccountWhatsappLimit.value, 10);
 
   if (!managedAccountName.value.trim()) {
     showManagedAccountMessage("Digite o nome.");
@@ -2359,21 +1973,9 @@ async function handleManagedAccountSubmit(event) {
     return;
   }
 
-  if (type === "technician" && (!Number.isInteger(whatsappLimit) || whatsappLimit < 0 || whatsappLimit > storeLimit)) {
-    showManagedAccountMessage("A franquia de WhatsApp deve ficar entre zero e o limite total de clientes.");
-    return;
-  }
-
-  if (type === "technician" && !isValidWhatsAppNumber(managedAccountWhatsapp.value)) {
-    showManagedAccountMessage("Informe um WhatsApp comercial válido com DDD.");
-    managedAccountWhatsapp.focus();
-    return;
-  }
-
   if (type === "store") {
     const blockedFeatures = [
       managedAccountProspectionAccess.checked && managedAccountProspectionAccess.dataset.transferBlocked === "true" ? "Prospecções + Atendimentos" : "",
-      managedAccountWhatsappAccess.checked && managedAccountWhatsappAccess.dataset.transferBlocked === "true" ? "WhatsApp" : "",
     ].filter(Boolean);
     if (blockedFeatures.length) {
       showManagedAccountMessage(`A agência de destino não possui licença disponível para ${blockedFeatures.join(" e ")}. Desative o recurso antes de transferir ou escolha outra agência.`);
@@ -2386,7 +1988,6 @@ async function handleManagedAccountSubmit(event) {
     const newAvatarUrl = await avatarFileToDataUrl(managedAccountAvatar.files?.[0]);
     if (type === "store") {
       const wantsProspections = managedAccountProspectionAccess.checked;
-      const wantsWhatsapp = managedAccountWhatsappAccess.checked;
       await authenticatedRpc("lc_update_store_with_feature_access", {
         p_store_id: id,
         p_name: managedAccountName.value.trim(),
@@ -2394,7 +1995,6 @@ async function handleManagedAccountSubmit(event) {
         p_password: password || null,
         p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedAccountTechnician.value,
         p_prospection_enabled: wantsProspections,
-        p_whatsapp_enabled: wantsWhatsapp,
       });
     } else if (type === "technician") {
       await authenticatedRpc("lc_update_technician_with_feature_plan", {
@@ -2403,9 +2003,7 @@ async function handleManagedAccountSubmit(event) {
         p_nick: username,
         p_password: password || null,
         p_store_limit: storeLimit,
-        p_whatsapp: managedAccountWhatsapp.value,
         p_prospection_limit: prospectionLimit,
-        p_whatsapp_limit: whatsappLimit,
       });
     }
 
@@ -2423,12 +2021,6 @@ async function handleManagedAccountSubmit(event) {
         stores: stores.map((store) => ({ ...store })),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
-      });
-    } else if (activeSystemModule === "whatsapp") {
-      await window.WhatsAppModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
-        agencies: technicians.map((technician) => ({ ...technician })),
-        whatsappAccessGranted: canUseWhatsApp(),
       });
     } else if (activeSystemModule === "attendances") {
       await window.AttendancesModule?.refreshContext?.({
@@ -2456,8 +2048,6 @@ async function handleManagedAccountSubmit(event) {
     if (!managedAccountModal.hidden && managedAccountType.value === "store") {
       managedAccountProspectionAccess.disabled = managedAccountProspectionAccess.dataset.quotaLocked === "true";
       syncManagedAccountProspectionToggle();
-      managedAccountWhatsappAccess.disabled = managedAccountWhatsappAccess.dataset.quotaLocked === "true";
-      syncManagedAccountWhatsappToggle();
     }
   }
 }
@@ -2512,23 +2102,6 @@ function syncManagedStoreEntitlementQuotas() {
     limitKey: "prospectionStoreLimit",
     label: "de Prospecções + Atendimentos",
   });
-  syncFeature({
-    control: managedAccountWhatsappAccess,
-    help: managedAccountWhatsappAccessHelp,
-    originalEnabled: Boolean(store.whatsappEnabled),
-    countKey: "whatsappStoreCount",
-    limitKey: "whatsappStoreLimit",
-    label: "de WhatsApp",
-  });
-}
-
-function syncManagedAccountWhatsappToggle() {
-  if (!managedAccountWhatsappAccessStatus) return;
-  const enabled = managedAccountWhatsappAccess.checked;
-  const unavailable = managedAccountWhatsappAccess.disabled && !enabled;
-  managedAccountWhatsappAccessStatus.textContent = unavailable ? "Sem licença" : enabled ? "Ativo" : "Desativado";
-  managedAccountWhatsappAccessStatus.classList.toggle("is-enabled", enabled);
-  managedAccountWhatsappAccessStatus.classList.toggle("is-unavailable", unavailable);
 }
 
 async function openStoreAsAdmin(storeId) {
@@ -2998,16 +2571,6 @@ async function refreshRemoteState() {
     throw error;
   });
 
-  const whatsappEntitlementsRequest = authenticatedRpc("lc_get_whatsapp_entitlements").catch((error) => {
-    if (isMissingRpcError(error)) return null;
-    throw error;
-  });
-
-  const agencyWhatsappRequest = authenticatedRpc("lc_get_agency_whatsapp_context").catch((error) => {
-    if (isMissingRpcError(error)) return null;
-    throw error;
-  });
-
   const legalAcceptanceRequest = currentProfile.role === "admin"
     ? authenticatedRpc("lc_list_legal_acceptances").catch((error) => {
         if (isMissingRpcError(error)) return null;
@@ -3068,8 +2631,6 @@ async function refreshRemoteState() {
     targetRows,
     connectionRows,
     entitlementRows,
-    whatsappEntitlementRows,
-    agencyWhatsappRows,
     legalAcceptanceRows,
   ] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
@@ -3085,8 +2646,6 @@ async function refreshRemoteState() {
     marketingTargetsRequest,
     marketingConnectionsRequest,
     prospectionEntitlementsRequest,
-    whatsappEntitlementsRequest,
-    agencyWhatsappRequest,
     legalAcceptanceRequest,
   ]);
 
@@ -3102,8 +2661,6 @@ async function refreshRemoteState() {
   marketingConnections = connectionRows || [];
   technicians = (technicianRows || []).map(mapTechnicianRow);
   applyProspectionEntitlements(entitlementRows);
-  applyWhatsappEntitlements(whatsappEntitlementRows);
-  applyAgencyWhatsappContext(agencyWhatsappRows);
   applyLegalAcceptanceOverview(legalAcceptanceRows);
   profileAvatars = avatarRows || [];
   applyProfileAvatars();
@@ -3112,15 +2669,10 @@ async function refreshRemoteState() {
     const entitlementProfile = normalizeProspectionEntitlements(entitlementRows)?.profile || {};
     accountUsage.prospectionStoreLimit = Number(entitlementProfile.prospection_store_limit || 0);
     accountUsage.prospectionStoreCount = Number(entitlementProfile.prospection_store_count || 0);
-    const whatsappEntitlementProfile = normalizeWhatsappEntitlements(whatsappEntitlementRows)?.profile || {};
-    accountUsage.whatsappStoreLimit = Number(whatsappEntitlementProfile.whatsapp_store_limit || 0);
-    accountUsage.whatsappStoreCount = Number(whatsappEntitlementProfile.whatsapp_store_count || 0);
-    accountUsage.whatsappPhone = getAgencyWhatsappValue();
   }
 
   if (currentProfile.role === "store") {
     currentProfile.prospectionEnabled = Boolean(stores.find((store) => store.id === currentProfile.storeId)?.prospectionEnabled);
-    currentProfile.whatsappEnabled = Boolean(stores.find((store) => store.id === currentProfile.storeId)?.whatsappEnabled);
   }
 
   if (selectedAnalyticsStoreId && !getDashboardStores().some((store) => store.id === selectedAnalyticsStoreId)) {
@@ -3213,11 +2765,6 @@ function renderAdminDashboard() {
   adminAnalyticsSummary.hidden = !isAnalytics || !selectedStore;
   adminAnalyticsPanel.hidden = !isAnalytics || !selectedStore;
   clientCapacityPanel.hidden = !isClients;
-  const showAgencyContact = isClients && currentProfile?.role === "technician" && !activeTechnicianContext;
-  agencyContactForm.hidden = !showAgencyContact;
-  if (showAgencyContact && document.activeElement !== agencyContactWhatsapp) {
-    agencyContactWhatsapp.value = formatWhatsAppInput(getAgencyWhatsappValue());
-  }
   companyWorkspaceButtons.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.companySection === companyWorkspaceSection);
   });
@@ -3527,7 +3074,6 @@ function renderAnalyticsClientOptions() {
             <small>@${escapeHtml(store.username)} · ${leadCount} ${leadCount === 1 ? "lead" : "leads"}</small>
           </span>
           ${store.prospectionEnabled ? `<span class="analytics-prospec-badge"><i class="fa-solid fa-phone"></i>PROSPEC</span>` : ""}
-          ${store.whatsappEnabled ? `<span class="analytics-prospec-badge is-whatsapp"><i class="fa-brands fa-whatsapp"></i>WHATSAPP</span>` : ""}
           <span class="analytics-client-option-status" aria-hidden="true">
             <i class="fa-solid ${isSelected ? "fa-check" : "fa-chevron-right"}"></i>
           </span>
@@ -3583,8 +3129,6 @@ function getSelectedCapacityContext() {
       storeLimit: accountUsage?.storeLimit ?? 0,
       prospectionStoreCount: accountUsage?.prospectionStoreCount ?? 0,
       prospectionStoreLimit: accountUsage?.prospectionStoreLimit ?? 0,
-      whatsappStoreCount: accountUsage?.whatsappStoreCount ?? 0,
-      whatsappStoreLimit: accountUsage?.whatsappStoreLimit ?? 0,
     };
   }
   return technicians.find((technician) => technician.id === storeTechnician.value) || null;
@@ -3612,13 +3156,9 @@ function renderClientCapacity() {
 
   const prospectionCount = Number(context?.prospectionStoreCount ?? accountUsage?.prospectionStoreCount ?? 0);
   const prospectionLimit = Number(context?.prospectionStoreLimit ?? accountUsage?.prospectionStoreLimit ?? 0);
-  const whatsappCount = Number(context?.whatsappStoreCount ?? accountUsage?.whatsappStoreCount ?? 0);
-  const whatsappLimit = Number(context?.whatsappStoreLimit ?? accountUsage?.whatsappStoreLimit ?? 0);
   featureCapacitySummary.hidden = false;
   prospectionCapacityBadge.innerHTML = `<i class="fa-solid fa-phone" aria-hidden="true"></i><b>${prospectionCount} de ${prospectionLimit}</b> Prospecções + Atendimentos`;
-  whatsappCapacityBadge.innerHTML = `<i class="fa-brands fa-whatsapp" aria-hidden="true"></i><b>${whatsappCount} de ${whatsappLimit}</b> WhatsApp`;
   prospectionCapacityBadge.classList.toggle("is-full", prospectionLimit > 0 && prospectionCount >= prospectionLimit);
-  whatsappCapacityBadge.classList.toggle("is-full", whatsappLimit > 0 && whatsappCount >= whatsappLimit);
 }
 
 function renderStoreCreationContext() {
@@ -3706,10 +3246,6 @@ function renderStoreList() {
                 <i class="fa-solid ${store.prospectionEnabled ? "fa-phone" : "fa-lock"}" aria-hidden="true"></i>
                 ${store.prospectionEnabled ? "PROSPEC + ATEND." : "PROSPEC bloqueado"}
               </span>
-              <span class="feature-plan-badge is-whatsapp ${store.whatsappEnabled ? "is-enabled" : "is-leads-only"}">
-                <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
-                ${store.whatsappEnabled ? "WHATSAPP ativo" : "WHATSAPP bloqueado"}
-              </span>
             </div>
             </div>
           </div>
@@ -3738,8 +3274,7 @@ function renderTechnicianList() {
   technicianList.innerHTML = technicians
     .map((technician) => {
       const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
-      const whatsappExcess = Math.max(0, technician.whatsappStoreCount - technician.whatsappStoreLimit);
-      const hasPlanOverage = prospectionExcess > 0 || whatsappExcess > 0;
+      const hasPlanOverage = prospectionExcess > 0;
       return `
       <article class="lead-card technician-card${hasPlanOverage ? " has-plan-overage" : ""}">
         <div class="management-profile">
@@ -3747,7 +3282,6 @@ function renderTechnicianList() {
           <div class="technician-card-main">
           <strong>${escapeHtml(technician.fullName || technician.username)}</strong>
           <span>@${escapeHtml(technician.username)}</span>
-          <span class="technician-whatsapp-contact"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>${escapeHtml(formatWhatsAppInput(technician.whatsappPhone) || "WhatsApp pendente")}</span>
           <div class="technician-usage-row">
             <span><i class="fa-solid fa-store" aria-hidden="true"></i>${technician.storeCount} de ${technician.storeLimit} clientes</span>
             <span>${technician.storeLimit > technician.storeCount ? `${technician.storeLimit - technician.storeCount} vagas` : "Limite atingido"}</span>
@@ -3758,11 +3292,6 @@ function renderTechnicianList() {
             <span class="${prospectionExcess > 0 ? "plan-adjustment" : ""}">${prospectionExcess > 0 ? `${prospectionExcess} acesso${prospectionExcess === 1 ? "" : "s"} para ajustar` : `${technician.prospectionStoreLimit - technician.prospectionStoreCount} licenças livres`}</span>
           </div>
           <div class="technician-usage-track is-prospection-plan" aria-hidden="true"><i style="width:${getCapacityPercent(technician.prospectionStoreCount, technician.prospectionStoreLimit)}%"></i></div>
-          <div class="technician-usage-row is-whatsapp-plan">
-            <span><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>${technician.whatsappStoreCount} de ${technician.whatsappStoreLimit} com WhatsApp</span>
-            <span class="${whatsappExcess > 0 ? "plan-adjustment" : ""}">${whatsappExcess > 0 ? `${whatsappExcess} acesso${whatsappExcess === 1 ? "" : "s"} para ajustar` : `${technician.whatsappStoreLimit - technician.whatsappStoreCount} licenças livres`}</span>
-          </div>
-          <div class="technician-usage-track is-whatsapp-plan" aria-hidden="true"><i style="width:${getCapacityPercent(technician.whatsappStoreCount, technician.whatsappStoreLimit)}%"></i></div>
           </div>
         </div>
         <div class="card-actions">
@@ -3806,10 +3335,7 @@ function renderLeadList() {
           </div>
           ${renderLeadNotes(lead.notes)}
           <div class="card-actions">
-            <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer" aria-label="Chamar ${escapeHtml(lead.name)} no WhatsApp">
-              <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
-              WhatsApp
-            </a>
+            ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
             <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
             <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}">Excluir</button>
             <button class="mini-button view-button" type="button" data-action="view" data-id="${lead.id}">Visualizar</button>
@@ -3856,10 +3382,7 @@ function renderAppointmentMonitorCard(lead) {
         <small>Agendado para ${escapeHtml(scheduledLabel || "-")}</small>
       </div>
       <div class="appointment-monitor-actions">
-        <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer">
-          <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
-          WhatsApp
-        </a>
+        ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
         <button class="mini-button choice-yes" type="button" data-appointment-monitor-action="visited" data-lead-id="${lead.id}">
           Veio
         </button>
@@ -4009,10 +3532,7 @@ function openLeadDetailsModal(id) {
       <p>${escapeHtml(lead.notes || "Sem observações.")}</p>
     </div>
     <div class="modal-actions">
-      <a class="mini-button whatsapp-button" href="${formatWhatsAppUrl(lead.phone)}" target="_blank" rel="noopener noreferrer">
-        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
-        WhatsApp
-      </a>
+      ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
       <button class="mini-button" type="button" data-detail-edit="${lead.id}">Editar</button>
     </div>
   `;
@@ -8810,9 +8330,7 @@ function mapStoreRow(row) {
     salesCount: Number(row.sales_count || 0),
     technicianId: row.technician_id || null,
     technicianName: row.technician_name || "",
-    technicianWhatsapp: "",
     prospectionEnabled: true,
-    whatsappEnabled: false,
     avatarUrl: "",
   };
 }
@@ -8828,42 +8346,8 @@ function mapTechnicianRow(row) {
     storeCount: Number(row.store_count || 0),
     prospectionStoreLimit: 0,
     prospectionStoreCount: 0,
-    whatsappStoreLimit: 0,
-    whatsappStoreCount: 0,
-    whatsappPhone: "",
     avatarUrl: "",
   };
-}
-
-function applyAgencyWhatsappContext(data) {
-  const context = firstRow(data);
-  agencyWhatsappContext = context && typeof context === "object" && !Array.isArray(context) ? context : null;
-  if (!agencyWhatsappContext) return;
-
-  const contactByAgency = new Map(
-    (agencyWhatsappContext.agencies || []).map((row) => [row.technician_id, String(row.whatsapp || "")]),
-  );
-  technicians.forEach((technician) => {
-    technician.whatsappPhone = contactByAgency.get(technician.id) || "";
-  });
-
-  const profileContact = agencyWhatsappContext.profile || {};
-  if (currentProfile.role === "technician") {
-    currentProfile.agencyWhatsapp = String(profileContact.agency_whatsapp || "");
-  }
-  if (currentProfile.role === "store") {
-    currentProfile.agencyWhatsapp = String(profileContact.agency_whatsapp || "");
-    currentProfile.agencyName = String(profileContact.agency_name || "");
-    const store = stores.find((item) => item.id === currentProfile.storeId);
-    if (store) {
-      store.technicianWhatsapp = currentProfile.agencyWhatsapp;
-      if (currentProfile.agencyName) store.technicianName = currentProfile.agencyName;
-    }
-  }
-
-  stores.forEach((store) => {
-    store.technicianWhatsapp = store.technicianWhatsapp || contactByAgency.get(store.technicianId) || "";
-  });
 }
 
 function normalizeProspectionEntitlements(data) {
@@ -8893,36 +8377,6 @@ function applyProspectionEntitlements(data) {
     const access = agencyAccess.get(technician.id) || {};
     technician.prospectionStoreLimit = Number(access.prospection_store_limit || 0);
     technician.prospectionStoreCount = Number(access.prospection_store_count || 0);
-  });
-}
-
-function normalizeWhatsappEntitlements(data) {
-  const value = firstRow(data);
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value;
-}
-
-function applyWhatsappEntitlements(data) {
-  const entitlements = normalizeWhatsappEntitlements(data);
-  if (!entitlements) {
-    stores.forEach((store) => { store.whatsappEnabled = false; });
-    technicians.forEach((technician) => {
-      technician.whatsappStoreLimit = 0;
-      technician.whatsappStoreCount = 0;
-    });
-    return;
-  }
-
-  const storeAccess = new Map((entitlements.stores || []).map((row) => [row.store_id, row.whatsapp_enabled === true]));
-  stores.forEach((store) => {
-    store.whatsappEnabled = storeAccess.get(store.id) === true;
-  });
-
-  const agencyAccess = new Map((entitlements.technicians || []).map((row) => [row.technician_id, row]));
-  technicians.forEach((technician) => {
-    const access = agencyAccess.get(technician.id) || {};
-    technician.whatsappStoreLimit = Number(access.whatsapp_store_limit || 0);
-    technician.whatsappStoreCount = Number(access.whatsapp_store_count || 0);
   });
 }
 
@@ -9043,9 +8497,6 @@ function mapAccountUsage(row) {
     storeCount: Number(row.store_count || 0),
     prospectionStoreLimit: 0,
     prospectionStoreCount: 0,
-    whatsappStoreLimit: 0,
-    whatsappStoreCount: 0,
-    whatsappPhone: "",
   };
 }
 
@@ -9431,26 +8882,6 @@ function formatPhone(value) {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
-function normalizeWhatsAppNumber(value) {
-  const digits = onlyDigits(value);
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  return digits;
-}
-
-function isValidWhatsAppNumber(value) {
-  const normalized = normalizeWhatsAppNumber(value);
-  return /^[1-9]\d{11,14}$/.test(normalized);
-}
-
-function formatWhatsAppInput(value) {
-  const digits = onlyDigits(value);
-  const local = digits.startsWith("55") && (digits.length === 12 || digits.length === 13)
-    ? digits.slice(2)
-    : digits;
-  if (local.length <= 11) return formatPhone(local);
-  return `+${digits.slice(0, 15)}`;
-}
-
 function toDateInput(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -9667,10 +9098,9 @@ function renderLeadNotes(notes) {
     : "";
 }
 
-function formatWhatsAppUrl(phone) {
+function formatPhoneUrl(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
-  const normalized = digits.startsWith("55") && digits.length >= 12 ? digits : `55${digits}`;
-  return `https://wa.me/${normalized}`;
+  return `tel:${digits}`;
 }
 
 function escapeHtml(value) {

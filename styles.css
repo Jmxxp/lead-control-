@@ -1305,200 +1305,6 @@ input.avatar-file-input {
   border: 0 !important;
 }
 
-.agency-contact-panel {
-  display: grid;
-  grid-template-columns: auto minmax(220px, 1fr) minmax(210px, 0.55fr) auto;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, #20b86f 34%, var(--line));
-  border-radius: 12px;
-  background:
-    linear-gradient(120deg, color-mix(in srgb, #20b86f 9%, var(--surface)), var(--surface));
-  box-shadow: 0 14px 34px color-mix(in srgb, #20b86f 10%, transparent);
-}
-
-.agency-contact-icon {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #20b86f, #108f54);
-  color: #fff;
-  font-size: 1.35rem;
-  box-shadow: 0 10px 24px rgba(22, 163, 96, 0.24);
-}
-
-.agency-contact-copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.agency-contact-copy > span {
-  color: var(--green);
-  font-size: 0.64rem;
-  font-weight: 950;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.agency-contact-copy > strong {
-  color: var(--ink);
-  font-size: 0.92rem;
-}
-
-.agency-contact-copy > small {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 650;
-  line-height: 1.4;
-}
-
-.agency-contact-field {
-  min-width: 0;
-}
-
-.agency-contact-field > span {
-  font-size: 0.67rem;
-}
-
-.agency-contact-field input {
-  min-height: 42px;
-}
-
-.agency-contact-panel > .primary-button {
-  min-height: 42px;
-  white-space: nowrap;
-}
-
-.agency-contact-panel > .form-message {
-  grid-column: 2 / -1;
-  margin: -4px 0 0;
-}
-
-.agency-whatsapp-backdrop {
-  z-index: 1200;
-  background: rgba(4, 9, 7, 0.72);
-  backdrop-filter: blur(18px) saturate(0.85);
-}
-
-.agency-whatsapp-dialog {
-  width: min(560px, calc(100vw - 32px));
-  padding: 0;
-  overflow: hidden;
-  border-color: color-mix(in srgb, #20b86f 34%, var(--line));
-}
-
-.agency-whatsapp-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 16px;
-  align-items: center;
-  padding: 24px;
-  border-bottom: 1px solid var(--line);
-  background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, #20b86f 16%, transparent), transparent 54%),
-    var(--surface-soft);
-}
-
-.agency-whatsapp-hero > span {
-  display: grid;
-  width: 58px;
-  height: 58px;
-  place-items: center;
-  border-radius: 17px;
-  background: linear-gradient(145deg, #22c876, #118f55);
-  color: #fff;
-  font-size: 1.55rem;
-  box-shadow: 0 14px 30px rgba(22, 163, 96, 0.26);
-}
-
-.agency-whatsapp-hero h2,
-.agency-whatsapp-hero p {
-  margin: 0;
-}
-
-.agency-whatsapp-hero h2 {
-  font-size: 1.3rem;
-}
-
-.agency-whatsapp-hero p:not(.eyebrow) {
-  margin-top: 5px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-  line-height: 1.5;
-}
-
-.agency-whatsapp-dialog .account-form {
-  padding: 24px;
-}
-
-.agency-whatsapp-preview {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, #20b86f 28%, var(--line));
-  border-radius: 10px;
-  background: color-mix(in srgb, #20b86f 7%, var(--surface));
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.agency-whatsapp-preview i,
-.technician-whatsapp-contact i {
-  color: #20b86f;
-}
-
-.technician-whatsapp-contact {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-@media (max-width: 980px) {
-  .agency-contact-panel {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .agency-contact-field,
-  .agency-contact-panel > .primary-button,
-  .agency-contact-panel > .form-message {
-    grid-column: 2;
-  }
-}
-
-@media (max-width: 600px) {
-  .agency-contact-panel {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding: 14px;
-  }
-
-  .agency-contact-field,
-  .agency-contact-panel > .primary-button,
-  .agency-contact-panel > .form-message {
-    grid-column: 1 / -1;
-  }
-
-  .agency-whatsapp-hero {
-    align-items: flex-start;
-    padding: 20px;
-  }
-
-  .agency-whatsapp-dialog .account-form {
-    padding: 20px;
-  }
-}
-
 .avatar-file-button {
   display: inline-flex;
   align-items: center;
@@ -1679,13 +1485,6 @@ input.avatar-file-input {
 .feature-capacity-summary > span b { color: var(--ink); }
 .feature-capacity-summary > span.is-full { border-color: color-mix(in srgb, #d48616 38%, var(--line)); }
 .feature-capacity-summary > span.is-full i { color: #d48616; }
-
-#whatsappCapacityBadge {
-  border-color: color-mix(in srgb, #18a866 32%, var(--line));
-  background: color-mix(in srgb, #18a866 7%, var(--surface));
-}
-
-#whatsappCapacityBadge i { color: #168a58; }
 
 .company-workspace-nav {
   display: grid;
@@ -5416,13 +5215,6 @@ body.is-dark .secondary-button {
   box-shadow: 0 8px 20px color-mix(in srgb, #2f80ed 12%, transparent);
 }
 
-.feature-plan-badge.is-whatsapp.is-enabled {
-  border-color: color-mix(in srgb, #18a866 42%, var(--line));
-  background: color-mix(in srgb, #18a866 11%, var(--surface));
-  color: #118050;
-  box-shadow: 0 8px 20px color-mix(in srgb, #18a866 12%, transparent);
-}
-
 .feature-plan-badge.is-leads-only {
   color: var(--muted);
 }
@@ -5441,21 +5233,9 @@ body.is-dark .secondary-button {
   letter-spacing: 0.03em;
 }
 
-.analytics-prospec-badge.is-whatsapp {
-  border-color: color-mix(in srgb, #18a866 40%, var(--line));
-  color: #118050;
-  background: color-mix(in srgb, #18a866 10%, var(--surface));
-}
-
 .technician-usage-row.is-prospection-plan {
   margin-top: 9px;
 }
-
-.technician-usage-row.is-whatsapp-plan {
-  margin-top: 9px;
-}
-
-.technician-usage-row.is-whatsapp-plan i { color: #168a58; }
 
 .technician-usage-row .plan-adjustment {
   color: #b86a12;
@@ -5471,16 +5251,8 @@ body.is-dark .secondary-button {
   background: linear-gradient(90deg, #f0b33a, #d47816);
 }
 
-.technician-card.has-plan-overage .technician-usage-track.is-whatsapp-plan i {
-  background: linear-gradient(90deg, #f0b33a, #d47816);
-}
-
 .technician-usage-track.is-prospection-plan i {
   background: linear-gradient(90deg, #2f80ed, #16855f);
-}
-
-.technician-usage-track.is-whatsapp-plan i {
-  background: linear-gradient(90deg, #25d366, #168a58);
 }
 
 .feature-access-card {
@@ -5492,16 +5264,6 @@ body.is-dark .secondary-button {
   border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
   border-radius: 12px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--green) 8%, var(--surface)), var(--surface));
-}
-
-.feature-access-card.is-whatsapp {
-  border-color: color-mix(in srgb, #18a866 34%, var(--line));
-  background: linear-gradient(135deg, color-mix(in srgb, #18a866 9%, var(--surface)), var(--surface));
-}
-
-.feature-access-card.is-whatsapp .feature-access-icon {
-  color: #168a58;
-  background: color-mix(in srgb, #18a866 13%, var(--surface));
 }
 
 .feature-access-toggle input:disabled + span {
@@ -6337,10 +6099,10 @@ body.is-dark .lead-tags span {
   color: var(--rose);
 }
 
-.whatsapp-button {
+.phone-button {
   gap: 7px;
-  border-color: rgba(37, 211, 102, 0.38);
-  background: linear-gradient(135deg, #25d366, #128c7e);
+  border-color: color-mix(in srgb, #2f80ed 42%, var(--line));
+  background: linear-gradient(135deg, #2f80ed, #2367bd);
   color: #ffffff;
 }
 
@@ -8209,14 +7971,14 @@ body:not(.is-dark) .secondary-button {
 }
 
 body:not(.is-dark) .ghost-button,
-body:not(.is-dark) .mini-button:not(.danger):not(.whatsapp-button):not(.analytics-inspect-button) {
+body:not(.is-dark) .mini-button:not(.danger):not(.phone-button):not(.analytics-inspect-button) {
   border-color: #b8bdbb;
   color: #171717;
 }
 
 body.is-dark .secondary-button,
 body.is-dark .ghost-button:not(.is-exit-mode),
-body.is-dark .mini-button:not(.danger):not(.whatsapp-button):not(.analytics-inspect-button) {
+body.is-dark .mini-button:not(.danger):not(.phone-button):not(.analytics-inspect-button) {
   border-color: #555555;
   background-color: #282828;
   color: #ffffff;
@@ -8400,13 +8162,4 @@ body:not(.is-keyboard-navigation) :focus,
 body:not(.is-keyboard-navigation) :focus-visible {
   outline: none !important;
   outline-offset: 0 !important;
-}
-
-/* Cabeçalho de ponta a ponta no bloqueio de contato obrigatório. */
-.modal-dialog.agency-whatsapp-dialog {
-  gap: 0;
-  width: min(560px, calc(100vw - 32px));
-  padding: 0;
-  overflow: hidden;
-  border-radius: 18px;
 }

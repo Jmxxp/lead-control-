@@ -34,13 +34,12 @@ jobs:
             index.html \
             app.js \
             styles.css \
+            mobile.css \
             marketing.js \
             marketing.css \
             prospections.js \
             prospections.css \
             prospec-original.css \
-            whatsapp.js \
-            whatsapp.css \
             attendances.js \
             attendances.css \
             manifest.webmanifest \

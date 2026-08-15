@@ -222,7 +222,7 @@
     return canonicalPhoneDigits(value);
   }
 
-  function whatsappPhone(value) {
+  function phoneDigits(value) {
     return canonicalPhoneDigits(value);
   }
 
@@ -667,7 +667,6 @@
         <h2 id="prospection-upgrade-title">Transforme contatos que seriam perdidos em novas oportunidades.</h2>
         <p>Prospecções ajuda sua empresa a controlar abordagens, acompanhar retornos e incentivar cada funcionário a trazer mais clientes para a loja.</p>
         <div class="prospection-upgrade-actions">
-          <button class="prospection-button is-whatsapp" type="button" data-prospection-action="request-upgrade"><i class="fa-brands fa-whatsapp"></i>Solicitar upgrade</button>
           ${archiveProspects.length ? `<button class="prospection-button is-archive" type="button" data-prospection-action="export-archive"><i class="fa-solid fa-file-arrow-down"></i>Baixar meus dados (${archiveProspects.length})</button>` : ""}
           <button class="prospection-button is-secondary" type="button" data-prospection-action="open-leads" data-store-id="${escapeHtml(store.id || "")}"><i class="fa-solid fa-arrow-left"></i>Voltar para Leads</button>
         </div>
@@ -1024,7 +1023,7 @@
 
   function attendanceOpportunityCardMarkup(row) {
     const type = ATTENDANCE_TYPES[row.tag] || ATTENDANCE_TYPES.other;
-    const whatsapp = whatsappPhone(row.phone || row.phoneNormalized);
+    const phone = phoneDigits(row.phone || row.phoneNormalized);
     const resolution = prospectResolutionForAttendance(row);
     const existing = resolution.prospect;
     const value = row.tag === "purchase" ? row.purchaseValue || row.serviceValue : row.serviceValue;
@@ -1041,7 +1040,7 @@
         ${row.serviceOrder ? `<span><i class="fa-solid fa-receipt" aria-hidden="true"></i><small>OS</small><strong>${escapeHtml(row.serviceOrder)}</strong></span>` : ""}
       </div>
       <div class="prospection-attendance-actions">
-        ${whatsapp ? `<a class="whatsapp-button" href="https://wa.me/${escapeHtml(whatsapp)}" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>WhatsApp</a>` : `<span class="prospection-attendance-no-phone"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
+        ${phone ? `<a class="phone-button" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : `<span class="prospection-attendance-no-phone"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
         ${existing ? `<button class="edit-button" type="button" data-prospection-action="edit-prospect" data-prospect-id="${escapeHtml(existing.id)}"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Abrir prospecção</button>` : resolution.ambiguous ? `<button class="edit-button" type="button" data-prospection-action="review-duplicate-prospects" data-attendance-id="${escapeHtml(row.id)}"><i class="fa-solid fa-list" aria-hidden="true"></i>Revisar registros</button>` : `<button class="mark-returned-button" type="button" data-prospection-action="prefill-attendance" data-attendance-id="${escapeHtml(row.id)}"><i class="fa-solid fa-user-plus" aria-hidden="true"></i>Usar no cadastro</button>`}
       </div>
     </article>`;
@@ -1070,8 +1069,8 @@
 
   function recordCardMarkup(row) {
     const probability = PROBABILITIES[row.probability];
-    const whatsappNumber = whatsappPhone(row.phone);
-    const whatsapp = whatsappNumber ? `https://wa.me/${whatsappNumber}` : "";
+    const phoneNumber = phoneDigits(row.phone);
+    const phoneUrl = phoneNumber ? `tel:${phoneNumber}` : "";
     const info = `${row.professionalName ? `<div class="card-professional"><i class="fa-solid fa-user-check" aria-hidden="true"></i><span>Profissional</span><strong>${escapeHtml(row.professionalName)}</strong></div>` : ""}${row.purchasedAt && (row.purchaseAmount || row.purchaseOrder) ? `<div class="card-purchase-info"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>Compra</span>${row.purchaseAmount ? `<strong>${formatCurrency(row.purchaseAmount)}</strong>` : ""}${row.purchaseOrder ? `<em>${escapeHtml(row.purchaseOrder)}</em>` : ""}</div>` : ""}`;
     return `<article class="prospect-card" data-color="${escapeHtml(row.probability)}">
       <div class="card-main">
@@ -1082,7 +1081,7 @@
       ${info ? `<div class="card-info-row">${info}</div>` : ""}
       <div class="card-bottom">
         <div class="card-actions">
-          ${whatsapp ? `<a class="whatsapp-button" href="${whatsapp}" target="_blank" rel="noreferrer">Chamar no WhatsApp</a>` : ""}
+          ${phoneUrl ? `<a class="phone-button" href="${phoneUrl}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
           ${!row.returnedAt ? `<button class="mark-returned-button" type="button" data-prospection-action="toggle-returned" data-prospect-id="${row.id}" data-next-value="true">Registrar volta</button>` : !row.purchasedAt ? `<button class="unmark-returned-button" type="button" data-prospection-action="toggle-returned" data-prospect-id="${row.id}" data-next-value="false">Tirar volta</button>` : ""}
           <button class="${row.purchasedAt ? "unmark-purchased-button" : "mark-purchased-button"}" type="button" data-prospection-action="${row.purchasedAt ? "unmark-purchased" : "open-purchase"}" data-prospect-id="${row.id}">${row.purchasedAt ? "Tirar compra" : "Registrar compra"}</button>
           <button class="edit-button" type="button" data-prospection-action="edit-prospect" data-prospect-id="${row.id}">Editar</button>
@@ -2879,21 +2878,6 @@
     else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
     else if (action === "manage-access") bridge.openStoreAccess?.(button.dataset.storeId || "");
     else if (action === "export-archive") exportArchivedProspections();
-    else if (action === "request-upgrade") {
-      const store = storeById(bridge.profile.storeId) || {};
-      const agencyName = store.technicianName || bridge.profile.agencyName || "minha agência";
-      const agencyWhatsapp = onlyDigits(store.technicianWhatsapp || bridge.profile.agencyWhatsapp || "");
-      const requesterName = bridge.profile.fullName || bridge.profile.username || "Responsável da conta";
-      const requesterLogin = bridge.profile.username ? `@${bridge.profile.username}` : "login não informado";
-      const storeName = store.name || bridge.profile.storeName || "empresa não identificada";
-      const message = `Olá, ${agencyName}! Sou ${requesterName}, responsável pela empresa ${storeName} (${requesterLogin}). Gostaria de solicitar o upgrade para liberar o módulo de Prospecções e acompanhar o desempenho da equipe, retornos, compras e bonificações. Poderia me passar as condições?`;
-      if (!agencyWhatsapp) {
-        bridge.notify("A agência ainda não cadastrou o WhatsApp comercial. Peça para ela atualizar o contato no painel.", "error");
-        return;
-      }
-      const conversationUrl = `https://wa.me/${agencyWhatsapp}?text=${encodeURIComponent(message)}`;
-      window.open(conversationUrl, "_blank", "noopener,noreferrer");
-    }
     else if (action === "toggle-filters") { filtersOpen = !filtersOpen; render(); }
     else if (action === "set-list-mode") setListMode(button.dataset.listMode || "records");
     else if (action === "retry-attendances") await loadAttendanceOpportunities();

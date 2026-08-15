@@ -225,18 +225,6 @@ body.is-dark .module-switcher-button.is-active {
   padding-inline: 18px;
 }
 
-.prospection-upgrade-actions .prospection-button.is-whatsapp {
-  border-color: #15985a;
-  background: linear-gradient(135deg, #22c876, #119458);
-  color: #fff;
-  box-shadow: 0 14px 32px rgba(22, 163, 96, 0.24);
-}
-
-.prospection-upgrade-actions .prospection-button.is-whatsapp:hover {
-  border-color: #25d57f;
-  background: linear-gradient(135deg, #28d985, #159e61);
-}
-
 .prospection-upgrade-actions .prospection-button.is-archive {
   border-color: color-mix(in srgb, var(--prospection-blue) 42%, var(--line));
   background: linear-gradient(135deg, var(--prospection-blue), #2367bd);

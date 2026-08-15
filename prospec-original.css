@@ -486,10 +486,10 @@ body.is-dark-mode .card-actions .unmark-returned-button {
   color: #fed7aa;
 }
 
-body.is-dark-mode .card-actions .whatsapp-button {
-  border-color: #15803d;
-  background: #052e16;
-  color: #bbf7d0;
+body.is-dark-mode .card-actions .phone-button {
+  border-color: #2f72e8;
+  background: #10284f;
+  color: #dbeafe;
 }
 
 .app-shell {
@@ -3578,13 +3578,13 @@ body.is-dark-mode .created-date-block {
   color: #991b1b;
 }
 
-.card-actions .whatsapp-button {
-  background: #e9fbf0;
-  border-color: #b7efc5;
-  color: #128c4a;
+.card-actions .phone-button {
+  background: #edf4ff;
+  border-color: #bfd6fb;
+  color: #2367bd;
 }
 
-.card-actions .whatsapp-button.is-hidden {
+.card-actions .phone-button.is-hidden {
   display: none;
 }
 
@@ -4953,10 +4953,10 @@ body.is-prospections-operation .prospection-operation-list-toolbar {
   text-decoration: none;
 }
 
-.prospection-attendance-actions .whatsapp-button {
-  border: 1px solid #16a34a;
-  background: #f0fdf4;
-  color: #15803d;
+.prospection-attendance-actions .phone-button {
+  border: 1px solid #2f72e8;
+  background: #edf4ff;
+  color: #2367bd;
 }
 
 .prospection-attendance-actions .mark-returned-button {
@@ -5079,10 +5079,10 @@ body.is-dark-mode .prospection-attendance-state {
   background: color-mix(in srgb, var(--surface-soft) 70%, var(--surface));
 }
 
-body.is-dark-mode .prospection-attendance-actions .whatsapp-button {
-  border-color: #15803d;
-  background: #052e16;
-  color: #bbf7d0;
+body.is-dark-mode .prospection-attendance-actions .phone-button {
+  border-color: #2f72e8;
+  background: #10284f;
+  color: #dbeafe;
 }
 
 body.is-dark-mode .prospection-attendance-filters input,
