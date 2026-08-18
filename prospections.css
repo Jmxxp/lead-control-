@@ -1439,6 +1439,15 @@ body.is-dark .prospection-config-row {
   border-radius: 10px;
 }
 
+#appView > .topbar:has(> .module-switcher[hidden]) {
+  grid-template-columns: minmax(250px, 1fr) auto;
+}
+
+#appView > .topbar:has(> .module-switcher[hidden]) > .topbar-actions,
+#appView > .topbar > .topbar-actions {
+  justify-self: end;
+}
+
 #appView .topbar-identity {
   gap: 12px;
 }

@@ -134,7 +134,6 @@
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
       </header>
-      <div class="support-assistant-scope"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span>Somente telas e fluxos do cliente</span></div>
       <div id="supportAssistantMessages" class="support-assistant-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
       <div id="supportAssistantPrompts" class="support-assistant-prompts" aria-label="Perguntas rápidas">
         <button type="button" data-support-prompt="Como cadastrar um lead?">Cadastrar lead</button>
@@ -148,7 +147,6 @@
             <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
           </button>
         </label>
-        <small>Não envie nomes, telefones ou outros dados de clientes.</small>
       </form>
     `;
     return element;

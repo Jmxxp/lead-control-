@@ -139,6 +139,7 @@ const moduleSwitcher = $("#moduleSwitcher");
 const sessionRole = $("#sessionRole");
 const sessionAvatar = $("#sessionAvatar");
 const appNotification = $("#appNotification");
+const supportAssistantToggle = $("#supportAssistantToggle");
 const themeToggle = $("#themeToggle");
 const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
@@ -1291,6 +1292,8 @@ function updateSystemModuleControls() {
   const isAttendances = activeSystemModule === "attendances";
   const prospectionsAllowed = canUseProspections();
   const isInsideClient = Boolean(currentProfile && (currentProfile.role === "store" || activeStoreContext));
+  supportAssistantToggle.hidden = !currentProfile;
+  supportAssistantToggle.setAttribute("aria-hidden", String(!currentProfile));
   moduleSwitcher.hidden = !isInsideClient;
   moduleSwitcher.setAttribute("aria-hidden", String(!isInsideClient));
   moduleLeadsButton.classList.toggle("is-active", isLeads);

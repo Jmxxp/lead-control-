@@ -53,6 +53,10 @@ video {
     padding: 14px;
   }
 
+  #appView > .topbar:has(> .module-switcher:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .admin-workspace,
   .workspace,
   .analytics-controls,
