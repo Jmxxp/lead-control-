@@ -37,7 +37,7 @@
     <link rel="stylesheet" href="support-assistant.css?v=20260818-premium-unified-3" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260818-premium-unified-3" defer></script>
+    <script src="app.js?v=20260818-premium-unified-4" defer></script>
     <script src="prospections.js?v=20260818-premium-unified-3" defer></script>
     <script src="attendances.js?v=20260818-premium-unified-3" defer></script>
     <script src="support-assistant.js?v=20260818-premium-unified-3" defer></script>
@@ -57,12 +57,12 @@
           <form id="loginForm" class="auth-form">
             <label class="field">
               <span>Nick</span>
-              <input id="loginNick" type="text" placeholder="ex: matriz" required />
+              <input id="loginNick" type="text" autocomplete="username" placeholder="ex: matriz" required />
             </label>
             <label class="field">
               <span>Senha</span>
               <div class="password-field">
-                <input id="loginPassword" type="password" placeholder="Sua senha" required />
+                <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Sua senha" required />
                 <button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Mostrar senha" title="Mostrar senha">
                   <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
@@ -683,13 +683,13 @@
 
               <label class="field">
                 <span>Nick da loja</span>
-                <input id="storeNick" type="text" placeholder="ex: loja-centro" required />
+                <input id="storeNick" type="text" autocomplete="section-store username" placeholder="ex: loja-centro" required />
               </label>
 
               <label class="field">
                 <span>Senha da loja</span>
                 <div class="password-field">
-                  <input id="storePassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                  <input id="storePassword" type="password" autocomplete="section-store new-password" minlength="6" placeholder="Mínimo 6 caracteres" required />
                   <button class="password-toggle" type="button" data-toggle-password="storePassword" aria-label="Mostrar senha" title="Mostrar senha">
                     <i class="fa-solid fa-eye" aria-hidden="true"></i>
                   </button>
@@ -715,13 +715,13 @@
 
               <label class="field">
                 <span>Login da agência</span>
-                <input id="technicianNick" type="text" placeholder="ex: agencia-prime" required />
+                <input id="technicianNick" type="text" autocomplete="section-agency username" placeholder="ex: agencia-prime" required />
               </label>
 
               <label class="field">
                 <span>Senha da agência</span>
                 <div class="password-field">
-                  <input id="technicianPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required />
+                  <input id="technicianPassword" type="password" autocomplete="section-agency new-password" minlength="6" placeholder="Mínimo 6 caracteres" required />
                   <button class="password-toggle" type="button" data-toggle-password="technicianPassword" aria-label="Mostrar senha" title="Mostrar senha">
                     <i class="fa-solid fa-eye" aria-hidden="true"></i>
                   </button>
@@ -888,7 +888,7 @@
               <div class="field-grid lead-entry">
                 <label class="field">
                   <span>Nome</span>
-                  <input id="name" name="name" type="text" placeholder="Nome do lead" required />
+                  <input id="name" name="name" type="text" autocomplete="name" placeholder="Nome do lead" required />
                 </label>
 
                 <label class="field">
@@ -897,6 +897,7 @@
                     id="phone"
                     name="phone"
                     type="tel"
+                    autocomplete="tel"
                     inputmode="tel"
                     placeholder="(00) 00000-0000"
                     required
@@ -1241,7 +1242,7 @@
                   <small id="aiKeyStatus" aria-live="polite"></small>
                 </div>
                 <div class="password-field">
-                  <input id="aiApiKey" type="password" placeholder="API key" />
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="API key" />
                   <button class="password-toggle" type="button" data-toggle-password="aiApiKey" aria-label="Mostrar chave" title="Mostrar chave">
                     <i class="fa-solid fa-eye" aria-hidden="true"></i>
                   </button>
@@ -1276,13 +1277,13 @@
         <form id="adminAccountForm" class="account-form" autocomplete="off">
           <label class="field">
             <span>Nick do admin</span>
-            <input id="adminAccountNick" type="text" placeholder="Seu nick" required />
+            <input id="adminAccountNick" type="text" autocomplete="section-admin username" placeholder="Seu nick" required />
           </label>
 
           <label class="field">
             <span>Senha atual</span>
             <div class="password-field">
-              <input id="adminCurrentPassword" type="password" placeholder="Confirme sua senha" required />
+              <input id="adminCurrentPassword" type="password" autocomplete="section-admin current-password" placeholder="Confirme sua senha" required />
               <button class="password-toggle" type="button" data-toggle-password="adminCurrentPassword" aria-label="Mostrar senha" title="Mostrar senha">
                 <i class="fa-solid fa-eye" aria-hidden="true"></i>
               </button>
@@ -1292,7 +1293,7 @@
           <label class="field">
             <span>Nova senha</span>
             <div class="password-field">
-              <input id="adminNewPassword" type="password" minlength="6" placeholder="Opcional" />
+              <input id="adminNewPassword" type="password" autocomplete="section-admin new-password" minlength="6" placeholder="Opcional" />
               <button class="password-toggle" type="button" data-toggle-password="adminNewPassword" aria-label="Mostrar senha" title="Mostrar senha">
                 <i class="fa-solid fa-eye" aria-hidden="true"></i>
               </button>
@@ -1336,7 +1337,7 @@
             <label class="field">
               <span>Chave da API</span>
               <div class="password-field">
-                <input id="adminAiApiKey" type="password" placeholder="Cole a chave da API" autocomplete="new-password" />
+                <input id="adminAiApiKey" type="password" autocomplete="off" placeholder="Cole a chave da API" />
                 <button class="password-toggle" type="button" data-toggle-password="adminAiApiKey" aria-label="Mostrar chave" title="Mostrar chave">
                   <i class="fa-solid fa-eye" aria-hidden="true"></i>
                 </button>
@@ -1412,13 +1413,13 @@
 
           <label class="field">
             <span>Nick de login</span>
-            <input id="managedAccountNick" type="text" placeholder="nick-de-login" required />
+            <input id="managedAccountNick" type="text" autocomplete="section-managed username" placeholder="nick-de-login" required />
           </label>
 
           <label class="field">
             <span>Nova senha</span>
             <div class="password-field">
-              <input id="managedAccountPassword" type="password" minlength="6" placeholder="Deixe vazio para manter" />
+              <input id="managedAccountPassword" type="password" autocomplete="section-managed new-password" minlength="6" placeholder="Deixe vazio para manter" />
               <button class="password-toggle" type="button" data-toggle-password="managedAccountPassword" aria-label="Mostrar senha" title="Mostrar senha">
                 <i class="fa-solid fa-eye" aria-hidden="true"></i>
               </button>

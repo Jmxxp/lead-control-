@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Configurar Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Montar site estático
         shell: bash
@@ -50,7 +50,7 @@ jobs:
           touch _site/.nojekyll
 
       - name: Enviar artefato do site
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -64,6 +64,6 @@ jobs:
     steps:
       - name: Publicar no GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
-          timeout: 900000
+          timeout: 600000

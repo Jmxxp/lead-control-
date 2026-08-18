@@ -3841,7 +3841,7 @@ function renderOptionsEditor(container, scope) {
             <div class="option-group-title">
               <span>Nome da categoria</span>
               <div class="category-label-editor">
-                <input value="${escapeHtml(dirtyGroupLabels.get(group) ?? labels[group])}" data-group-label="${group}" aria-label="Nome da categoria ${escapeHtml(labels[group])}" />
+                <input name="category-label" autocomplete="off" value="${escapeHtml(dirtyGroupLabels.get(group) ?? labels[group])}" data-group-label="${group}" aria-label="Nome da categoria ${escapeHtml(labels[group])}" />
                 <button class="mini-button option-save" type="button" data-option-action="save-group-label" data-group="${group}" ${dirtyGroupLabels.has(group) ? "" : "hidden"}>Salvar nome</button>
               </div>
             </div>
@@ -4947,7 +4947,7 @@ function renderAnalyticsChartsPanel() {
       <div class="analytics-chart-controls">
         <label class="field">
           <span><i class="fa-solid fa-layer-group" aria-hidden="true"></i>Categoria</span>
-          <select data-analytics-chart-section>
+          <select name="analytics-chart-section" data-analytics-chart-section>
             ${sections.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === section.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
           </select>
         </label>
@@ -4966,7 +4966,7 @@ function renderAnalyticsChartsPanel() {
 
         <label class="field analytics-chart-value-field" ${analyticsChartType === "line" ? "hidden" : ""}>
           <span><i class="fa-solid fa-tag" aria-hidden="true"></i>Subcategoria</span>
-          <select data-analytics-chart-value ${values.length ? "" : "disabled"}>
+          <select name="analytics-chart-value" data-analytics-chart-value ${values.length ? "" : "disabled"}>
             ${values.length
               ? `<option value="">Escolha uma subcategoria</option>` + values.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === analyticsChartValue ? "selected" : ""}>${escapeHtml(item.value)}</option>`).join("")
               : '<option value="">Sem dados</option>'}
