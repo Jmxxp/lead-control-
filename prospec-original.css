@@ -648,26 +648,6 @@ body.is-store-context #adminSettingsOverlay {
   box-shadow: 0 12px 30px rgba(22, 32, 51, 0.07);
 }
 
-.admin-overview-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  background: #2563eb;
-}
-
-.admin-overview-card:nth-child(2)::before {
-  background: #1d4ed8;
-}
-
-.admin-overview-card:nth-child(3)::before {
-  background: #334155;
-}
-
-.admin-overview-card:nth-child(4)::before {
-  background: #0f766e;
-}
-
 .admin-overview-card span {
   display: block;
   color: #0f172a;
@@ -2550,7 +2530,7 @@ body.is-dark-mode .professional-details-ghost-button {
   padding: 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   color: #0f172a;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  box-shadow: none;
 }
 
 .calendar-day.is-today {
@@ -2588,7 +2568,7 @@ body.is-dark-mode .professional-details-ghost-button {
 
 body.is-dark-mode .calendar-day {
   border-color: rgba(248, 250, 252, 0.42);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 22px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
 }
 
 body.is-dark-mode .calendar-day.is-today {

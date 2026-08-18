@@ -36,8 +36,7 @@ video {
   .section-title,
   .modal-dialog,
   .account-dialog,
-  .analytics-panel,
-  .marketing-intelligence-panel
+  .analytics-panel
 ) :where(h1, h2, h3, strong, span, small, p) {
   overflow-wrap: anywhere;
 }
@@ -86,16 +85,6 @@ video {
     font-size: 16px !important;
   }
 
-  .marketing-breakdown-row {
-    grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(58px, 0.7fr));
-  }
-
-  .marketing-breakdown-row > span,
-  .marketing-breakdown-row > span:nth-last-child(-n + 2),
-  .marketing-breakdown-row > span:nth-of-type(n + 3) {
-    display: grid !important;
-  }
-
 }
 
 @media (max-width: 720px) {
@@ -110,6 +99,42 @@ video {
     min-height: 100dvh;
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .unified-analysis-switcher {
+    gap: 9px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: var(--mobile-radius);
+  }
+
+  .unified-analysis-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .unified-analysis-heading > div:first-child > span {
+    font-size: 0.66rem;
+  }
+
+  .unified-analysis-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    width: 100%;
+    padding: 3px;
+  }
+
+  .unified-analysis-tab {
+    display: grid;
+    gap: 4px;
+    min-height: 48px;
+    padding: 5px 3px;
+    font-size: 0.62rem;
+  }
+
+  .unified-analysis-tab i {
+    font-size: 0.78rem;
   }
 
   .app-shell {
@@ -529,7 +554,6 @@ video {
   .analytics-panel,
   .analytics-toggle,
   .analytics-content,
-  .marketing-intelligence-panel,
   .backup-center,
   .legal-admin-center {
     min-width: 0;
@@ -549,11 +573,6 @@ video {
     .analytics-chart-card,
     .analytics-empty-card,
     .analytics-section-card,
-    .marketing-data-card,
-    .marketing-goal-card,
-    .marketing-sync-card,
-    .marketing-tracker-card,
-    .performance-card,
     .prospection-account-card,
     .prospection-category-card,
     .prospection-overview-card,
@@ -861,6 +880,10 @@ video {
     font-size: 0.72rem;
   }
 
+  .management-stats > .feature-plan-badge {
+    grid-column: 1 / -1;
+  }
+
   .management-stats > .feature-plan-badge i {
     flex: 0 0 auto;
   }
@@ -1024,13 +1047,13 @@ video {
   }
 
   /* Dialogos continuam com a mesma aparencia central, apenas mais compactos. */
-  .modal-backdrop:not(.legal-terms-backdrop):not(.legal-document-backdrop):not(.configuration-backdrop):not(.ai-chat-backdrop):not(.marketing-connection-backdrop) {
+  .modal-backdrop:not(.legal-terms-backdrop):not(.legal-document-backdrop):not(.configuration-backdrop):not(.ai-chat-backdrop) {
     align-items: center;
     justify-content: center;
     padding: 8px;
   }
 
-  .modal-backdrop:not(.legal-terms-backdrop):not(.legal-document-backdrop):not(.configuration-backdrop):not(.ai-chat-backdrop):not(.marketing-connection-backdrop) > .modal-dialog {
+  .modal-backdrop:not(.legal-terms-backdrop):not(.legal-document-backdrop):not(.configuration-backdrop):not(.ai-chat-backdrop) > .modal-dialog {
     width: min(100%, 560px);
     max-width: none;
     max-height: calc(100dvh - 16px);
@@ -1042,7 +1065,6 @@ video {
   .configuration-backdrop,
   .legal-terms-backdrop,
   .legal-document-backdrop,
-  .marketing-connection-backdrop,
   .ai-chat-backdrop {
     padding: 0;
   }
@@ -1050,7 +1072,6 @@ video {
   .configuration-backdrop .configuration-dialog,
   .legal-terms-dialog,
   .legal-document-dialog,
-  .marketing-connection-dialog,
   .ai-chat-dialog {
     width: 100vw;
     height: 100dvh;
@@ -1061,7 +1082,6 @@ video {
 
   .legal-terms-layout,
   .legal-document-layout,
-  .marketing-connection-body,
   .ai-chat-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1070,7 +1090,6 @@ video {
   .configuration-dialog-footer,
   .legal-terms-header,
   .legal-document-header,
-  .marketing-connection-header,
   .ai-chat-header {
     padding: 11px max(11px, env(safe-area-inset-right)) 11px max(11px, env(safe-area-inset-left));
   }
@@ -1503,6 +1522,22 @@ video {
     gap: 6px;
   }
 
+  .attendance-embedded-overview > .attendance-overview-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .attendance-embedded-overview > .attendance-overview-heading > div,
+  .attendance-embedded-overview > .attendance-overview-heading > .attendance-header-actions {
+    width: 100%;
+  }
+
+  .attendance-embedded-overview .attendance-scope-badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
   .attendance-panel-header > div,
   .attendance-overview-heading > div {
     flex: 1 1 160px;
@@ -1549,8 +1584,8 @@ video {
   }
 
   .attendance-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 5px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .attendance-metric {
@@ -1568,137 +1603,17 @@ video {
   }
 
   .attendance-metric small {
-    font-size: 0.52rem;
+    font-size: 0.58rem;
   }
 
   .attendance-metric strong {
-    font-size: 0.86rem;
+    font-size: 0.96rem;
   }
 
   .attendance-list-tools {
     grid-template-columns: minmax(0, 1fr) minmax(92px, 0.45fr);
   }
 
-  /* Marketing: quatro indicadores por linha e detalhamento completo. */
-  .marketing-intelligence-actions {
-    display: flex !important;
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 5px !important;
-    width: auto;
-    min-width: 0 !important;
-  }
-
-  .marketing-intelligence-actions .marketing-data-badge {
-    margin-right: 0;
-  }
-
-  .marketing-heading-button {
-    width: auto;
-    min-height: 36px;
-    padding-inline: 9px;
-  }
-
-  .marketing-api-panel {
-    gap: 9px;
-    padding: 10px;
-  }
-
-  .marketing-api-heading {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .marketing-api-heading > div {
-    flex: 1 1 auto;
-  }
-
-  .marketing-api-heading > small {
-    max-width: 42%;
-    font-size: 0.6rem;
-    text-align: right;
-  }
-
-  .marketing-api-metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 5px;
-  }
-
-  .marketing-api-metric {
-    gap: 6px;
-    min-height: 68px;
-    padding: 7px;
-    border-radius: 9px;
-  }
-
-  .marketing-api-metric span {
-    gap: 3px;
-    font-size: 0.53rem;
-  }
-
-  .marketing-api-metric strong {
-    font-size: 0.94rem;
-  }
-
-  .marketing-breakdown-row {
-    grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(48px, 0.62fr));
-    gap: 5px;
-    padding: 8px 8px 8px 11px;
-    border-radius: var(--mobile-radius);
-  }
-
-  .marketing-breakdown-name {
-    grid-column: auto;
-    padding-bottom: 0;
-    border-bottom: 0;
-  }
-
-  .marketing-provider-mini {
-    width: 26px;
-    height: 26px;
-  }
-
-  .marketing-breakdown-row > span,
-  .marketing-breakdown-row > span:nth-last-child(-n + 2),
-  .marketing-breakdown-row > span:nth-of-type(n + 3) {
-    display: grid !important;
-    min-height: 0;
-  }
-
-  .marketing-breakdown-name strong,
-  .marketing-breakdown-row > span b {
-    font-size: 0.62rem;
-  }
-
-  .marketing-breakdown-name small,
-  .marketing-breakdown-row > span small {
-    font-size: 0.5rem;
-  }
-
-  .marketing-source-row {
-    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(58px, 0.5fr));
-  }
-
-  .marketing-source-name {
-    grid-column: auto;
-  }
-
-  .marketing-provider-tabs {
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-  }
-
-  .marketing-provider-tab {
-    min-width: min(160px, 46vw);
-  }
-
-  .marketing-connection-actions,
-  .marketing-tracker-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 480px) {
@@ -1761,8 +1676,7 @@ video {
   .store-export-panel,
   .analytics-panel,
   .analytics-toggle,
-  .analytics-content,
-  .marketing-intelligence-panel {
+  .analytics-content {
     padding: 10px;
   }
 

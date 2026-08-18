@@ -1,21 +1,21 @@
 .attendance-view {
-  --att-bg: #eef3f9;
+  --att-bg: #edf7f2;
   --att-panel: rgba(255, 255, 255, 0.96);
-  --att-panel-soft: #f5f8fc;
-  --att-panel-muted: #eaf0f8;
-  --att-ink: #172337;
-  --att-muted: #687991;
-  --att-line: #d4deeb;
-  --att-line-strong: #b9c8db;
-  --att-blue: #2f72e8;
-  --att-blue-soft: #e7f0ff;
-  --att-green: #118b67;
-  --att-green-soft: #e2f7ef;
+  --att-panel-soft: #f3faf6;
+  --att-panel-muted: #e6f2ec;
+  --att-ink: #143126;
+  --att-muted: #617b70;
+  --att-line: #cfe0d7;
+  --att-line-strong: #aec8bb;
+  --att-blue: #158a61;
+  --att-blue-soft: #e0f4eb;
+  --att-green: #0b7b57;
+  --att-green-soft: #dcf5e9;
   --att-violet: #7657d9;
   --att-cyan: #148da8;
   --att-danger: #c74461;
-  --att-shadow: 0 22px 55px rgba(37, 67, 111, 0.11), 0 3px 12px rgba(37, 67, 111, 0.06);
-  --att-shadow-soft: 0 12px 30px rgba(37, 67, 111, 0.08), 0 2px 8px rgba(37, 67, 111, 0.05);
+  --att-shadow: 0 22px 55px rgba(23, 84, 62, 0.11), 0 3px 12px rgba(23, 84, 62, 0.06);
+  --att-shadow-soft: 0 12px 30px rgba(23, 84, 62, 0.08), 0 2px 8px rgba(23, 84, 62, 0.05);
   width: 100%;
   min-width: 0;
   color: var(--att-ink);
@@ -30,18 +30,18 @@
 
 body.is-dark .attendance-view,
 .is-dark-mode .attendance-view {
-  --att-bg: #091322;
-  --att-panel: #101d2f;
-  --att-panel-soft: #142238;
-  --att-panel-muted: #1c2b42;
-  --att-ink: #eaf1fc;
-  --att-muted: #a5b5cb;
-  --att-line: #2c405c;
-  --att-line-strong: #3a5272;
-  --att-blue: #66a3ff;
-  --att-blue-soft: rgba(65, 126, 228, 0.17);
-  --att-green: #35cf91;
-  --att-green-soft: rgba(27, 179, 121, 0.14);
+  --att-bg: #071711;
+  --att-panel: #0d2119;
+  --att-panel-soft: #112b21;
+  --att-panel-muted: #17382b;
+  --att-ink: #e8f6ee;
+  --att-muted: #a1bcae;
+  --att-line: #284a3b;
+  --att-line-strong: #376452;
+  --att-blue: #49d6a0;
+  --att-blue-soft: rgba(55, 190, 139, 0.16);
+  --att-green: #36d193;
+  --att-green-soft: rgba(40, 184, 128, 0.14);
   --att-violet: #a289ff;
   --att-cyan: #4ac8dd;
   --att-danger: #ff7892;
@@ -101,9 +101,9 @@ body.is-dark .attendance-view,
 body.is-dark .attendance-shell,
 .is-dark-mode .attendance-shell {
   background:
-    radial-gradient(circle at 88% 1%, rgba(42, 102, 190, 0.18), transparent 31%),
-    radial-gradient(circle at 8% 95%, rgba(20, 126, 102, 0.12), transparent 27%),
-    linear-gradient(145deg, #091322 0%, #0b1727 55%, #0a1422 100%);
+    radial-gradient(circle at 88% 1%, rgba(42, 171, 119, 0.17), transparent 31%),
+    radial-gradient(circle at 8% 95%, rgba(20, 126, 86, 0.13), transparent 27%),
+    linear-gradient(145deg, #071711 0%, #0a1d16 55%, #081912 100%);
 }
 
 .attendance-module-header {
@@ -670,9 +670,9 @@ body.is-dark .attendance-shell,
   min-height: 53px;
   margin-top: 2px;
   padding: 0 20px;
-  background: linear-gradient(135deg, #2f72e8, #2561cb);
+  background: linear-gradient(135deg, #15966b, #0e7552);
   color: #fff;
-  box-shadow: 0 15px 28px rgba(47, 114, 232, 0.23);
+  box-shadow: 0 15px 28px rgba(21, 150, 107, 0.23);
 }
 
 .attendance-primary-button:hover:not(:disabled),
@@ -694,7 +694,7 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-form[aria-busy="true"] .attendance-primary-button:disabled {
-  background: linear-gradient(135deg, #2f72e8, #2561cb);
+  background: linear-gradient(135deg, #15966b, #0e7552);
   color: #fff;
   cursor: wait;
   opacity: 0.78;
@@ -1368,7 +1368,7 @@ body.is-dark .attendance-shell,
   gap: 16px;
   min-height: 180px;
   padding: 28px;
-  border: 1px solid var(--att-line, #d4deeb);
+  border: 1px solid var(--att-line, #cfe0d7);
   border-radius: 20px;
   background: var(--att-panel, #fff);
 }
@@ -1379,8 +1379,8 @@ body.is-dark .attendance-shell,
   height: 58px;
   place-items: center;
   border-radius: 18px;
-  background: var(--att-blue-soft, #e7f0ff);
-  color: var(--att-blue, #2f72e8);
+  background: var(--att-blue-soft, #e0f4eb);
+  color: var(--att-blue, #158a61);
 }
 
 .attendance-loading-card h2,

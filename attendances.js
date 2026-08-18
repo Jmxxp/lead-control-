@@ -38,6 +38,9 @@
       period: "30d",
     },
   };
+  const embeddedAnalysisStates = new WeakMap();
+  const EMBEDDED_ANALYSIS_PAGE_SIZE = 200;
+  const EMBEDDED_ANALYSIS_MAX_RECORDS = 2000;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -767,6 +770,323 @@
     if (metrics) metrics.outerHTML = renderMetrics();
   }
 
+  function resolveEmbeddedAnalysisRoot(target) {
+    if (target instanceof Element) return target;
+    if (typeof target === "string") return document.querySelector(target);
+    return null;
+  }
+
+  function embeddedAttendanceStore(embeddedBridge, requestedStoreId) {
+    const profile = embeddedBridge?.profile || {};
+    const role = normalizeText(profile.role);
+    const storeRoles = ["store", "client", "cliente", "loja"];
+    const agencyRoles = ["technician", "agency", "agencia", "tecnico"];
+    const storeId = String(requestedStoreId || "");
+    const storesInBridge = (Array.isArray(embeddedBridge?.stores) ? embeddedBridge.stores : []).map(normalizeStore);
+    const store = storesInBridge.find((item) => item.id === storeId) || null;
+    if (!store) return { store: null, reason: "Cliente não encontrado neste escopo." };
+    if (!["admin", ...storeRoles, ...agencyRoles].includes(role)) {
+      return { store: null, reason: "Este perfil não tem permissão para analisar Atendimentos." };
+    }
+
+    const profileStoreId = String(firstDefined(profile.storeId, profile.store_id, storeRoles.includes(role) ? profile.id : "", ""));
+    const profileId = String(firstDefined(profile.id, profile.user_id, profile.technicianId, profile.technician_id, ""));
+    const initialAgencyId = String(embeddedBridge?.initialAgencyId || "");
+    if (storeRoles.includes(role) && store.id !== profileStoreId) {
+      return { store: null, reason: "Esta conta não pode analisar atendimentos de outro cliente." };
+    }
+    if (agencyRoles.includes(role) && store.technicianId !== profileId) {
+      return { store: null, reason: "Este cliente não pertence à carteira desta agência." };
+    }
+    if (role === "admin" && initialAgencyId && store.technicianId !== initialAgencyId) {
+      return { store: null, reason: "Este cliente não pertence à agência selecionada." };
+    }
+    if (embeddedBridge?.prospectionAccessGranted === false || store.prospectionEnabled !== true) {
+      return { store, reason: "Atendimentos é liberado junto com Prospecções para este cliente.", locked: true };
+    }
+    return { store, reason: "", locked: false };
+  }
+
+  function embeddedDateInput(value) {
+    const date = new Date(value);
+    const offset = date.getTimezoneOffset();
+    return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+  }
+
+  function embeddedAttendanceRange(period) {
+    if (period === "all") return { startDate: null, endDate: null, label: "Todo o período" };
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const start = new Date(today);
+    if (period === "today") return { startDate: embeddedDateInput(today), endDate: embeddedDateInput(today), label: "Hoje" };
+    start.setDate(start.getDate() - (period === "7d" ? 6 : 29));
+    return {
+      startDate: embeddedDateInput(start),
+      endDate: embeddedDateInput(today),
+      label: period === "7d" ? "Últimos 7 dias" : "Últimos 30 dias",
+    };
+  }
+
+  function embeddedAttendanceMetricData(state) {
+    const aliases = {
+      today: ["today", "day", "hoje"],
+      "7d": ["7d", "week", "last_7_days", "last7days", "semana"],
+      "30d": ["30d", "month", "last_30_days", "last30days", "mes"],
+      all: ["all", "total", "overall", "todo_periodo"],
+    };
+    const containers = [state.serverMetrics?.periods, state.serverMetrics?.by_period, state.serverMetrics?.byPeriod, state.serverMetrics];
+    let serverPeriod = null;
+    for (const container of containers) {
+      if (!container || typeof container !== "object") continue;
+      const key = aliases[state.period].find((alias) => container[alias] && typeof container[alias] === "object");
+      if (key) {
+        serverPeriod = container[key];
+        break;
+      }
+    }
+    if (serverPeriod) {
+      const total = Number(firstDefined(serverPeriod.total, serverPeriod.attendances, serverPeriod.attendance_count, serverPeriod.attendanceCount, 0)) || 0;
+      const purchases = Number(firstDefined(serverPeriod.purchases, serverPeriod.purchase_count, serverPeriod.purchaseCount, 0)) || 0;
+      return {
+        total,
+        budgets: Number(firstDefined(serverPeriod.budgets, serverPeriod.budget_count, serverPeriod.budgetCount, 0)) || 0,
+        purchases,
+        conversion: Number(firstDefined(serverPeriod.conversion, serverPeriod.conversion_rate, serverPeriod.conversionRate, total ? Math.round((purchases / total) * 100) : 0)) || 0,
+        revenue: Number(firstDefined(serverPeriod.revenue, serverPeriod.purchase_revenue, serverPeriod.purchaseRevenue, serverPeriod.sales_value, 0)) || 0,
+        serviceValue: Number(firstDefined(serverPeriod.service_value, serverPeriod.serviceValue, serverPeriod.attendance_value, serverPeriod.attendanceValue, 0)) || 0,
+        linked: Number(firstDefined(serverPeriod.linked, 0)) || 0,
+        unmatched: Number(firstDefined(serverPeriod.unmatched, 0)) || 0,
+        ambiguous: Number(firstDefined(serverPeriod.ambiguous, 0)) || 0,
+        uniqueCustomers: Number(firstDefined(serverPeriod.unique_customers, serverPeriod.uniqueCustomers, 0)) || 0,
+        bonusPendingReview: Number(firstDefined(serverPeriod.bonus_pending_review, serverPeriod.bonusPendingReview, 0)) || 0,
+      };
+    }
+
+    const purchases = state.records.filter((record) => record.tag === "purchase");
+    const linked = state.records.filter((record) => record.linkedLead?.linked || record.linkedProspection?.linked).length;
+    const uniqueCustomers = new Set(state.records.map((record) => onlyDigits(record.phone)).filter(Boolean)).size;
+    return {
+      total: state.records.length,
+      budgets: state.records.filter((record) => record.tag === "budget").length,
+      purchases: purchases.length,
+      conversion: state.records.length ? Math.round((purchases.length / state.records.length) * 100) : 0,
+      revenue: purchases.reduce((sum, record) => sum + record.purchaseValue, 0),
+      serviceValue: state.records.reduce((sum, record) => sum + record.serviceValue, 0),
+      linked,
+      unmatched: state.records.length - linked,
+      ambiguous: state.records.filter((record) => record.ambiguous).length,
+      uniqueCustomers,
+      bonusPendingReview: state.records.filter((record) => record.ambiguous && record.tag === "purchase").length,
+    };
+  }
+
+  function embeddedAttendanceMetricCards(metrics) {
+    const cards = [
+      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "blue" },
+      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "violet" },
+      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "green" },
+      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "cyan" },
+      { label: "Faturamento informado", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "green" },
+      { label: "Valor dos atendimentos", value: formatCurrency(metrics.serviceValue), icon: "fa-wallet", tone: "slate" },
+    ];
+    return `<section class="attendance-metrics" aria-label="Resumo dos atendimentos">${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
+  }
+
+  function embeddedAttendanceLinkMetrics(metrics) {
+    const cards = [
+      { label: "Clientes únicos", value: metrics.uniqueCustomers, icon: "fa-users", tone: "blue" },
+      { label: "Com origem vinculada", value: metrics.linked, icon: "fa-link", tone: "green" },
+      { label: "Atendimentos avulsos", value: metrics.unmatched, icon: "fa-circle-dot", tone: "slate" },
+      { label: "Vínculos para revisar", value: metrics.ambiguous, icon: "fa-triangle-exclamation", tone: "violet" },
+    ];
+    return `<section class="attendance-metrics" aria-label="Qualidade dos vínculos">${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
+  }
+
+  function embeddedAttendanceProfessionalRows(records) {
+    const grouped = new Map();
+    records.forEach((record) => {
+      const key = normalizeText(record.professionalName || "Não informado");
+      if (!grouped.has(key)) grouped.set(key, { name: record.professionalName || "Não informado", total: 0, budgets: 0, purchases: 0, revenue: 0, serviceValue: 0 });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (record.tag === "budget") item.budgets += 1;
+      if (record.tag === "purchase") {
+        item.purchases += 1;
+        item.revenue += record.purchaseValue;
+      }
+      item.serviceValue += record.serviceValue;
+    });
+    return [...grouped.values()].sort((a, b) => b.purchases - a.purchases || b.revenue - a.revenue || b.total - a.total);
+  }
+
+  function renderEmbeddedAttendanceProfessionals(state) {
+    const rows = embeddedAttendanceProfessionalRows(state.records);
+    if (!rows.length) return `<div class="attendance-list-empty"><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i></span><strong>Nenhum profissional no período</strong><p>Escolha outro intervalo para consultar o desempenho da equipe.</p></div>`;
+    return rows.map((item) => `<article class="attendance-record"><div class="attendance-record-accent attendance-record-accent--green" aria-hidden="true"></div><header><div class="attendance-record-person"><span>${escapeHtml(initials(item.name))}</span><div><strong>${escapeHtml(item.name)}</strong><small>${item.total} atendimento${item.total === 1 ? "" : "s"}</small></div></div><span class="attendance-record-tag attendance-record-tag--green"><i class="fa-solid fa-chart-line" aria-hidden="true"></i>${item.total ? Math.round((item.purchases / item.total) * 100) : 0}% conversão</span></header><footer><div class="attendance-record-links"><span class="attendance-link-badge attendance-link-badge--lead"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i>${item.budgets} orçamentos</span><span class="attendance-link-badge attendance-link-badge--prospection"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>${item.purchases} compras</span></div><div class="attendance-record-values"><span><small>Atendimentos</small><b>${escapeHtml(formatCurrency(item.serviceValue))}</b></span><span><small>Compras</small><b>${escapeHtml(formatCurrency(item.revenue))}</b></span></div></footer></article>`).join("");
+  }
+
+  function renderEmbeddedAttendanceContent(state) {
+    if (state.destroyed || !state.root.isConnected) return;
+    const metrics = embeddedAttendanceMetricData(state);
+    const range = embeddedAttendanceRange(state.period);
+    const detailLabel = state.truncated
+      ? `Amostra dos ${state.records.length} registros mais recentes de ${state.detailTotal}`
+      : `${state.records.length} registro${state.records.length === 1 ? "" : "s"} no detalhamento`;
+    const recent = state.records.slice(0, 20);
+    state.root.removeAttribute("aria-busy");
+    state.root.innerHTML = `<section class="attendance-overview attendance-embedded-overview">
+      <div class="attendance-overview-heading"><div><p class="attendance-eyebrow">Análise de atendimentos</p><h2>${escapeHtml(state.store.name)}</h2><span>${escapeHtml(range.label)} · métricas limitadas à empresa selecionada.</span></div><div class="attendance-header-actions"><label class="attendance-store-picker"><span>Período</span><span class="attendance-select-wrap"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${state.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${state.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.period === "all" ? "selected" : ""}>Todo o período</option></select></span></label><button class="attendance-icon-button" type="button" data-attendance-embedded-refresh aria-label="Atualizar análise" title="Atualizar"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Sem mistura de contas</span></div></div>
+      ${embeddedAttendanceMetricCards(metrics)}
+      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Qualidade dos vínculos</h2><span>Origem comercial identificada automaticamente pelo telefone.</span></div></header>${embeddedAttendanceLinkMetrics(metrics)}</article>
+      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Desempenho por profissional</h2><span>${escapeHtml(detailLabel)}</span></div></header><div class="attendance-record-list">${renderEmbeddedAttendanceProfessionals(state)}</div></article>
+      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Atendimentos recentes do período</h2><span>Até 20 registros para conferência rápida.</span></div></header><div class="attendance-record-list">${recent.length ? recent.map(renderRecord).join("") : `<div class="attendance-list-empty"><span><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span><strong>Nenhum atendimento no período</strong><p>Escolha outro intervalo para consultar o histórico.</p></div>`}</div></article>
+    </section>`;
+  }
+
+  function renderEmbeddedAttendanceState(state, kind, message) {
+    if (state.destroyed || !state.root.isConnected) return;
+    state.root.removeAttribute("aria-busy");
+    if (kind === "locked") {
+      state.root.innerHTML = `<section class="attendance-context-empty" aria-live="polite"><span class="attendance-context-empty-icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></span><p class="attendance-eyebrow">Recurso não liberado</p><h2>Atendimentos acompanha Prospecções</h2><p>${escapeHtml(message)}</p></section>`;
+      return;
+    }
+    state.root.innerHTML = `<section class="attendance-context-empty attendance-context-empty--error" role="alert"><span class="attendance-context-empty-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><p class="attendance-eyebrow">Análise indisponível</p><h2>Não foi possível carregar Atendimentos</h2><p>${escapeHtml(message)}</p><button class="attendance-secondary-button" type="button" data-attendance-embedded-retry><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>Tentar novamente</button></section>`;
+  }
+
+  async function fetchEmbeddedAttendanceRecords(state, requestGeneration) {
+    const range = embeddedAttendanceRange(state.period);
+    const records = [];
+    let offset = 0;
+    let total = 0;
+    let hasMore = true;
+    while (hasMore && records.length < EMBEDDED_ANALYSIS_MAX_RECORDS) {
+      const raw = await state.bridge.rpc("lc_list_attendances", {
+        p_store_id: state.storeId,
+        p_search: null,
+        p_tag: null,
+        p_professional_id: null,
+        p_link_status: null,
+        p_start_date: range.startDate,
+        p_end_date: range.endDate,
+        p_limit: EMBEDDED_ANALYSIS_PAGE_SIZE,
+        p_offset: offset,
+      });
+      if (state.destroyed || requestGeneration !== state.generation) return null;
+      const page = unwrapPayload(raw);
+      const responseStoreId = String(firstDefined(page.store_id, page.storeId, state.storeId));
+      if (responseStoreId !== state.storeId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+      const items = firstDefined(page.items, page.attendances, page.records, []);
+      const itemRows = Array.isArray(items) ? items : [];
+      if (itemRows.some((item) => String(firstDefined(item?.store_id, item?.storeId, state.storeId)) !== state.storeId)) {
+        throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+      }
+      const pageRows = itemRows
+        .map((item, index) => normalizeRecord({ ...item, store_id: firstDefined(item?.store_id, item?.storeId, state.storeId) }, offset + index))
+        .filter((record) => record.storeId === state.storeId);
+      records.push(...pageRows);
+      total = Number(firstDefined(page.total, records.length)) || records.length;
+      hasMore = Boolean(firstDefined(page.has_more, page.hasMore, offset + pageRows.length < total));
+      if (!pageRows.length) break;
+      offset += pageRows.length;
+    }
+    return {
+      records: records.slice(0, EMBEDDED_ANALYSIS_MAX_RECORDS),
+      total,
+      truncated: hasMore || total > EMBEDDED_ANALYSIS_MAX_RECORDS,
+    };
+  }
+
+  async function loadEmbeddedAttendanceAnalysis(state) {
+    const requestGeneration = ++state.generation;
+    state.root.setAttribute("aria-busy", "true");
+    state.root.innerHTML = `<section class="attendance-workspace-loading" role="status" aria-live="polite"><span class="attendance-spinner" aria-hidden="true"></span><div><strong>Carregando análise de Atendimentos</strong><span>Buscando somente os dados de ${escapeHtml(state.store.name)}.</span></div></section>`;
+    try {
+      const workspaceRaw = await state.bridge.rpc(DEFAULT_RPC.workspace, { p_store_id: state.storeId });
+      if (state.destroyed || requestGeneration !== state.generation) return;
+      const workspacePayload = unwrapPayload(workspaceRaw);
+      const returnedStoreId = String(firstDefined(workspacePayload.store?.id, workspacePayload.store_id, workspacePayload.storeId, state.storeId));
+      if (returnedStoreId !== state.storeId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+      const workspace = normalizeWorkspace(workspaceRaw);
+      state.serverMetrics = workspace.metrics;
+      const page = await fetchEmbeddedAttendanceRecords(state, requestGeneration);
+      if (!page || state.destroyed || requestGeneration !== state.generation) return;
+      state.records = page.records;
+      state.detailTotal = page.total;
+      state.truncated = page.truncated;
+      renderEmbeddedAttendanceContent(state);
+    } catch (error) {
+      if (state.destroyed || requestGeneration !== state.generation) return;
+      renderEmbeddedAttendanceState(state, isEntitlementError(error) ? "locked" : "error", readableError(error));
+    }
+  }
+
+  async function renderEmbeddedAnalysis({ root: target, bridge: embeddedBridge, storeId } = {}) {
+    const mount = resolveEmbeddedAnalysisRoot(target);
+    if (!mount) throw new Error("Área de análise embutida de Atendimentos não encontrada.");
+    destroyEmbeddedAnalysis(mount);
+    if (!embeddedBridge || typeof embeddedBridge.rpc !== "function") {
+      throw new Error("Integração RPC de Atendimentos não configurada.");
+    }
+
+    const access = embeddedAttendanceStore(embeddedBridge, storeId);
+    const embeddedState = {
+      root: mount,
+      bridge: embeddedBridge,
+      storeId: String(storeId || ""),
+      store: access.store,
+      period: "30d",
+      records: [],
+      serverMetrics: {},
+      detailTotal: 0,
+      truncated: false,
+      generation: 0,
+      destroyed: false,
+      onClick: null,
+      onChange: null,
+    };
+    embeddedAnalysisStates.set(mount, embeddedState);
+    mount.classList.add("attendance-embedded-analysis");
+    embeddedState.onClick = (event) => {
+      if (event.target.closest("[data-attendance-embedded-retry], [data-attendance-embedded-refresh]")) {
+        loadEmbeddedAttendanceAnalysis(embeddedState);
+      }
+    };
+    embeddedState.onChange = (event) => {
+      const selector = event.target.closest("[data-attendance-embedded-period]");
+      if (!selector || !mount.contains(selector)) return;
+      const period = selector.value;
+      if (!["today", "7d", "30d", "all"].includes(period)) return;
+      embeddedState.period = period;
+      loadEmbeddedAttendanceAnalysis(embeddedState);
+    };
+    mount.addEventListener("click", embeddedState.onClick);
+    mount.addEventListener("change", embeddedState.onChange);
+
+    if (!access.store || access.reason) {
+      renderEmbeddedAttendanceState(embeddedState, access.locked ? "locked" : "error", access.reason || "Cliente indisponível.");
+      return { storeId: embeddedState.storeId, destroy: () => embeddedAnalysisStates.get(mount) === embeddedState && destroyEmbeddedAnalysis(mount) };
+    }
+    await loadEmbeddedAttendanceAnalysis(embeddedState);
+    return { storeId: embeddedState.storeId, destroy: () => embeddedAnalysisStates.get(mount) === embeddedState && destroyEmbeddedAnalysis(mount) };
+  }
+
+  function destroyEmbeddedAnalysis(target) {
+    const mount = resolveEmbeddedAnalysisRoot(target);
+    if (!mount) return false;
+    const embeddedState = embeddedAnalysisStates.get(mount);
+    if (embeddedState) {
+      embeddedState.destroyed = true;
+      embeddedState.generation += 1;
+      if (embeddedState.onClick) mount.removeEventListener("click", embeddedState.onClick);
+      if (embeddedState.onChange) mount.removeEventListener("change", embeddedState.onChange);
+      embeddedAnalysisStates.delete(mount);
+    }
+    mount.classList.remove("attendance-embedded-analysis");
+    mount.removeAttribute("aria-busy");
+    mount.replaceChildren();
+    return Boolean(embeddedState);
+  }
+
   function syncPurchaseFields() {
     if (!state.root) return;
     const form = state.root.querySelector("[data-attendance-form]");
@@ -1262,5 +1582,7 @@
     renderFatalError,
     mount,
     getIntegrationContract,
+    renderEmbeddedAnalysis,
+    destroyEmbeddedAnalysis,
   });
 })(window);

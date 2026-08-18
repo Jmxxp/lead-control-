@@ -1,8 +1,8 @@
 # Controle de Leads — documentação completa do projeto
 
-> Retrato técnico e funcional verificado em **14 de agosto de 2026**.
+> Retrato técnico e funcional verificado em **18 de agosto de 2026**.
 >
-> Este documento descreve o código local e, quando indicado, o estado do projeto Supabase remoto `menlvmsgkhgqxiydphbn`. O banco remoto é a fonte de verdade para produção; os arquivos SQL do repositório também contêm a evolução histórica do produto.
+> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. A retirada de anúncios/atribuição foi aplicada e verificada no banco remoto em 18 de agosto de 2026; banco, Edge Functions e frontend continuam tendo ciclos de implantação independentes.
 
 ## 1. Resumo executivo
 
@@ -14,13 +14,15 @@ O Controle de Leads é um SaaS B2B para óticas. Ele possui uma interface web ú
 
 Os módulos atuais são:
 
-1. **Leads:** cadastro, acompanhamento, agenda, funil, inteligência comercial, marketing, relatórios e exportações.
+1. **Leads:** cadastro, acompanhamento, agenda, funil, inteligência comercial nativa, relatórios e exportações.
 2. **Prospecções:** carteira de prospecção, profissionais, metas, bonificação, resultados e análises.
 3. **Atendimentos:** registro de atendimentos feitos na loja, vínculo automático por telefone e atualização controlada de resultados.
 
 O módulo **Leads** está disponível para todas as lojas. **Prospecções e Atendimentos formam uma única licença adicional**: `stores.prospection_enabled`. Atendimentos não possui uma licença separada.
 
-Não existe mais ferramenta de WhatsApp. Foram retirados frontend, tabelas, credenciais, workers, webhooks, Edge Functions, limites de plano e agendamentos exclusivos desse módulo. Telefones, origem histórica com texto “WhatsApp” e botão genérico de ligação (`tel:`) não são ferramentas de WhatsApp e podem permanecer como dados comuns.
+Não existe ferramenta, conector, rastreador ou estrutura de dados para WhatsApp, Meta Ads ou Google Ads. Foram retirados frontend, tabelas, campos de atribuição, credenciais, filas, workers, webhooks, Edge Functions e agendamentos dessas integrações. `channel` e `campaign` continuam sendo campos comerciais comuns, preenchidos pela loja; valores históricos que mencionem uma plataforma são apenas texto, não conexão ou rastreamento externo. O provedor Google Gemini continua disponível exclusivamente para IA e não tem relação com Google Ads.
+
+Admin e Agência acessam uma **Central de análise única**. Depois de selecionar uma loja, um switch alterna entre Leads, Prospecções e Atendimentos sem trocar a loja nem combinar bases. As duas últimas abas respeitam a licença conjunta `prospection_enabled`.
 
 ## 2. Arquitetura geral
 
@@ -32,13 +34,11 @@ flowchart LR
     UI -->|RPC + token da aplicação| RPC[Funções PostgreSQL públicas]
     RPC --> PRIV[app_private<br/>validação de sessão e regras]
     PRIV --> DB[(PostgreSQL<br/>public + app_private)]
-    UI -->|x-app-session| EDGE[Supabase Edge Functions]
+    UI -->|x-app-session| EDGE[Edge Function ai-analysis]
     EDGE -->|service role| RPC
-    EDGE --> META[Meta Ads]
-    EDGE --> GOOGLE[Google Ads/Data Manager]
     EDGE --> AI[Gemini ou DeepSeek]
-    CRON[pg_cron + pg_net] --> WORKER[marketing-worker]
-    WORKER --> DB
+    CRON[pg_cron] --> RET[Retenção de Atendimentos]
+    RET --> DB
     GH[GitHub Actions] --> PAGES[GitHub Pages]
     PAGES --> UI
 ```
@@ -52,19 +52,19 @@ flowchart LR
 | Interface | JavaScript ES | Estado, renderização, validações, gráficos próprios, XLSX e chamadas ao backend. |
 | Ícones | Font Awesome 6.5.2 via CDN | Ícones visuais da interface. |
 | Cliente de dados | `@supabase/supabase-js@2` via CDN | Chamadas RPC ao Supabase. |
-| Banco | Supabase PostgreSQL | Dados, permissões, regras, auditoria, filas e cron. |
-| Funções | Supabase Edge Functions/Deno | IA, marketing, OAuth e workers. |
+| Banco | Supabase PostgreSQL | Dados, permissões, regras, auditoria e retenção. |
+| Funções | Supabase Edge Functions/Deno | Proxy autenticado e streaming da IA. |
 | Criptografia SQL | `pgcrypto` | Senhas, tokens, hashes e evidências. |
-| Agendamento | `pg_cron` + `pg_net` | Worker de marketing e retenção. |
+| Agendamento | `pg_cron` | Retenção diária de Atendimentos. |
 | Hospedagem web | GitHub Pages | Publicação do site estático. |
 | PWA | Web App Manifest | Instalação em tela inicial e identidade visual. |
 | Persistência local | `localStorage` e IndexedDB | Sessão, tema, módulo, chats e autorizações de backup. |
-| APIs externas | Meta e Google Ads | Métricas e conversões offline. |
 | IA externa | Gemini ou DeepSeek | Análises comerciais agregadas. |
 
 ### 2.2 Características importantes
 
 - É uma **SPA sem roteador por URL**: as telas são seções alternadas por JavaScript.
+- Admin e Agência usam uma única Central de análise; o estado compartilhado mantém uma loja por vez e o switch apenas troca o tipo de leitura.
 - O Supabase Auth **não é usado para login do produto**. Existe autenticação própria em `app_users` e `app_sessions`.
 - A chave `anon` do Supabase está no navegador, como esperado para cliente público. A segurança depende de RLS, revogação de acesso direto e validação de sessão dentro das RPCs.
 - Não há Service Worker. O app é instalável pelo manifesto, mas **não tem cache offline completo**.
@@ -125,6 +125,7 @@ Ao reduzir um limite abaixo do uso atual, o sistema preserva as lojas que já es
 | Configurar IA central | Sim | Não | Não |
 | Usar IA de análise | Sim | Sim | Não |
 | Administrar termos legais | Sim | Não | Não |
+| Acessar a central de termos assinados | Sim | Não | Não |
 | Assinar termos obrigatórios | Sim | Sim | Sim |
 
 ## 4. Hierarquia de arquivos
@@ -135,7 +136,6 @@ lead-control-/
 ├── app.js                             # Núcleo: sessão, Leads, contas, análises, IA, backup
 ├── styles.css                         # Design system e telas do núcleo
 ├── mobile.css                         # Responsividade compartilhada
-├── marketing.js / marketing.css       # Interface de atribuição e conexões de marketing
 ├── prospections.js / prospections.css # Módulo de Prospecções
 ├── prospec-original.css               # Camada visual original ativada pelo módulo
 ├── attendances.js / attendances.css   # Módulo de Atendimentos
@@ -153,21 +153,16 @@ lead-control-/
 │   └── site-icon.png
 ├── database.sql                       # Base consolidada + histórico incremental
 ├── attendance_module.sql              # Schema e RPCs de Atendimentos
-├── marketing_attribution_module.sql   # Atribuição segura atual
-├── marketing_scheduler.sql            # Worker por cron/Vault
+├── lead_intelligence_update.sql       # Inteligência comercial nativa, sem atribuição externa
 ├── *_update.sql                       # Migrações incrementais históricas
 ├── *_qa.sql                           # QA SQL transacional
 ├── remove_whatsapp_module.sql         # Retirada destrutiva do módulo descontinuado
-├── MARKETING_ATTRIBUTION_SETUP.md      # Implantação da atribuição atual
-├── MARKETING_INTELLIGENCE_SETUP.md     # Fundação de inteligência/IA
 ├── supabase/
 │   ├── config.toml                    # Configuração local das Edge Functions
+│   ├── migrations/
+│   │   └── 20260818171504_remove_marketing_attribution.sql
 │   └── functions/
-│       ├── ai-analysis/index.ts
-│       ├── marketing-api/index.ts
-│       ├── marketing-worker/index.ts
-│       ├── marketing-conversions/index.ts # Legado; não publicar
-│       └── _shared/marketing/          # Cripto, banco, providers, respostas e testes
+│       └── ai-analysis/index.ts        # Única Edge Function do produto
 └── .github/workflows/pages.yml         # Deploy do frontend no GitHub Pages
 ```
 
@@ -180,21 +175,18 @@ Arquivos `prospec-backup*.json` também são ignorados e podem conter dados pess
 ### 4.2 Ordem de carregamento do navegador
 
 1. `styles.css`
-2. `marketing.css`
-3. `prospections.css`
-4. `attendances.css`
-5. `prospec-original.css` inicialmente desabilitado
-6. `mobile.css`
-7. Font Awesome
-8. Supabase JS v2
-9. `app.js`
-10. `marketing.js`
-11. `prospections.js`
-12. `attendances.js`
+2. `prospections.css`
+3. `attendances.css`
+4. `prospec-original.css` inicialmente desabilitado
+5. `mobile.css`
+6. Font Awesome
+7. Supabase JS v2
+8. `app.js`
+9. `prospections.js`
+10. `attendances.js`
 
 Os módulos expõem pontes globais:
 
-- `window.MarketingAttributionModule`
 - `window.ProspectionsModule`
 - `window.AttendancesModule`
 
@@ -219,7 +211,7 @@ Aplicação
 ├── Área Admin/Agência
 │   ├── Clientes
 │   ├── Agências, somente Admin
-│   ├── Analytics
+│   ├── Central de análise: Leads | Prospecções | Atendimentos
 │   ├── Backups
 │   ├── Central jurídica, somente Admin
 │   └── Configuração de IA, somente Admin
@@ -230,7 +222,6 @@ Aplicação
 │   ├── Pesquisa e filtros
 │   ├── Lista/cartões de leads
 │   ├── Categorias e opções
-│   ├── Marketing e metas
 │   └── Exportação
 ├── Prospecções
 │   ├── Operação
@@ -252,7 +243,6 @@ Aplicação
     ├── Agendamento
     ├── Inspetor de analytics
     ├── Chat, histórico e configuração de IA
-    ├── Conexão de marketing
     ├── Aceite de termos
     └── Documento jurídico
 ```
@@ -260,11 +250,13 @@ Aplicação
 ### 5.1 Design system e responsividade
 
 - Paleta base: fundo `#e8e8e8`, superfície `#ffffff`, texto `#171717`, verde `#16855f`, azul `#2563a5`, âmbar `#b46d12` e rosa `#b02f4c`.
+- Identidade por módulo: Leads usa superfícies neutras mais escuras; Prospecções usa acentos e fundos azulados; Atendimentos usa acentos e fundos esverdeados. A Central de análise mantém essa identidade no switch e no painel ativo.
 - Raio base: `8px`.
 - Fonte: pilha de sistema/Inter, sem download obrigatório de uma fonte externa.
 - Tema escuro: classes `body.is-dark` e `body.is-dark-mode` atendem partes antigas e novas.
 - Breakpoints compartilhados principais: `900px` e `720px`, com ajustes específicos em cada módulo.
 - No celular, a intenção atual é preservar a mesma interface e todos os recursos, apenas em uma composição mais densa.
+- Para Agência, a navegação superior possui somente Clientes, Análise e Backups; `has-three-sections` centraliza os três itens porque a central de termos assinados é exclusiva do Admin.
 - Controles de formulário usam ao menos `16px` no mobile para evitar zoom automático do iOS.
 - `safe-area-inset-*`, `min-width: 0`, quebra de texto e contenção de mídia evitam cortes e rolagem horizontal acidental.
 
@@ -353,24 +345,26 @@ flowchart LR
     SAFE -->|Não| KEEP[Preserva atendimento sem resultado incerto]
 ```
 
-### 7.3 Marketing até conversão offline
+### 7.3 Central única de análise
 
 ```mermaid
-flowchart TD
-    ADS[Meta/Google] --> CLICK[Clique com UTM/click ID]
-    CLICK --> CAPTURE[Tracker captura touchpoint]
-    CONSENT{Consentimento?}
-    CAPTURE --> CONSENT
-    CONSENT -->|Sim| IDENT[Identificadores e atribuição permitidos]
-    CONSENT -->|Não| AGG[Somente agregado; URLs e IDs descartados]
-    IDENT --> LEAD[Lead criado/atualizado]
-    LEAD --> EVENTS[Eventos de ciclo de vida]
-    EVENTS --> PURCHASE[purchased]
-    PURCHASE --> QUEUE[Fila de conversão offline]
-    QUEUE --> WORKER[marketing-worker a cada 2 minutos]
-    WORKER --> PROVIDER[Meta/Google]
-    PROVIDER --> DIAG[Recibo, diagnóstico, retry/backoff]
+flowchart LR
+    USER[Admin ou Agência] --> STORE[Seleciona uma loja permitida]
+    STORE --> SWITCH{Switch da Central}
+    STORE --> LICENSE{prospection_enabled?}
+    SWITCH --> LEADS[Análise de Leads]
+    SWITCH --> PROS[Análise de Prospecções]
+    SWITCH --> ATT[Análise de Atendimentos]
+    STORE --> SCOPE[store_id único e compartilhado]
+    SCOPE --> LEADS
+    SCOPE --> PROS
+    SCOPE --> ATT
+    LICENSE -->|Não| LOCK[Bloqueia Prospecções e Atendimentos]
+    LICENSE -->|Sim| PROS
+    LICENSE -->|Sim| ATT
 ```
+
+Ao trocar a loja, o sistema invalida a renderização anterior. Os módulos embutidos desmontam eventos e DOM quando saem de foco; uma geração de requisição impede que uma resposta antiga reapareça no cliente novo.
 
 ## 8. Módulo Leads
 
@@ -388,7 +382,7 @@ Campos principais:
 - comprou, valor da compra e ordem de serviço;
 - observações;
 - categorias personalizadas da loja;
-- inteligência: e-mail, motivo de perda, timestamps do funil, UTM, IDs de clique/anúncio, landing page, consentimento e cliente recorrente.
+- inteligência: ciclo de vida, qualificação, responsável, e-mail, motivo de perda, timestamps do funil e cliente recorrente.
 
 Regras principais:
 
@@ -410,7 +404,7 @@ Grupos padrão por loja:
 
 É possível renomear rótulos dos grupos, criar categorias personalizadas, adicionar/editar/excluir opções e mudar a ordem. Opções fixas de Sim/Não não podem ser adulteradas.
 
-A opção WhatsApp foi desativada como sugestão para novos cadastros. Valores históricos já salvos não são apagados.
+Não existe opção funcional ou ferramenta de WhatsApp. Valores históricos já salvos em campos textuais não são interpretados, conectados ou rastreados pelo sistema.
 
 ### 8.3 Agenda
 
@@ -422,9 +416,9 @@ O monitor considera pendentes os leads com:
 
 As ações permitem ligar pelo discador do aparelho, marcar comparecimento, registrar que não veio/reagendar ou abrir a edição completa.
 
-### 8.4 Analytics
+### 8.4 Análise de Leads
 
-Cada painel usa exatamente uma loja. Filtros disponíveis incluem período, canal, campanha, conclusão, ciclo de vida, qualificação, visita, agendamento, compra e categorias personalizadas.
+Esta análise aparece na Central única, na aba Leads. O contexto é `selectedAnalyticsStoreId`, e os cálculos usam somente `getAnalyticsBaseLeads()`/`getAnalyticsLeads()` da loja escolhida. Filtros disponíveis incluem período, canal, campanha, conclusão, ciclo de vida, qualificação, visita, agendamento, compra e categorias personalizadas.
 
 Indicadores e visualizações incluem:
 
@@ -435,8 +429,9 @@ Indicadores e visualizações incluem:
 - gráficos de pizza, barras e linha;
 - comparação com período anterior;
 - inspetor de registros por fatia;
-- qualidade dos dados;
-- CPL, CAC e ROAS quando investimento/metas estão disponíveis.
+- qualidade e consistência dos dados.
+
+Não há custo de mídia, atribuição, CPL, CAC, ROAS ou dados importados de plataformas de anúncio. Canal e campanha são dimensões internas dos próprios Leads.
 
 ### 8.5 Exportação
 
@@ -516,7 +511,8 @@ O módulo consulta atendimentos por loja, tipo, período e texto. Ao selecionar 
 - Indicadores: total, retornos/visitas, compras, conversão, bônus e meta diária.
 - Períodos rápidos: hoje, semana, mês, ano e todo o período.
 - Gestão: cartões, rankings e tendências.
-- Análise: diária, semanal, mensal, anual ou personalizada; desempenho por profissional e campanha; linhas e calendário.
+- Na Central única: períodos Hoje, Semana, Mês e Ano; total, retornos, compras, conversão, faturamento, ticket, bonificação, funil, profissionais, etiquetas/campanhas, ritmo e os 20 registros mais recentes.
+- O módulo mantém detalhamentos operacionais por profissional, calendário e período personalizado para apoiar a execução diária; a entrada administrativa consolidada de análise fica na Central.
 - Bônus: agrupa atividade, retorno, compras, receita e prêmio por profissional, com rastreabilidade pela OS.
 
 Configuração inicial:
@@ -568,80 +564,41 @@ O servidor, não o frontend, decide elegibilidade, valor e profissional creditad
 
 Filtros: texto, tipo, profissional e período (hoje, 7 dias, 30 dias ou todo o período). Indicadores: total, orçamentos, compras, conversão, receita e valores de atendimento. A lista mostra origem e vínculos.
 
+Na Central única, a aba Atendimentos reutiliza os mesmos dados com `p_store_id` obrigatório e paginação: total, orçamentos, compras, conversão, faturamento, valor dos atendimentos, qualidade dos vínculos, profissionais e os 20 registros mais recentes. A superfície usa a paleta esverdeada do módulo.
+
 Retenção: dois anos. O cron remoto `lc_attendance_retention_daily` executa diariamente às **03:17**; o upsert também possui fallback de limpeza.
 
-## 12. Marketing e atribuição
+## 12. Central única de análise
 
-### 12.1 Duas gerações coexistentes
+### 12.1 Estrutura e navegação
 
-**Fundação legada ainda usada parcialmente:**
+A Central é uma seção única da área administrativa (`companyWorkspaceSection = "analytics"`). Ela possui:
 
-- `lead_intelligence` e `lead_events`;
-- métricas manuais em `ad_daily_metrics`;
-- metas em `store_marketing_targets`;
-- `marketing_connections` e `marketing_conversion_queue`, mantidas por compatibilidade.
+1. seletor de cliente, restrito à carteira do perfil;
+2. um único `storeId` compartilhado;
+3. switch acessível `Leads | Prospecções | Atendimentos`;
+4. um painel visível por vez;
+5. mensagem de seleção vazia, loading, erro recuperável e bloqueio de licença.
 
-**Atribuição segura atual:**
+Leads é sempre permitido. Prospecções e Atendimentos ficam desabilitados quando a loja não tem `prospection_enabled`. Trocar a aba não muda o cliente selecionado.
 
-- conectores em `marketing_attribution_connections`;
-- segredos criptografados em `app_private.marketing_attribution_connection_secrets`;
-- fontes, touchpoints e eventos de atribuição;
-- métricas importadas, filas, execuções, conversões offline e logs;
-- OAuth Google com estado de uso único.
+### 12.2 Contratos dos painéis
 
-`marketing-conversions` é uma Edge Function legada. O código local existe por compatibilidade histórica, mas ela não deve ser publicada. O fluxo atual usa `marketing-api` e `marketing-worker`.
+| Aba | Fonte e contrato | Conteúdo principal |
+|---|---|---|
+| Leads | Estado e cálculos do `app.js`: `selectedAnalyticsStoreId`, `renderAdminAnalytics`, `getAnalyticsBaseLeads` e `getAnalyticsLeads` | Funil, períodos, categorias internas, comparações, registros, exportação e IA agregada. |
+| Prospecções | `window.ProspectionsModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_list_prospections` e `lc_get_prospection_configuration` | KPIs, funil, profissionais, etiquetas/campanhas, ritmo e recentes. |
+| Atendimentos | `window.AttendancesModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_get_attendance_workspace` e `lc_list_attendances` paginado | KPIs, vínculos, profissionais e recentes. |
 
-### 12.2 Provedores e credenciais
+Os dois módulos embutidos expõem também `destroyEmbeddedAnalysis(root)`. A desmontagem remove listeners e DOM; o controle de geração ignora respostas obsoletas. Toda consulta continua sujeita às validações de papel, tenant, carteira, loja e licença do servidor.
 
-**Meta:** conta de anúncios, dataset/pixel, access token, versão da API e código de teste opcional.
+### 12.3 Paleta e responsividade
 
-**Google:** Customer ID, MCC Login ID, Conversion Action, Developer Token, OAuth Client ID/Secret e Refresh Token.
-
-Credenciais da atribuição atual são criptografadas no servidor com `MARKETING_CREDENTIALS_KEY` e nunca retornam ao navegador. Trocar essa chave sem migração torna os segredos antigos ilegíveis.
-
-### 12.3 Consentimento e tracker
-
-- Consentimento local: `lc_marketing_consent=granted`.
-- Evento de liberação: `lc:marketing-consent-granted`.
-- Com consentimento: UTM, click IDs, anonymous/session ID e jornada podem ser vinculados.
-- Sem consentimento: o backend retém somente informação agregada e remove IDs, URLs, UTM, IP e User-Agent.
-- IP e User-Agent autorizados são armazenados em hash, não em texto puro.
-- Cada fonte possui token próprio e lista de origens permitidas.
-
-### 12.4 Sincronização e conversões
-
-- Primeira sincronização: 90 dias.
-- Sincronizações seguintes: janela de 7 dias a cada 6 horas.
-- Manual: até 730 dias, divididos em lotes de no máximo 400 dias.
-- Worker remoto: a cada 2 minutos.
-- Falhas: lease, retries, backoff e cooldown.
-- Google: diagnóstico de recibo assíncrono por até 24 horas.
-- Evento `purchased`: enfileira conversão para cada conector ativo.
-- PII enviada a provedores é normalizada e SHA-256 somente quando existe consentimento.
-
-Retenção:
-
-- touchpoints, eventos, métricas e filas finalizadas: 730 dias;
-- logs: 365 dias;
-- estado OAuth: 10 minutos e uso único.
-
-### 12.5 Ações da `marketing-api`
-
-| Ação | Finalidade |
-|---|---|
-| `get-dashboard` | Funil e métricas atribuídas da loja. |
-| `list-connections` | Lista conectores sem expor segredos. |
-| `save-connection` | Cria/atualiza conector e segredo criptografado. |
-| `test-connection` | Testa permissões e IDs no provedor. |
-| `disconnect-connection` | Desativa e retira segredo. |
-| `sync-now` | Agenda sincronização manual. |
-| `get-tracker-config` | Retorna configuração pública do tracker. |
-| `rotate-tracker-token` | Troca token de captura. |
-| `list-sync-runs` | Auditoria das sincronizações. |
-| `list-journey` | Jornada atribuída de um lead. |
-| `record-event` | Registra evento do funil. |
-| `start-google-oauth` | Inicia OAuth Google. |
-| `capture-touchpoint` | Endpoint público autenticado pelo token da fonte. |
+- Leads: base neutra e mais escura.
+- Prospecções: base azulada.
+- Atendimentos: base esverdeada.
+- Em telas menores, as três opções continuam lado a lado no switch, com texto e ícones compactados; os painéis reorganizam grades sem remover recursos.
+- `min-width: 0`, quebra controlada e estados vazios evitam texto fora dos cards e cortes horizontais.
 
 ## 13. Inteligência artificial
 
@@ -691,7 +648,7 @@ Limpar dados do site encerra a restauração local, remove chats e exige escolhe
 - `app_private`: validação de sessão, segredos e helpers internos.
 - `extensions`: extensões Postgres usadas com `search_path` explícito.
 
-No estado remoto verificado existem **35 tabelas públicas e 3 privadas** relacionadas abaixo. `!` significa `NOT NULL`; `?` significa anulável.
+No modelo consolidado pós-migrações existem **22 tabelas públicas de domínio e nenhuma tabela privada de negócio**. O schema `app_private` permanece para funções, validação e helpers. `!` significa `NOT NULL`; `?` significa anulável.
 
 ### 15.2 Tabelas de identidade, contas e jurídico
 
@@ -710,7 +667,7 @@ Existe índice único parcial que limita o ambiente a um único usuário global 
 | Tabela | Colunas atuais |
 |---|---|
 | `leads` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `name!`, `phone!`, `channel?`, `campaign?`, `conversation_start?`, `conclusion?`, `visited?`, `bought?`, `created_by uuid?`, `updated_by uuid?`, `created_at!`, `updated_at!`, `purchase_amount numeric?`, `service_order?`, `notes?`, `inspected bool!`, `scheduled?`, `scheduled_visit_date date?`, `scheduled_visit_time time?`, `contact_date date!` |
-| `lead_intelligence` | `lead_id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `lifecycle_status!`, `qualified bool!`, `loss_reason?`, `owner_name?`, `email?`, `first_response_at?`, `qualified_at?`, `lost_at?`, `purchased_at?`, `utm_source?`, `utm_medium?`, `utm_campaign?`, `utm_content?`, `utm_term?`, `campaign_external_id?`, `adset_external_id?`, `ad_external_id?`, `creative_external_id?`, `gclid?`, `gbraid?`, `wbraid?`, `fbclid?`, `fbc?`, `fbp?`, `landing_page_url?`, `external_lead_id?`, `marketing_consent bool!`, `consent_at?`, `returning_customer bool!`, `created_at!`, `updated_at!` |
+| `lead_intelligence` | `lead_id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `lifecycle_status!`, `qualified bool!`, `loss_reason?`, `owner_name?`, `email?`, `first_response_at?`, `qualified_at?`, `lost_at?`, `purchased_at?`, `returning_customer bool!`, `created_at!`, `updated_at!` |
 | `lead_events` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `lead_id uuid!`, `event_type!`, `event_at!`, `actor_user_id uuid?`, `source!`, `metadata jsonb!`, `created_at!` |
 | `lead_options` | `id uuid!`, `admin_user_id uuid!`, `group_key!`, `value!`, `sort_order int!`, `fixed bool!`, `is_active bool!`, `created_at!`, `updated_at!`, `store_id uuid?` |
 | `lead_custom_categories` | `id uuid!`, `admin_user_id uuid!`, `name!`, `sort_order int!`, `is_active bool!`, `created_at!`, `updated_at!`, `store_id uuid?` |
@@ -730,40 +687,26 @@ Existe índice único parcial que limita o ambiente a um único usuário global 
 | `prospection_import_batches` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `imported_by?`, `source_format!`, `schema_version!`, `source_store_id!`, `payload_sha256!`, `exported_at?`, `summary jsonb!`, `created_at!` |
 | `attendances` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `professional_id?`, `professional_name_snapshot!`, `credited_professional_id?`, `credited_professional_name_snapshot?`, `prospection_professional_id?`, `prospection_professional_name_snapshot?`, `bonus_minimum_snapshot!`, `bonus_amount_snapshot!`, `bonus_eligible!`, `bonus_awarded_amount!`, `bonus_credit_status!`, `customer_name!`, `phone!`, `phone_normalized!`, `description!`, `tag!`, `service_value?`, `purchase_value?`, `service_order?`, `lead_id?`, `prospection_id?`, `match_status!`, `lead_match_count!`, `prospection_match_count!`, `match_ambiguous!`, `lead_candidates jsonb!`, `prospection_candidates jsonb!`, `lead_visit_applied!`, `lead_purchase_applied!`, `prospection_visit_applied!`, `prospection_purchase_applied!`, `purchase_credit_applied!`, `attended_at!`, `outcome_applied_at?`, `idempotency_key!`, `request_fingerprint!`, `metadata jsonb!`, `created_by?`, `created_at!`, `updated_at!` |
 
-### 15.5 IA, metas e marketing legado
+### 15.5 Inteligência artificial
 
 | Tabela | Colunas atuais |
 |---|---|
 | `ai_settings` | `admin_user_id uuid!`, `provider!`, `model!`, `api_key!`, `system_prompt!`, `updated_by_user_id?`, `created_at!`, `updated_at!` |
 | `ai_usage` | `id uuid!`, `admin_user_id uuid!`, `user_id?`, `store_id?`, `provider!`, `model!`, `request_kind!`, `input_tokens?`, `output_tokens?`, `latency_ms?`, `status!`, `created_at!` |
-| `ad_daily_metrics` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `metric_date date!`, `platform!`, `account_external_id!`, `campaign_external_id!`, `campaign_name!`, `adset_external_id!`, `adset_name!`, `ad_external_id!`, `ad_name!`, `creative_external_id!`, `spend!`, `impressions!`, `reach!`, `clicks!`, `platform_leads!`, `platform_conversions!`, `currency!`, `source!`, `raw_metrics jsonb!`, `created_at!`, `updated_at!` |
-| `store_marketing_targets` | `store_id uuid!`, `admin_user_id uuid!`, `monthly_budget?`, `lead_goal?`, `qualified_goal?`, `sales_goal?`, `revenue_goal?`, `target_cpl?`, `target_cac?`, `target_roas?`, `created_at!`, `updated_at!` |
-| `marketing_connections` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `provider!`, `status!`, `account_external_id?`, `account_name?`, `public_config jsonb!`, `secret_config jsonb!`, `last_sync_at?`, `last_error?`, `created_at!`, `updated_at!` |
-| `marketing_conversion_queue` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `lead_id uuid!`, `provider!`, `event_name!`, `event_at!`, `payload jsonb!`, `status!`, `attempt_count!`, `next_attempt_at!`, `processed_at?`, `last_error?`, `created_at!`, `updated_at!` |
 
-As duas últimas tabelas são da integração de marketing antiga, não do módulo descontinuado de WhatsApp.
+### 15.6 Estruturas de anúncios removidas
 
-### 15.6 Atribuição de marketing atual
+A migração `20260818171504_remove_marketing_attribution.sql` elimina as duas gerações de integração. As seguintes tabelas **não fazem parte do modelo atual**:
 
-| Tabela | Colunas atuais |
-|---|---|
-| `marketing_attribution_connections` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `provider!`, `name!`, `status!`, `account_external_id!`, `account_name?`, `api_version!`, `token_expires_at?`, `public_config jsonb!`, `last_validated_at?`, `last_sync_at?`, `last_error_code?`, `last_error_message?`, `created_by?`, `updated_by?`, `created_at!`, `updated_at!` |
-| `marketing_tracking_sources` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `name!`, `token_hash!`, `token_prefix!`, `allowed_origins text[]!`, `is_active!`, `last_used_at?`, `created_by?`, `created_at!`, `updated_at!` |
-| `marketing_touchpoints` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `tracking_source_id?`, `lead_id?`, `anonymous_id?`, `session_id?`, `event_name!`, `occurred_at!`, `provider?`, `utm_source?`, `utm_medium?`, `utm_campaign?`, `utm_content?`, `utm_term?`, `campaign_external_id?`, `adset_external_id?`, `ad_external_id?`, `creative_external_id?`, `gclid?`, `gbraid?`, `wbraid?`, `fbclid?`, `fbc?`, `fbp?`, `landing_page_url?`, `referrer_url?`, `marketing_consent!`, `consent_at?`, `consent_version?`, `consent_source?`, `ip_hash?`, `user_agent_hash?`, `idempotency_key!`, `metadata jsonb!`, `created_at!` |
-| `marketing_attribution_events` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `lead_id uuid!`, `event_type!`, `event_at!`, `value?`, `currency!`, `actor_user_id?`, `source!`, `idempotency_key!`, `metadata jsonb!`, `created_at!` |
-| `marketing_ad_metrics` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `connection_id uuid!`, `metric_date date!`, `provider text!`, `account_external_id text!`, `campaign_external_id text!`, `campaign_name text!`, `adset_external_id text!`, `adset_name text!`, `ad_external_id text!`, `ad_name text!`, `creative_external_id text!`, `spend numeric!`, `impressions int8!`, `reach int8!`, `clicks int8!`, `platform_leads int8!`, `platform_conversions int8!`, `conversion_value numeric!`, `currency text!`, `raw_metrics jsonb!`, `sync_run_id uuid?`, `synced_at timestamptz!`, `created_at!`, `updated_at!` |
-| `marketing_sync_queue` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `connection_id uuid!`, `provider text!`, `start_date date!`, `end_date date!`, `status text!`, `priority int!`, `attempt_count int!`, `max_attempts int!`, `available_at timestamptz!`, `locked_at timestamptz?`, `locked_by text?`, `completed_at timestamptz?`, `last_error_code text?`, `last_error_message text?`, `requested_by uuid?`, `created_at!`, `updated_at!` |
-| `marketing_sync_runs` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `connection_id uuid!`, `queue_id uuid?`, `provider text!`, `start_date date!`, `end_date date!`, `status text!`, `rows_received int!`, `rows_upserted int!`, `started_at timestamptz!`, `finished_at timestamptz?`, `error_code text?`, `error_message text?`, `provider_metadata jsonb!`, `created_at!` |
-| `marketing_offline_conversion_queue` | `id uuid!`, `admin_user_id uuid!`, `store_id uuid!`, `connection_id uuid!`, `lead_id uuid!`, `provider text!`, `event_name text!`, `event_at timestamptz!`, `event_id text!`, `payload jsonb!`, `status text!`, `attempt_count int!`, `max_attempts int!`, `available_at timestamptz!`, `locked_at timestamptz?`, `locked_by text?`, `sent_at timestamptz?`, `diagnostic_attempt_count int!`, `next_diagnostic_at timestamptz?`, `confirmed_at timestamptz?`, `provider_receipt jsonb?`, `last_error_code text?`, `last_error_message text?`, `created_at!`, `updated_at!` |
-| `marketing_attribution_logs` | `id int8!`, `admin_user_id uuid?`, `store_id uuid?`, `connection_id uuid?`, `user_id uuid?`, `level text!`, `category text!`, `action text!`, `success bool!`, `correlation_id text?`, `latency_ms int?`, `http_status int?`, `error_code text?`, `message text!`, `metadata jsonb!`, `created_at!` |
+- legado/manual: `ad_daily_metrics`, `store_marketing_targets`, `marketing_connections`, `marketing_conversion_queue`;
+- atribuição: `marketing_attribution_connections`, `marketing_tracking_sources`, `marketing_touchpoints`, `marketing_attribution_events`, `marketing_ad_metrics`, `marketing_sync_queue`, `marketing_sync_runs`, `marketing_offline_conversion_queue`, `marketing_attribution_logs`;
+- privadas: `app_private.marketing_attribution_connection_secrets`, `app_private.marketing_oauth_states`, `app_private.marketing_maintenance_state`.
 
-### 15.7 Tabelas privadas
+A mesma migração remove de `lead_intelligence` todos os campos de UTM, IDs de campanha/anúncio/criativo, click IDs, landing page, ID externo e consentimento de marketing. `lead_intelligence` e `lead_events` permanecem porque sustentam o funil comercial nativo, não atribuição externa.
 
-| Tabela | Colunas atuais |
-|---|---|
-| `app_private.marketing_attribution_connection_secrets` | `connection_id uuid!`, `secret_cipher bytea!`, `secret_version int!`, `rotated_at!` |
-| `app_private.marketing_oauth_states` | `state_hash!`, `admin_user_id!`, `user_id!`, `store_id!`, `connection_id!`, `provider!`, `redirect_after!`, `expires_at!`, `consumed_at?`, `created_at!` |
-| `app_private.marketing_maintenance_state` | `task_key!`, `last_run_at?`, `metadata jsonb!` |
+### 15.7 Schema privado após a limpeza
+
+`app_private` continua obrigatório para `session_user`, wrappers `rpc_*`, triggers e helpers `SECURITY DEFINER`, mas não guarda credenciais de anúncios, estados OAuth ou tabelas de manutenção de integrações. Segredos da IA permanecem em `public.ai_settings` sem concessão direta ao navegador; somente a RPC restrita ao `service_role` entrega a configuração em tempo de execução à Edge Function.
 
 ## 16. Catálogo de RPCs
 
@@ -820,32 +763,22 @@ As funções `public.lc_*` são contratos usados pelo frontend. Em geral elas en
 - `lc_list_attendances`
 - `lc_upsert_attendance`
 
-### 16.6 Marketing e IA da fundação
+### 16.6 Inteligência artificial
 
-- `lc_list_ad_daily_metrics`, `lc_upsert_ad_daily_metric`
-- `lc_list_marketing_targets`, `lc_save_marketing_targets`
-- `lc_list_marketing_connections`
 - `lc_get_ai_settings`, `lc_save_ai_settings`
-- Restritas a serviço: `lc_ai_runtime_config`, `lc_log_ai_usage`, `lc_marketing_connection_runtime`
+- Restritas a `service_role`: `lc_ai_runtime_config`, `lc_log_ai_usage`
 
-### 16.7 Atribuição atual (`ma_*`)
+### 16.7 RPCs retiradas
 
-Chamadas com sessão:
+Não existem contratos públicos de conexão, métrica, sincronização, tracker ou conversão de anúncios. A migração remove:
 
-- `ma_get_dashboard`, `ma_list_connections`, `ma_disconnect_connection`
-- `ma_schedule_sync`, `ma_get_tracker_config`, `ma_rotate_tracker_token`
-- `ma_list_sync_runs`, `ma_list_journey`, `ma_record_event`
+- `lc_list_ad_daily_metrics`, `lc_upsert_ad_daily_metric`;
+- `lc_list_marketing_targets`, `lc_save_marketing_targets`;
+- `lc_list_marketing_connections`, `lc_marketing_connection_runtime`;
+- os pares privados `app_private.rpc_*` correspondentes;
+- toda função `public.ma_*` e `app_private.ma_*`, incluindo dashboard, conexões, OAuth, tracker, jornada, sincronização, conversões, diagnóstico, logs e retenção.
 
-Chamadas de serviço:
-
-- `ma_service_save_connection`, `ma_service_connection_runtime`, `ma_service_connection_runtime_by_id`
-- `ma_service_update_connection_secrets`, `ma_service_set_connection_status`
-- `ma_service_create_oauth_state`, `ma_service_consume_oauth_state`
-- `ma_service_capture_touchpoint`
-- `ma_service_schedule_due_syncs`, `ma_service_claim_sync`, `ma_service_upsert_metrics`, `ma_service_finish_sync`
-- `ma_service_claim_conversions`, `ma_service_finish_conversion`
-- `ma_service_claim_conversion_diagnostics`, `ma_service_finish_conversion_diagnostic`
-- `ma_service_log`, `ma_service_log_session`, `ma_service_run_retention`
+O `DROP` dinâmico da migração é limitado por prefixo e schema para não atingir funções do núcleo.
 
 ### 16.8 Contratos críticos resumidos
 
@@ -859,17 +792,16 @@ Chamadas de serviço:
 | `lc_upsert_prospection` | sessão, loja, cadastro, profissional, probabilidade e tags | Cria/edita prospecção. |
 | `lc_set_prospection_outcome` | sessão, prospecção, retorno/compra/valor/OS | Atualiza resultado com rastreabilidade. |
 | `lc_upsert_attendance` | sessão, loja, profissional, cliente, telefone, descrição, tipo, valores, OS, idempotência | Registra, vincula e aplica resultados seguros. |
-| `ma_schedule_sync` | sessão, loja, período | Divide e agenda sincronizações dos conectores ativos. |
 
 ### 16.9 Automações internas por trigger
 
-Estas funções não são endpoints normais da interface; são acionadas pelo banco para manter a atribuição consistente:
+Estas funções não são endpoints normais da interface; são acionadas pelo banco para manter consistência do produto:
 
-- `ma_capture_lead_intelligence`: incorpora identificadores autorizados no cadastro de inteligência do lead.
-- `ma_capture_lead_lifecycle`: transforma mudanças do funil em eventos de atribuição.
-- `ma_enqueue_event_conversions`: cria conversões offline para os conectores ativos.
-- `ma_leads_capture_lifecycle`: trigger que observa alterações relevantes em `leads`.
-- `ma_set_updated_at`: padroniza timestamps de atualização nas tabelas de marketing.
+- `app_private.capture_lead_lifecycle`: mantém `lead_intelligence` e grava eventos nativos `lead_created`, `scheduled`, `visited` e `purchased` a partir de mudanças em `leads`.
+- `leads_capture_lifecycle`: trigger de `leads` ligado à função anterior.
+- triggers/helpers de Prospecções e Atendimentos preservam timestamps, retenção e integridade próprios desses módulos.
+
+O conjunto permitido em `lead_events` é `lead_created`, `contacted`, `qualified`, `scheduled`, `visited`, `purchased`, `lost` e `reopened`. Não existe evento de atribuição externa.
 
 ## 17. Edge Functions
 
@@ -878,49 +810,35 @@ Estas funções não são endpoints normais da interface; são acionadas pelo ba
 | Função | Responsabilidade | Autorização |
 |---|---|---|
 | `ai-analysis` | Valida configuração e transmite Gemini/DeepSeek por streaming. | `x-app-session`; config real via service role. |
-| `marketing-api` | API de conexões, OAuth, dashboard, tracker e sincronização. | Sessão da aplicação ou token do tracker, conforme ação. |
-| `marketing-worker` | Consome filas, sincroniza métricas, envia conversões e aplica retenção. | `x-worker-secret`. |
-| `marketing-conversions` | Fluxo antigo de conversões. | Legado; não publicar. |
 
-`verify_jwt = false` é intencional porque o produto não usa Supabase Auth. Isso não deixa as funções sem autenticação: elas validam `x-app-session`, origem, token do tracker ou segredo do worker dentro do código.
+`ai-analysis` é a única Edge Function presente em `supabase/functions/` e a única entrada em `supabase/config.toml`. `verify_jwt = false` é intencional porque o produto não usa Supabase Auth; a função exige `x-app-session` e resolve a configuração pela RPC `lc_ai_runtime_config` usando `SUPABASE_SERVICE_ROLE_KEY` somente no ambiente da função.
 
-### 17.2 Estado remoto verificado em 14/08/2026
+### 17.2 Estado local e estado remoto
 
-| Função | Estado remoto |
-|---|---|
-| `marketing-api` | ACTIVE, versão 1 |
-| `marketing-worker` | ACTIVE, versão 1 |
-| `ai-analysis` | Não publicada no projeto remoto verificado |
-| `marketing-conversions` | Não publicada, como esperado para legado |
+Em 18 de agosto de 2026, o estado remoto foi conferido depois da limpeza: somente `ai-analysis` permanece ativa. `marketing-api` e `marketing-worker` foram excluídas; não há implantação de `marketing-conversions`, `whatsapp-api`, `whatsapp-webhook` ou `whatsapp-worker`.
 
-Consequência: a interface de IA aponta para `/functions/v1/ai-analysis`, mas falhará no ambiente remoto até essa função ser publicada e receber os segredos necessários.
+Excluir código do repositório não apaga automaticamente uma função publicada. Por isso, futuras manutenções devem sempre comparar o diretório local com `supabase functions list` e nunca reinstalar as funções descontinuadas acima.
 
-### 17.3 Segredos necessários
+O GitHub Pages não publica nem remove Edge Functions. A disponibilidade real da IA depende de `ai-analysis` estar implantada no mesmo projeto Supabase do frontend.
 
-- `MARKETING_CREDENTIALS_KEY`
-- `MARKETING_WORKER_SECRET`
-- `MARKETING_TRACKING_PEPPER`
-- `MARKETING_ALLOWED_ORIGINS`
-- `MARKETING_APP_ORIGINS`
-- variáveis automáticas do Supabase, incluindo URL e service role
+### 17.3 Configuração sensível
 
-Vault usado pelo agendador:
+- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`: variáveis automáticas usadas pela Edge Function.
+- A chave do provedor de IA é configurada por tenant em `ai_settings`; ela não volta para Admin/Agência em respostas comuns.
+- Gemini ou DeepSeek é escolhido pela configuração central do Admin.
 
-- `marketing_project_url`
-- `marketing_worker_secret`
-
-Nunca registrar o valor desses segredos em Markdown, Git, frontend ou logs.
+Não existem segredos, chaves Vault ou variáveis de ambiente para anúncios ou WhatsApp. Nunca registrar chaves de IA, service role ou tokens de sessão em Markdown, Git, frontend ou logs.
 
 ## 18. RLS e modelo de segurança
 
-### 18.1 Estado atual
+### 18.1 Modelo consolidado
 
 - RLS está habilitado nas tabelas públicas.
-- Na verificação remota não havia policies de acesso direto para `anon`/`authenticated`.
+- Não há policy de leitura/escrita direta para `anon`/`authenticated` nas tabelas de negócio.
 - Privilégios diretos das tabelas críticas são revogados.
 - O acesso normal ocorre por funções `SECURITY DEFINER` com `search_path` explícito e validação de escopo.
 - Funções que expõem segredo/runtime são concedidas somente a `service_role`.
-- Tabelas privadas não são acessíveis ao navegador.
+- Funções e helpers de `app_private` não são uma superfície de dados direta do navegador.
 
 ### 18.2 Barreiras aplicadas
 
@@ -933,15 +851,15 @@ Nunca registrar o valor desses segredos em Markdown, Git, frontend ou logs.
 7. Licença Prospecções ativa quando exigida.
 8. Validação e normalização de payload no servidor.
 9. Idempotência em operações sujeitas a retry.
-10. Segredos de marketing criptografados fora do schema público.
+10. Central de análise limitada a uma loja permitida; abas premium bloqueadas sem licença.
+11. Geração assíncrona e desmontagem dos painéis embutidos para impedir resposta obsoleta de outra loja.
 
 ### 18.3 Dados sensíveis
 
 - Senhas: bcrypt.
 - Tokens de sessão: somente hash no banco.
 - CPF jurídico: hash + últimos 4 dígitos.
-- Credenciais de atribuição: cifra no schema privado.
-- Conversões: PII normalizada e SHA-256 com consentimento.
+- Chave do provedor de IA: nunca retornada por `lc_get_ai_settings`; leitura integral somente via RPC de serviço.
 - Avatares: imagens WebP/data URL no banco; upload fonte limitado a 8 MB e otimizado no navegador.
 - Sessão bruta e chats de IA: armazenamento local do navegador; exigem cuidado reforçado contra XSS.
 
@@ -952,16 +870,28 @@ Nunca registrar o valor desses segredos em Markdown, Git, frontend ou logs.
 Ordem recomendada para um ambiente novo:
 
 1. `database.sql`
-2. `attendance_module.sql`
-3. `marketing_attribution_module.sql`
-4. `marketing_scheduler.sql`, depois de configurar Vault/segredos
-5. provisionar o Admin global com procedimento administrativo controlado
+2. `prospection_configuration_batch_update.sql`
+3. `prospection_backup_import_update.sql`
+4. `attendance_module.sql`
+5. provisionar o Admin global com procedimento administrativo controlado;
+6. publicar somente `supabase/functions/ai-analysis`;
+7. configurar o provedor de IA pela conta Admin, se a ferramenta for usada.
 
-`remove_whatsapp_module.sql` é necessário para ambientes antigos que ainda possuam o módulo removido. Em uma instalação limpa baseada no `database.sql` atual, ele não deve ser necessário.
+Os passos 2 e 3 completam, respectivamente, o salvamento atômico da configuração e a importação idempotente de backups de Prospecções; esses dois contratos não estão incorporados ao `database.sql` consolidado.
+
+As migrações de remoção não são necessárias numa instalação limpa baseada no `database.sql` atual. `remove_whatsapp_module.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` existem para atualizar ambientes antigos.
 
 ### 19.2 Ambiente existente
 
-Não reaplicar `database.sql` inteiro sem revisão. Ele possui base consolidada e blocos incrementais, incluindo definições substituídas mais adiante. Para bancos existentes, aplicar somente a migração relevante e validar o schema remoto após cada etapa.
+Não reaplicar `database.sql` inteiro sem revisão. Para um banco existente:
+
+1. gerar e verificar backup;
+2. aplicar somente a migração relevante;
+3. usar `20260818171504_remove_marketing_attribution.sql` para retirar anúncios/atribuição;
+4. usar `remove_whatsapp_module.sql` apenas se ainda houver vestígios do módulo WhatsApp;
+5. validar tabelas, funções, grants, triggers, cron e funcionamento do app.
+
+A remoção de atribuição é propositalmente destrutiva: apaga métricas, conexões, filas, logs e campos de rastreamento. O arquivo é transacional, usa limites de lock/execução e restringe o `DROP` dinâmico às funções `ma_*`, mas backup e validação continuam obrigatórios.
 
 ### 19.3 Inventário das migrações incrementais
 
@@ -977,25 +907,24 @@ Não reaplicar `database.sql` inteiro sem revisão. Ele possui base consolidada 
 | `lead_contact_date_step1.sql`, `lead_contact_date_update.sql`, `lead_contact_date_mac.sql` | Data de contato e variantes de implantação. |
 | `lead_inspected_update.sql`, `lead_notes_update.sql`, `purchase_fields_update.sql` | Campos incrementais de Leads. |
 | `central_ai_configuration_update.sql` | IA central do tenant. |
-| `marketing_intelligence_update.sql` | Inteligência e marketing de primeira geração. |
-| `marketing_attribution_module.sql`, `marketing_scheduler.sql` | Atribuição segura atual. |
+| `lead_intelligence_update.sql` | Inteligência comercial e eventos nativos de ciclo de vida, sem atribuição externa. |
 | `prospection_brand_identity_update.sql` | Identidade visual por loja. |
 | `prospection_configuration_batch_update.sql` + QA | Configuração atômica/revisões. |
 | `prospection_backup_import_update.sql` + QA | Importação idempotente. |
 | `attendance_module.sql` | Módulo Atendimentos completo. |
 | `legal_terms_retention_access_update.sql` | Termos, evidência e gate de acesso. |
 | `remove_whatsapp_module.sql` | Retirada definitiva e destrutiva do módulo descontinuado. |
+| `supabase/migrations/20260818171504_remove_marketing_attribution.sql` | Retirada definitiva e destrutiva das duas gerações de anúncios/atribuição. |
 
 ## 20. Agendamentos remotos
 
-Estado verificado:
+Estado esperado após as migrações:
 
 | Job | Cron | Ação |
 |---|---|---|
 | `lc_attendance_retention_daily` | `17 3 * * *` | `app_private.attendance_purge_retention()` |
-| `marketing-worker-2-minutes` | `*/2 * * * *` | POST via `pg_net` para `marketing-worker` com segredo do Vault |
 
-Não existe job de WhatsApp.
+Não existe job de anúncios ou WhatsApp. A migração cancela `marketing-worker-2-minutes` e o alias histórico `marketing-worker-30-seconds`, além de remover o histórico desses jobs.
 
 ## 21. Deploy e operação
 
@@ -1021,11 +950,21 @@ Comandos típicos:
 ```bash
 supabase link --project-ref menlvmsgkhgqxiydphbn
 supabase functions deploy ai-analysis --no-verify-jwt
-supabase functions deploy marketing-api --no-verify-jwt
-supabase functions deploy marketing-worker --no-verify-jwt
+supabase functions list
 ```
 
-Não publicar `marketing-conversions`.
+Se uma implantação antiga ainda listar funções removidas, excluí-las explicitamente; apagar os diretórios locais ou publicar o Pages não altera o estado remoto:
+
+```bash
+supabase functions delete marketing-api --project-ref menlvmsgkhgqxiydphbn
+supabase functions delete marketing-worker --project-ref menlvmsgkhgqxiydphbn
+supabase functions delete marketing-conversions --project-ref menlvmsgkhgqxiydphbn
+supabase functions delete whatsapp-api --project-ref menlvmsgkhgqxiydphbn
+supabase functions delete whatsapp-webhook --project-ref menlvmsgkhgqxiydphbn
+supabase functions delete whatsapp-worker --project-ref menlvmsgkhgqxiydphbn
+```
+
+Execute apenas os comandos referentes a funções que realmente existirem no projeto. A migração SQL também precisa ser aplicada separadamente; o deploy web não altera banco, cron ou Vault.
 
 ### 21.3 Execução local
 
@@ -1043,7 +982,6 @@ Abrir `http://127.0.0.1:4173`. Usar servidor HTTP evita restrições de módulos
 
 ```bash
 node --check app.js
-node --check marketing.js
 node --check prospections.js
 node --check attendances.js
 ```
@@ -1061,7 +999,8 @@ Checklist manual mínimo:
 - Atendimentos com match único, ambíguo e sem match;
 - termos pendentes e aceitos;
 - IA sem chave, com chave, streaming e interrupção;
-- marketing conectado/desconectado e consentimento;
+- Central de análise com a mesma loja nas três abas e bloqueio de licença;
+- troca rápida de cliente/aba sem reaparecimento de dados da seleção anterior;
 - backup com e sem permissão do HD.
 
 ### 22.2 Banco
@@ -1072,36 +1011,63 @@ supabase db lint --linked --schema public,app_private --level error --fail-on er
 
 Executar os arquivos `*_qa.sql` em transação e confirmar rollback ao final. Validar RLS, grants, funções duplicadas e jobs após qualquer migração.
 
-### 22.3 Edge Functions
+### 22.3 Edge Function de IA
 
-```bash
-deno test supabase/functions/_shared/marketing/crypto_test.ts
-deno test supabase/functions/_shared/marketing/providers_test.ts
-```
+Validar `OPTIONS`/CORS, método diferente de POST, ausência ou expiração de `x-app-session`, configuração inexistente, provedor indisponível, limites de payload, streaming, interrupção e ausência de chave/service role em respostas e logs.
 
-Além dos testes unitários, verificar CORS/origens, sessão inválida, tracker inválido, segredo de worker incorreto, retries e ausência de segredo em respostas/logs.
+Estado verificado em 18 de agosto de 2026: `ai-analysis` ativa, `OPTIONS` respondendo `200` e `POST` sem `x-app-session` bloqueado com `401`.
 
 ## 23. Lacunas e riscos conhecidos no retrato atual
 
 ### Prioridade alta
 
-1. **`ai-analysis` não está publicada no Supabase remoto.** O frontend possui a ferramenta, mas o endpoint não existe no estado remoto verificado.
+1. **Deploy web, banco e Edge Functions são independentes.** A retirada desta versão já foi aplicada e verificada remotamente, mas um futuro commit do frontend sozinho continuará sem alterar banco, cron, Vault ou funções publicadas.
+2. **A migração de retirada é destrutiva.** Métricas, conexões, filas, logs e identificadores de atribuição apagados não são recuperáveis sem backup.
 
 ### Prioridade média
 
-2. `database.sql` mistura instalação base e evolução histórica. Isso eleva o risco de reaplicar definições antigas em um banco existente.
-3. `marketing-conversions` ainda existe no código/config local embora seja legado. Uma limpeza futura pode removê-lo para evitar publicação acidental.
-4. Não há suíte automatizada de regressão visual/E2E para uma interface grande e muito dependente de estado e perfil.
+3. `database.sql` é uma base consolidada extensa; reaplicá-la sem revisão em ambiente existente continua arriscado.
+4. Não há suíte automatizada completa de regressão visual/E2E para uma interface grande e muito dependente de perfil, licença, tema e largura.
 5. Sessão e chats ficam em `localStorage`; uma política CSP forte e revisão contínua contra XSS são importantes.
-6. O backup automático depende de navegador aberto, API Chromium, permissão e HD conectado; não é um backup de servidor independente.
+6. `ai-analysis` responde CORS com origem ampla e depende da validação obrigatória de `x-app-session`; qualquer flexibilização dessa validação seria uma falha crítica.
+7. O backup automático depende de navegador aberto, API Chromium, permissão e HD conectado; não é um backup de servidor independente.
 
 ### Limitações intencionais
 
-7. PWA sem Service Worker: instalável, mas não offline.
-8. Análises sempre isolam uma loja; comparação entre lojas não é feita no chat de IA.
-9. A retenção remove históricos antigos conforme regras de dois anos/730 dias.
+8. PWA sem Service Worker: instalável, mas não offline.
+9. A Central analisa uma loja por vez; não compara nem combina clientes.
+10. Prospecções e Atendimentos ficam indisponíveis sem a licença conjunta.
+11. Os painéis embutidos mostram até 20 registros recentes; consultas operacionais completas continuam nos módulos e exportações.
+12. A retenção remove históricos antigos conforme regras de dois anos/730 dias.
 
-## 24. Retirada do WhatsApp
+## 24. Retiradas definitivas
+
+### 24.1 Anúncios e atribuição externa
+
+Arquivos removidos do repositório:
+
+- `marketing.js`, `marketing.css`;
+- `marketing_attribution_module.sql`, `marketing_scheduler.sql`, `marketing_intelligence_update.sql`;
+- `MARKETING_ATTRIBUTION_SETUP.md`, `MARKETING_INTELLIGENCE_SETUP.md`;
+- `supabase/functions/marketing-api/`;
+- `supabase/functions/marketing-worker/`;
+- `supabase/functions/marketing-conversions/`;
+- `supabase/functions/_shared/marketing/`.
+
+`marketing_intelligence_update.sql` foi substituído por `lead_intelligence_update.sql`, que mantém apenas inteligência comercial nativa e auditoria de IA. `database.sql`, `index.html`, `app.js`, o workflow do Pages e `supabase/config.toml` não carregam nem publicam código de anúncios.
+
+A migração de retirada também:
+
+- remove as tabelas e RPCs inventariadas nas seções 15.6 e 16.7;
+- remove triggers/funções `ma_*` e recria o lifecycle nativo de Leads;
+- restringe `lead_events` aos eventos comerciais internos;
+- cancela os crons `marketing-worker-2-minutes` e `marketing-worker-30-seconds`;
+- remove os itens Vault `marketing_project_url` e `marketing_worker_secret`;
+- elimina a necessidade de `MARKETING_ALLOWED_ORIGINS`, `MARKETING_APP_ORIGINS`, `MARKETING_CREDENTIALS_KEY`, `MARKETING_TRACKING_PEPPER` e `MARKETING_WORKER_SECRET`.
+
+Não existe instrução suportada para reinstalar essa estrutura. Canais e campanhas continuam como rótulos internos; não há API, OAuth, pixel, tracker, sincronização ou envio de conversão.
+
+### 24.2 WhatsApp
 
 O estado correto do produto é:
 
@@ -1131,8 +1097,7 @@ O estado correto do produto é:
 | Atendimento | Interação realizada por um profissional na loja. |
 | OS | Ordem de serviço que comprova/rastreia uma compra. |
 | RPC | Função PostgreSQL chamada remotamente. |
-| Edge Function | Função Deno no Supabase para integrações/segredos. |
-| Touchpoint | Interação de marketing anterior ou relacionada ao lead. |
+| Edge Function | Função Deno no Supabase; neste projeto, somente o proxy de IA. |
 | Idempotência | Garantia de que retries não duplicam uma operação. |
 | RLS | Segurança em nível de linha do PostgreSQL. |
 | Snapshot | Cópia histórica de nome/configuração no momento do evento. |
@@ -1145,8 +1110,10 @@ O estado correto do produto é:
 | Fluxos do núcleo/Leads | `app.js` |
 | Prospecções | `prospections.js`, `prospections.css` e RPCs `lc_*prospection*` |
 | Atendimentos | `attendances.js`, `attendances.css`, `attendance_module.sql` |
-| Marketing | `marketing.js`, `marketing_attribution_module.sql`, Edge Functions e setup MD |
+| Central única de análise | `index.html`, `app.js`, `styles.css`, `mobile.css` e APIs embutidas dos dois módulos |
 | IA | `app.js`, `central_ai_configuration_update.sql`, `ai-analysis/index.ts` |
+| Retirada de anúncios/atribuição | `lead_intelligence_update.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` |
+| Retirada do WhatsApp | `remove_whatsapp_module.sql` |
 | Segurança/permissões reais | Schema e funções do banco remoto |
 | Deploy web | `.github/workflows/pages.yml` |
 | Funções publicadas | `supabase functions list` no projeto vinculado |

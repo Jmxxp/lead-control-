@@ -35,8 +35,6 @@ jobs:
             app.js \
             styles.css \
             mobile.css \
-            marketing.js \
-            marketing.css \
             prospections.js \
             prospections.css \
             prospec-original.css \

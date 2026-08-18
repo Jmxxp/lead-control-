@@ -64,6 +64,7 @@
   let configurationNeedsRefresh = false;
   let workspaceResizeObserver = null;
   let workspaceResizeFrame = 0;
+  const embeddedAnalysisStates = new WeakMap();
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -544,6 +545,225 @@
       <span class="prospection-loading-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
       <div><p class="eyebrow">Módulo indisponível</p><h2>Não foi possível carregar Prospecções</h2><span>${escapeHtml(message)}</span></div>
     </div>`;
+  }
+
+  function resolveEmbeddedAnalysisRoot(target) {
+    if (target instanceof Element) return target;
+    if (typeof target === "string") return document.querySelector(target);
+    return null;
+  }
+
+  function embeddedAnalysisStore(embeddedBridge, requestedStoreId) {
+    const profile = embeddedBridge?.profile || {};
+    const role = normalize(profile.role);
+    const storeRoles = ["store", "client", "cliente", "loja"];
+    const agencyRoles = ["technician", "agency", "agencia", "tecnico"];
+    const storeId = String(requestedStoreId || "");
+    const storesInBridge = Array.isArray(embeddedBridge?.stores) ? embeddedBridge.stores : [];
+    const store = storesInBridge.find((item) => String(item?.id || item?.store_id || "") === storeId) || null;
+    if (!store) return { store: null, reason: "Cliente não encontrado neste escopo." };
+    if (!["admin", ...storeRoles, ...agencyRoles].includes(role)) {
+      return { store: null, reason: "Este perfil não tem permissão para analisar Prospecções." };
+    }
+
+    const profileStoreId = String(profile.storeId || profile.store_id || (storeRoles.includes(role) ? profile.id : "") || "");
+    const profileId = String(profile.id || profile.user_id || profile.technicianId || profile.technician_id || "");
+    const technicianId = String(store.technicianId || store.technician_id || "");
+    const initialAgencyId = String(embeddedBridge?.initialAgencyId || "");
+    if (storeRoles.includes(role) && storeId !== profileStoreId) {
+      return { store: null, reason: "Esta conta não pode analisar dados de outro cliente." };
+    }
+    if (agencyRoles.includes(role) && technicianId !== profileId) {
+      return { store: null, reason: "Este cliente não pertence à carteira desta agência." };
+    }
+    if (role === "admin" && initialAgencyId && technicianId !== initialAgencyId) {
+      return { store: null, reason: "Este cliente não pertence à agência selecionada." };
+    }
+    if (embeddedBridge?.prospectionAccessGranted === false || store.prospectionEnabled === false || store.prospection_enabled === false) {
+      return { store, reason: "Prospecções não está liberada para este cliente.", locked: true };
+    }
+    return { store, reason: "", locked: false };
+  }
+
+  function embeddedAnalysisPeriodWindow(period) {
+    const mapped = { today: "today", week: "week", month: "month", year: "year" }[period] || "month";
+    return periodWindow(mapped);
+  }
+
+  function embeddedAnalysisSettings(state) {
+    return state.settings.find((item) => item.storeId === state.storeId) || { storeId: state.storeId, ...DEFAULT_SETTINGS };
+  }
+
+  function embeddedAnalysisRows(state) {
+    const window = embeddedAnalysisPeriodWindow(state.period);
+    return state.prospects.filter((row) => row.storeId === state.storeId && isInWindow(row.createdAt, window));
+  }
+
+  function embeddedProspectionKpis(state, rows) {
+    const config = embeddedAnalysisSettings(state);
+    const returned = rows.filter((row) => row.returnedAt).length;
+    const purchasedRows = rows.filter((row) => row.purchasedAt);
+    const revenue = purchasedRows.reduce((sum, row) => sum + row.purchaseAmount, 0);
+    const bonusRows = purchasedRows.filter((row) => row.purchaseAmount >= config.bonusMinimum);
+    const values = [
+      ["fa-bullseye", "Prospecções", rows.length, "Registros iniciados no período"],
+      ["fa-store", "Retornaram", returned, `${percentage(returned, rows.length)}% das prospecções`],
+      ["fa-bag-shopping", "Compraram", purchasedRows.length, `${percentage(purchasedRows.length, rows.length)}% de conversão`],
+      ["fa-sack-dollar", "Faturamento", formatCurrency(revenue), `${purchasedRows.length ? formatCurrency(revenue / purchasedRows.length) : formatCurrency(0)} de ticket médio`],
+      ["fa-gift", "Bonificação", formatCurrency(bonusRows.length * config.bonusAmount), `${bonusRows.length} compras elegíveis`],
+    ];
+    return `<section class="prospection-insight-kpis" aria-label="Resumo das prospecções">${values.map(([icon, label, value, helper]) => `<article><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(helper)}</small></article>`).join("")}</section>`;
+  }
+
+  function embeddedProspectionProfessionals(rows) {
+    const grouped = new Map();
+    rows.forEach((row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
+      if (!grouped.has(key)) grouped.set(key, { name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, revenue: 0 });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) {
+        item.purchased += 1;
+        item.revenue += row.purchaseAmount;
+      }
+    });
+    const items = [...grouped.values()].sort((a, b) => b.purchased - a.purchased || b.revenue - a.revenue || b.total - a.total);
+    return `<section class="admin-professional-performance"><div class="admin-professional-performance-header"><h4>Profissionais</h4><span>Resultado da coorte iniciada no período</span></div><div class="admin-professional-list">${items.length ? items.map((item) => `<div class="admin-professional-row"><div class="admin-professional-name"><strong>${escapeHtml(item.name)}</strong><small>${formatCurrency(item.revenue)} em compras</small></div><div class="admin-professional-metrics"><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span></div><div class="admin-professional-rates"><span>${percentage(item.returned, item.total)}% visita</span><span>${percentage(item.purchased, item.total)}% compra</span></div></div>`).join("") : `<p class="admin-professional-empty">Nenhum responsável no período selecionado.</p>`}</div></section>`;
+  }
+
+  function embeddedProspectionTags(rows) {
+    const grouped = new Map();
+    rows.forEach((row) => (row.tagValues?.length ? row.tagValues : ["Sem etiqueta"]).forEach((label) => {
+      const key = normalize(label);
+      if (!grouped.has(key)) grouped.set(key, { label, total: 0, returned: 0, purchased: 0 });
+      const item = grouped.get(key);
+      item.total += 1;
+      if (row.returnedAt) item.returned += 1;
+      if (row.purchasedAt) item.purchased += 1;
+    }));
+    const items = [...grouped.values()].sort((a, b) => b.total - a.total || b.purchased - a.purchased || a.label.localeCompare(b.label, "pt-BR"));
+    return `<section class="admin-campaign-performance"><div class="admin-campaign-performance-header"><h4>Etiquetas e campanhas</h4><span>Volume e conversão dos registros filtrados</span></div><div class="admin-campaign-performance-list">${items.length ? items.map((item) => `<div class="admin-campaign-performance-row"><strong>${escapeHtml(item.label)}</strong><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span><em>${percentage(item.purchased, item.total)}%</em></div>`).join("") : `<p class="admin-professional-empty">Nenhuma etiqueta no período selecionado.</p>`}</div></section>`;
+  }
+
+  function embeddedProspectionRecentRows(rows) {
+    const recent = rows.slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 20);
+    return `<article class="prospection-panel prospection-professional-records"><div class="prospection-panel-heading"><div><p class="eyebrow">Detalhamento</p><h3>Registros recentes</h3><span>Até 20 prospecções da seleção atual.</span></div></div>${recent.length ? `<div class="prospection-employee-prospect-list">${recent.map((row) => `<article><div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.phone || "Sem telefone")} · ${formatDateTime(row.createdAt)}</span><small>${escapeHtml((row.tagValues || []).join(" · ") || PROBABILITIES[row.probability]?.label || "Sem etiqueta")}</small></div><div><span>${row.purchasedAt ? "Compra confirmada" : row.returnedAt ? "Retornou à loja" : "Em acompanhamento"}</span><strong>${row.purchasedAt ? formatCurrency(row.purchaseAmount) : "—"}</strong><small>${row.purchaseOrder ? `OS ${escapeHtml(row.purchaseOrder)}` : escapeHtml(row.professionalName || "Sem responsável")}</small></div></article>`).join("")}</div>` : emptyMarkup("Nenhuma prospecção neste período", "Escolha outro intervalo para consultar o histórico.")}</article>`;
+  }
+
+  function renderEmbeddedProspectionContent(state) {
+    if (state.destroyed || !state.root.isConnected) return;
+    const rows = embeddedAnalysisRows(state);
+    const store = state.store;
+    const config = embeddedAnalysisSettings(state);
+    const window = embeddedAnalysisPeriodWindow(state.period);
+    const periodDefinitions = [["today", "Hoje"], ["week", "Semana"], ["month", "Mês"], ["year", "Ano"]];
+    const trendEnd = window.end ? formatDateInput(addDays(window.end, -1)) : "";
+    state.root.removeAttribute("aria-busy");
+    state.root.innerHTML = `<div class="prospection-prospec-analysis" style="--store-accent:${escapeHtml(config.accentColor)}">
+      <section class="prospection-insight-identity" style="--account-color:${escapeHtml(config.accentColor)}">
+        <div class="prospection-account-identity">${accountVisual(store.avatarUrl || store.avatar_url || "", store.name || "Cliente", "fa-store", config.logoBackgroundColor)}<div><small>Dados isolados deste cliente</small><strong>${escapeHtml(store.name || "Cliente")}</strong><span>${escapeHtml(window.label)} · ${rows.length} registros iniciados</span></div></div>
+        <span class="prospection-scope-lock"><i class="fa-solid fa-lock" aria-hidden="true"></i>Sem mistura de contas</span>
+      </section>
+      <div class="admin-period-controls" role="group" aria-label="Período da análise">${periodDefinitions.map(([value, label]) => `<button class="admin-period-button${state.period === value ? " is-active" : ""}" type="button" data-embedded-prospection-period="${value}" aria-pressed="${state.period === value}">${label}</button>`).join("")}</div>
+      ${embeddedProspectionKpis(state, rows)}
+      <section class="admin-comparison" aria-label="Funil de prospecção"><div><strong>${rows.length}</strong><span>Prospecções</span></div><div><strong>${rows.filter((row) => row.returnedAt).length}</strong><span>Retornaram</span></div><div><strong>${rows.filter((row) => row.purchasedAt).length}</strong><span>Compraram</span></div><div><strong>${percentage(rows.filter((row) => row.purchasedAt).length, rows.length)}%</strong><span>Conversão</span></div></section>
+      <div class="admin-analysis-grid"><div class="admin-professional-performance-slot">${embeddedProspectionProfessionals(rows)}</div><div class="admin-campaign-performance-slot">${embeddedProspectionTags(rows)}</div><div class="admin-store-chart"><section class="admin-trend-chart"><div class="admin-trend-heading"><div class="admin-trend-title"><strong>Ritmo de prospecção</strong><span>Distribuição dos registros iniciados em ${escapeHtml(window.label.toLowerCase())}</span></div></div>${rangeTrendMarkup(rows, formatDateInput(window.start), trendEnd)}</section></div></div>
+      ${embeddedProspectionRecentRows(rows)}
+    </div>`;
+  }
+
+  function renderEmbeddedProspectionState(state, kind, message) {
+    if (state.destroyed || !state.root.isConnected) return;
+    state.root.removeAttribute("aria-busy");
+    if (kind === "locked") {
+      state.root.innerHTML = `<div class="prospection-empty"><i class="fa-solid fa-lock" aria-hidden="true"></i><strong>Prospecções não está liberada</strong><span>${escapeHtml(message)}</span></div>`;
+      return;
+    }
+    state.root.innerHTML = `<div class="prospection-error-card" role="alert"><span class="prospection-loading-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><div><p class="eyebrow">Análise indisponível</p><h2>Não foi possível carregar Prospecções</h2><span>${escapeHtml(message)}</span><button class="prospection-button is-secondary" type="button" data-embedded-prospection-retry><i class="fa-solid fa-rotate" aria-hidden="true"></i>Tentar novamente</button></div></div>`;
+  }
+
+  async function loadEmbeddedProspectionAnalysis(state) {
+    const requestGeneration = ++state.generation;
+    state.root.setAttribute("aria-busy", "true");
+    state.root.innerHTML = loadingMarkup();
+    try {
+      const [prospectRows, configurationRows] = await Promise.all([
+        state.bridge.rpc("lc_list_prospections"),
+        state.bridge.rpc("lc_get_prospection_configuration"),
+      ]);
+      if (state.destroyed || requestGeneration !== state.generation || !state.root.isConnected) return;
+      const configuration = normalizeRpcObject(configurationRows);
+      state.prospects = (Array.isArray(prospectRows) ? prospectRows : [])
+        .map(mapProspect)
+        .filter((row) => row.storeId === state.storeId);
+      state.settings = (configuration.settings || []).map(mapSettings).filter((row) => row.storeId === state.storeId);
+      renderEmbeddedProspectionContent(state);
+    } catch (error) {
+      if (state.destroyed || requestGeneration !== state.generation) return;
+      renderEmbeddedProspectionState(state, "error", readableError(error));
+    }
+  }
+
+  async function renderEmbeddedAnalysis({ root: target, bridge: embeddedBridge, storeId } = {}) {
+    const mount = resolveEmbeddedAnalysisRoot(target);
+    if (!mount) throw new Error("Área de análise embutida de Prospecções não encontrada.");
+    destroyEmbeddedAnalysis(mount);
+    if (!embeddedBridge || typeof embeddedBridge.rpc !== "function") {
+      throw new Error("Integração RPC de Prospecções não configurada.");
+    }
+
+    const access = embeddedAnalysisStore(embeddedBridge, storeId);
+    const state = {
+      root: mount,
+      bridge: embeddedBridge,
+      storeId: String(storeId || ""),
+      store: access.store,
+      period: "month",
+      prospects: [],
+      settings: [],
+      generation: 0,
+      destroyed: false,
+      onClick: null,
+    };
+    embeddedAnalysisStates.set(mount, state);
+    mount.classList.add("prospection-embedded-analysis");
+    state.onClick = (event) => {
+      const periodButton = event.target.closest("[data-embedded-prospection-period]");
+      if (periodButton && mount.contains(periodButton)) {
+        const period = periodButton.dataset.embeddedProspectionPeriod;
+        if (["today", "week", "month", "year"].includes(period)) {
+          state.period = period;
+          renderEmbeddedProspectionContent(state);
+        }
+        return;
+      }
+      if (event.target.closest("[data-embedded-prospection-retry]")) loadEmbeddedProspectionAnalysis(state);
+    };
+    mount.addEventListener("click", state.onClick);
+
+    if (!access.store || access.reason) {
+      renderEmbeddedProspectionState(state, access.locked ? "locked" : "error", access.reason || "Cliente indisponível.");
+      return { storeId: state.storeId, destroy: () => embeddedAnalysisStates.get(mount) === state && destroyEmbeddedAnalysis(mount) };
+    }
+    await loadEmbeddedProspectionAnalysis(state);
+    return { storeId: state.storeId, destroy: () => embeddedAnalysisStates.get(mount) === state && destroyEmbeddedAnalysis(mount) };
+  }
+
+  function destroyEmbeddedAnalysis(target) {
+    const mount = resolveEmbeddedAnalysisRoot(target);
+    if (!mount) return false;
+    const state = embeddedAnalysisStates.get(mount);
+    if (state) {
+      state.destroyed = true;
+      state.generation += 1;
+      if (state.onClick) mount.removeEventListener("click", state.onClick);
+      embeddedAnalysisStates.delete(mount);
+    }
+    mount.classList.remove("prospection-embedded-analysis");
+    mount.removeAttribute("aria-busy");
+    mount.replaceChildren();
+    return Boolean(state);
   }
 
   async function loadData() {
@@ -3011,5 +3231,7 @@
     requestDeactivate,
     refreshContext,
     renderFatalError,
+    renderEmbeddedAnalysis,
+    destroyEmbeddedAnalysis,
   };
 })();
