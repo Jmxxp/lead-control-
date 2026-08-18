@@ -216,6 +216,11 @@ video {
     min-width: 0;
   }
 
+  #appView > .topbar:has(> .module-switcher[hidden]) {
+    grid-template-areas: "identity actions";
+    grid-template-rows: auto;
+  }
+
   #appView .topbar-identity {
     align-items: center;
     gap: 8px;
@@ -766,7 +771,44 @@ video {
   }
 
   .analytics-pie-body {
-    grid-template-columns: minmax(118px, 0.62fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 4px 0 8px;
+  }
+
+  .analytics-pie-visual {
+    padding: 4px;
+  }
+
+  .analytics-pie-wrap {
+    width: min(164px, 52vw);
+    min-width: 0;
+  }
+
+  .analytics-pie-legend {
+    width: 100%;
+    max-height: none;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .analytics-legend-row {
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    gap: 7px;
+    min-height: 38px;
+    padding: 5px;
+  }
+
+  .analytics-legend-count,
+  .analytics-legend-list-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .analytics-legend-row strong,
+  .analytics-legend-row span {
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   .lead-card,
@@ -778,6 +820,49 @@ video {
     padding: 11px;
     overflow: visible;
     border-radius: var(--mobile-radius);
+  }
+
+  .operation-record-card {
+    gap: 7px;
+    padding: 10px 9px 9px 13px;
+    border-radius: var(--mobile-radius);
+  }
+
+  .operation-record-card::before {
+    width: 4px;
+    border-radius: var(--mobile-radius) 0 0 var(--mobile-radius);
+  }
+
+  .operation-record-head {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .operation-record-contact-row,
+  .operation-record-actions,
+  .operation-record-stamp {
+    width: 100%;
+  }
+
+  .operation-record-status {
+    align-self: center;
+    flex: 0 0 auto;
+    max-width: 42%;
+  }
+
+  .operation-record-footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+  }
+
+  .operation-record-stamp {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 5px;
+    text-align: left;
   }
 
   .lead-tags span {
@@ -941,6 +1026,32 @@ video {
   .modal-actions > * {
     width: 100%;
     min-width: 0;
+  }
+
+  .lead-card .operation-record-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .lead-card .operation-record-actions > * {
+    min-height: 33px;
+    padding: 5px 4px;
+    border-radius: 7px;
+    font-size: 0.64rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .operation-record-chip-row span {
+    min-height: 24px;
+    padding: 4px 7px;
+    font-size: 0.65rem;
+  }
+
+  .operation-record-card .lead-notes {
+    padding: 8px 9px;
+    font-size: 0.72rem;
+    line-height: 1.35;
   }
 
   .management-card .card-actions > *,
@@ -1184,13 +1295,20 @@ video {
   .prospection-view #prospectForm input,
   .prospection-view #prospectForm select,
   .prospection-view #prospectForm textarea {
-    border: 1px solid var(--line);
+    border: 1px solid #aebbd0;
     border-radius: 8px;
-    background: var(--surface);
-    color: var(--ink);
+    background: #ffffff;
+    color: #172033;
+    color-scheme: light;
+    caret-color: #1d4ed8;
     font-family: inherit;
     font-size: 16px !important;
     outline: none;
+  }
+
+  .prospection-view #prospectForm :where(input, textarea)::placeholder {
+    color: #667085;
+    opacity: 1;
   }
 
   .prospection-view #prospectForm input,
@@ -1210,9 +1328,9 @@ video {
     display: grid;
     gap: 6px;
     padding: 8px;
-    border: 1px solid var(--line);
+    border: 1px solid #cbd5e1;
     border-radius: 8px;
-    background: var(--surface-soft);
+    background: #ffffff;
   }
 
   .prospection-view :where(.professional-picker-header, .tag-editor-header) {
@@ -1238,10 +1356,10 @@ video {
     gap: 5px;
     min-height: 28px;
     padding: 0 8px;
-    border: 1px solid var(--line);
+    border: 1px solid #cbd5e1;
     border-radius: 999px;
-    background: var(--surface);
-    color: var(--muted);
+    background: #f1f5f9;
+    color: #334155;
     font-size: 0.62rem;
     font-weight: 800;
   }
@@ -1255,8 +1373,8 @@ video {
   }
 
   .prospection-view :where(.professional-option, .tag-option):has(input:checked) {
-    border-color: color-mix(in srgb, var(--prospection-green) 45%, var(--line));
-    background: color-mix(in srgb, var(--prospection-green) 9%, var(--surface));
+    border-color: color-mix(in srgb, var(--prospection-green) 45%, #cbd5e1);
+    background: color-mix(in srgb, var(--prospection-green) 11%, #ffffff);
     color: var(--prospection-green-strong);
   }
 
@@ -1548,7 +1666,11 @@ video {
     padding-top: 10px;
   }
 
-  .attendance-form-grid,
+  .attendance-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
   .attendance-feedback-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;

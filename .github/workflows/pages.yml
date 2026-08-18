@@ -40,6 +40,8 @@ jobs:
             prospec-original.css \
             attendances.js \
             attendances.css \
+            support-assistant.js \
+            support-assistant.css \
             manifest.webmanifest \
             favicon.ico \
             logo__.png \

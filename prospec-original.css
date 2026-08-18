@@ -267,32 +267,38 @@ body.is-dark-mode .calendar-day-count {
   color: var(--text);
 }
 
-body.is-dark-mode input,
+body.is-dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
 body.is-dark-mode select,
 body.is-dark-mode textarea {
-  border-color: var(--line);
-  background: #0f172a;
-  color: var(--text);
+  border-color: #aebbd0;
+  background: #ffffff;
+  color: #172033;
+  color-scheme: light;
+  caret-color: #1d4ed8;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 body.is-dark-mode input::placeholder,
 body.is-dark-mode textarea::placeholder {
-  color: rgba(159, 176, 200, 0.58);
+  color: #667085;
+  opacity: 1;
 }
 
-body.is-dark-mode input:focus,
+body.is-dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="hidden"]):focus,
 body.is-dark-mode select:focus,
 body.is-dark-mode textarea:focus {
-  background: #0f1f3d;
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.32), 0 0 0 1px rgba(191, 219, 254, 0.36), 0 12px 26px rgba(37, 99, 235, 0.24);
+  background: #ffffff;
+  border-color: #2563eb;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 8px 20px rgba(37, 99, 235, 0.11);
 }
 
 body.is-dark-mode #prospectForm input:focus,
 body.is-dark-mode #prospectForm textarea:focus {
-  background: #102a56;
-  border-color: #bfdbfe;
-  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.42), 0 0 0 1px rgba(219, 234, 254, 0.42), 0 14px 28px rgba(37, 99, 235, 0.3);
+  background: #ffffff;
+  border-color: #2563eb;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 8px 20px rgba(37, 99, 235, 0.11);
 }
 
 body.is-dark-mode h1,
@@ -1693,7 +1699,7 @@ body.is-dark-mode .admin-store-bonus {
 
 .admin-line-series circle:hover {
   opacity: 1;
-  r: 4.8;
+  r: 4.8px;
 }
 
 .admin-trend-item {
@@ -2685,17 +2691,27 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid rgba(203, 213, 225, 0.74);
+  border: 1px solid #aebbd0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.38);
-  color: var(--text);
+  background: #ffffff;
+  color: #172033;
+  color-scheme: light;
+  caret-color: #1d4ed8;
   outline: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(97, 112, 135, 0.42);
+  color: #667085;
+  opacity: 1;
+}
+
+select option,
+select optgroup {
+  background: #ffffff;
+  color: #172033;
 }
 
 input,
@@ -2721,7 +2737,8 @@ textarea:focus {
 #prospectForm input:focus,
 #prospectForm textarea:focus {
   border-color: #2563eb;
-  background: #eff6ff;
+  background: #ffffff;
+  color: #0f172a;
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.28), 0 0 0 1px rgba(37, 99, 235, 0.42), 0 12px 26px rgba(37, 99, 235, 0.16);
 }
 
@@ -3130,7 +3147,7 @@ body.is-dark-mode .status-option:has(input[value="green"]:checked) {
   border: 1px solid rgba(219, 227, 238, 0.9);
   border-left: 0;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.88));
+  background: #f8fafc;
   box-shadow: var(--card-shadow);
   position: relative;
   overflow: hidden;
@@ -3173,7 +3190,7 @@ body.is-dark-mode .status-option:has(input[value="green"]:checked) {
 }
 
 body.is-dark-mode .prospect-card {
-  background: linear-gradient(180deg, #142033, #111c2e);
+  background: #111c2e;
 }
 
 body.is-dark-mode .prospect-card[data-color="blue"] {
@@ -4739,7 +4756,7 @@ body.is-prospections-operation .prospection-operation-list-toolbar {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface-soft) 58%, var(--surface)));
+  background: var(--surface);
   box-shadow: var(--card-shadow);
 }
 
@@ -5067,20 +5084,20 @@ body.is-dark-mode .prospection-attendance-actions .phone-button {
 
 body.is-dark-mode .prospection-attendance-filters input,
 body.is-dark-mode .prospection-attendance-filters select {
-  border-color: var(--line);
-  background: #0f192a;
-  color: var(--text);
+  border-color: #aebbd0;
+  background: #ffffff;
+  color: #172033;
 }
 
 body.is-dark-mode .prospection-attendance-filters select {
-  border-color: var(--line) !important;
-  background-color: #0f192a !important;
-  color: var(--text) !important;
+  border-color: #aebbd0 !important;
+  background-color: #ffffff !important;
+  color: #172033 !important;
 }
 
 body.is-dark-mode .prospection-attendance-filters select:focus {
   border-color: var(--primary) !important;
-  background-color: #132036 !important;
+  background-color: #ffffff !important;
 }
 
 @media (max-width: 1280px) {

@@ -4,12 +4,13 @@
   const DEFAULT_RPC = Object.freeze({
     workspace: "lc_get_attendance_workspace",
     save: "lc_upsert_attendance",
+    list: "lc_list_attendances_v2",
   });
 
   const TAGS = Object.freeze({
-    budget: { label: "Orçamento", icon: "fa-file-invoice-dollar", tone: "blue" },
-    purchase: { label: "Compra", icon: "fa-bag-shopping", tone: "green" },
-    other: { label: "Outro", icon: "fa-ellipsis", tone: "slate" },
+    budget: { label: "Orçamento", icon: "fa-file-invoice-dollar", tone: "emerald" },
+    purchase: { label: "Compra", icon: "fa-bag-shopping", tone: "forest" },
+    other: { label: "Outro", icon: "fa-ellipsis", tone: "sage" },
   });
 
   const state = {
@@ -19,11 +20,20 @@
     loading: false,
     saving: false,
     generation: 0,
+    listGeneration: 0,
     contextGeneration: 0,
     pendingSave: null,
     selectedStoreId: "",
     stores: [],
     records: [],
+    listRecords: [],
+    listTotal: 0,
+    listHasMore: false,
+    listLoading: false,
+    listLoaded: false,
+    listError: "",
+    listSource: "workspace",
+    listSearchTimer: 0,
     professionals: [],
     serverMetrics: {},
     feedback: null,
@@ -31,11 +41,13 @@
     idempotencyKey: "",
     idempotencyFingerprint: "",
     drafts: new Map(),
+    filtersOpen: false,
     filters: {
       search: "",
       tag: "all",
       professional: "all",
       period: "30d",
+      link: "all",
     },
   };
   const embeddedAnalysisStates = new WeakMap();
@@ -97,11 +109,21 @@
     if (revokedStore) revokedStore.prospectionEnabled = false;
     state.bridge?.onAccessRevoked?.(String(storeId || ""));
     state.generation += 1;
+    state.listGeneration += 1;
     state.contextGeneration += 1;
     state.loading = false;
     state.saving = false;
     state.pendingSave = null;
     state.records = [];
+    state.listRecords = [];
+    state.listTotal = 0;
+    state.listHasMore = false;
+    state.listLoading = false;
+    state.listLoaded = false;
+    state.listError = "";
+    state.listSource = "workspace";
+    if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
+    state.listSearchTimer = 0;
     state.professionals = [];
     state.serverMetrics = {};
     state.feedback = null;
@@ -453,7 +475,7 @@
 
   function professionalOptions() {
     const unique = new Map(registeredProfessionalOptions().map((name) => [normalizeText(name), name]));
-    state.records.forEach((record) => {
+    [...state.records, ...state.listRecords].forEach((record) => {
       if (record.professionalName && record.professionalName !== "Não informado") unique.set(normalizeText(record.professionalName), record.professionalName);
     });
     return [...unique.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -645,12 +667,12 @@
   function renderMetrics() {
     const metrics = metricData();
     const cards = [
-      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "blue" },
-      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "violet" },
-      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "green" },
-      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "cyan" },
-      { label: "Faturamento informado", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "green" },
-      { label: "Valor dos atendimentos", value: formatCurrency(metrics.serviceValue), icon: "fa-wallet", tone: "slate" },
+      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "forest" },
+      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "emerald" },
+      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
+      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "mint" },
+      { label: "Faturamento informado", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "teal" },
+      { label: "Valor dos atendimentos", value: formatCurrency(metrics.serviceValue), icon: "fa-wallet", tone: "sage" },
     ];
     return `<section class="attendance-metrics" data-attendance-metrics>
       ${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}
@@ -659,9 +681,21 @@
 
   function filteredRecords() {
     const query = normalizeText(state.filters.search);
-    return periodRecords().filter((record) => {
+    const range = embeddedAttendanceRange(state.filters.period);
+    const startAt = range.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
+    const endAt = range.endDate ? new Date(`${range.endDate}T23:59:59.999`) : null;
+    return state.listRecords.filter((record) => {
       if (state.filters.tag !== "all" && record.tag !== state.filters.tag) return false;
       if (state.filters.professional !== "all" && normalizeText(record.professionalName) !== normalizeText(state.filters.professional)) return false;
+      if (state.filters.link === "linked" && !record.linkedLead?.linked && !record.linkedProspection?.linked) return false;
+      if (state.filters.link === "standalone" && (record.linkedLead?.linked || record.linkedProspection?.linked || record.ambiguous)) return false;
+      if (state.filters.link === "review" && !record.ambiguous) return false;
+      if (startAt || endAt) {
+        const attendedAt = new Date(record.createdAt || 0);
+        if (Number.isNaN(attendedAt.getTime())) return false;
+        if (startAt && attendedAt < startAt) return false;
+        if (endAt && attendedAt > endAt) return false;
+      }
       if (!query) return true;
       return normalizeText([
         record.customerName,
@@ -674,6 +708,41 @@
     }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }
 
+  function operationalListCoverage() {
+    const visible = filteredRecords().length;
+    const loaded = state.listRecords.length;
+    if (state.listSource !== "paged") {
+      return `${visible} nos ${loaded} registros recentes disponíveis enquanto a lista completa carrega`;
+    }
+    if (state.filters.link === "review") {
+      return `${visible} para revisar entre ${loaded} carregados${state.listHasMore ? " · carregue mais para continuar" : ""}`;
+    }
+    return `${loaded} de ${Math.max(state.listTotal, loaded)} carregados`;
+  }
+
+  function renderOperationalPagination() {
+    if (state.listLoading) {
+      return `<div class="attendance-list-pagination is-loading" role="status"><span class="attendance-mini-spinner" aria-hidden="true"></span><span>${state.listRecords.length ? "Carregando mais atendimentos" : "Carregando lista completa"}</span></div>`;
+    }
+    if (state.listError) {
+      return `<div class="attendance-list-pagination is-error"><span><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(state.listError)}</span><button type="button" data-attendance-action="retry-list"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Tentar novamente</button></div>`;
+    }
+    if (state.listHasMore) {
+      return `<div class="attendance-list-pagination"><span>${escapeHtml(operationalListCoverage())}</span><button type="button" data-attendance-action="load-more"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>Carregar mais 30</button></div>`;
+    }
+    if (state.listLoaded) {
+      return `<div class="attendance-list-pagination is-complete"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>${escapeHtml(state.filters.link === "review" ? `${filteredRecords().length} registros para revisar na lista carregada` : `Todos os ${state.listTotal} registros deste filtro foram carregados`)}</span></div>`;
+    }
+    return "";
+  }
+
+  function attendanceFilterCount(filters = state.filters) {
+    return Number(filters.tag !== "all")
+      + Number(filters.professional !== "all")
+      + Number(filters.period !== "30d")
+      + Number(filters.link !== "all");
+  }
+
   function renderRecordOrigins(record) {
     const origins = [];
     if (record.linkedLead?.linked) origins.push(`<span class="attendance-link-badge attendance-link-badge--lead"><i class="fa-solid fa-user-group" aria-hidden="true"></i>Lead</span>`);
@@ -683,35 +752,39 @@
     return origins.join("");
   }
 
-  function renderRecord(record) {
+  function renderRecord(record, { compact = false } = {}) {
     const tag = TAGS[record.tag] || TAGS.other;
+    const phone = onlyDigits(record.phone);
     const bonusApplies = record.tag === "purchase" && record.linkedProspection?.linked;
     const bonus = bonusApplies && record.bonusEligible === true
       ? `<span class="attendance-record-bonus is-positive"><i class="fa-solid fa-award" aria-hidden="true"></i>Bônus elegível${record.bonusAmount != null ? ` · ${escapeHtml(formatCurrency(record.bonusAmount))}` : ""}</span>`
       : bonusApplies && record.bonusEligible === false
         ? `<span class="attendance-record-bonus is-negative"><i class="fa-solid fa-circle-minus" aria-hidden="true"></i>Não elegível</span>`
         : "";
-    return `<article class="attendance-record">
+    return `<article class="attendance-record${compact ? " is-compact" : ""}">
       <div class="attendance-record-accent attendance-record-accent--${tag.tone}" aria-hidden="true"></div>
       <header>
         <div class="attendance-record-person"><span>${escapeHtml(initials(record.customerName))}</span><div><strong>${escapeHtml(record.customerName)}</strong><small>${escapeHtml(record.phone || "Telefone não informado")}</small></div></div>
         <span class="attendance-record-tag attendance-record-tag--${tag.tone}"><i class="fa-solid ${tag.icon}" aria-hidden="true"></i>${tag.label}</span>
       </header>
-      ${record.description ? `<p class="attendance-record-description">${escapeHtml(record.description)}</p>` : ""}
+      <div class="attendance-record-context"><small>Contexto do atendimento</small><p class="attendance-record-description">${escapeHtml(record.description || "Nenhuma descrição informada.")}</p></div>
       <div class="attendance-record-meta">
-        <span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Realizado por <b>${escapeHtml(record.professionalName)}</b></span>
-        <span><i class="fa-regular fa-clock" aria-hidden="true"></i>${escapeHtml(formatDateTime(record.createdAt))}</span>
-        ${record.serviceOrder ? `<span><i class="fa-solid fa-receipt" aria-hidden="true"></i>OS ${escapeHtml(record.serviceOrder)}</span>` : ""}
+        <span><i class="fa-solid fa-user-tie" aria-hidden="true"></i><small>Atendido por</small><b>${escapeHtml(record.professionalName)}</b></span>
+        <span><i class="fa-regular fa-calendar" aria-hidden="true"></i><small>Data</small><b>${escapeHtml(formatDateTime(record.createdAt))}</b></span>
+        ${record.serviceOrder ? `<span><i class="fa-solid fa-receipt" aria-hidden="true"></i><small>Ordem de serviço</small><b>${escapeHtml(record.serviceOrder)}</b></span>` : ""}
       </div>
       <footer>
-        <div class="attendance-record-links">${renderRecordOrigins(record)}${record.prospectionProfessionalName ? `<span class="attendance-credit-badge"><i class="fa-solid fa-medal" aria-hidden="true"></i>Crédito: ${escapeHtml(record.prospectionProfessionalName)}</span>` : ""}${bonus}</div>
-        <div class="attendance-record-values">${record.serviceValue ? `<span><small>Atendimento</small><b>${escapeHtml(formatCurrency(record.serviceValue))}</b></span>` : ""}${record.tag === "purchase" ? `<span><small>Compra</small><b>${escapeHtml(formatCurrency(record.purchaseValue))}</b></span>` : ""}</div>
+        <div class="attendance-record-summary"><div class="attendance-record-links">${renderRecordOrigins(record)}${record.prospectionProfessionalName ? `<span class="attendance-credit-badge"><i class="fa-solid fa-medal" aria-hidden="true"></i>Crédito: ${escapeHtml(record.prospectionProfessionalName)}</span>` : ""}${bonus}</div><div class="attendance-record-values">${record.serviceValue ? `<span><small>Atendimento</small><b>${escapeHtml(formatCurrency(record.serviceValue))}</b></span>` : ""}${record.tag === "purchase" ? `<span><small>Compra</small><b>${escapeHtml(formatCurrency(record.purchaseValue))}</b></span>` : ""}</div></div>
+        <div class="attendance-record-actions">${phone ? `<a class="attendance-card-action is-primary" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a><button class="attendance-card-action" type="button" data-attendance-copy-phone="${escapeHtml(phone)}"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copiar telefone</button>` : `<span class="attendance-card-action is-disabled"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}</div>
       </footer>
     </article>`;
   }
 
   function renderRecordListContent() {
     const records = filteredRecords();
+    if (!records.length && state.listLoading) {
+      return `<div class="attendance-list-empty" role="status"><span><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i></span><strong>Carregando atendimentos</strong><p>A consulta está limitada a esta loja e traz 30 registros por vez.</p></div>`;
+    }
     if (!records.length) {
       return `<div class="attendance-list-empty"><span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span><strong>Nenhum atendimento encontrado</strong><p>Ajuste os filtros ou registre o primeiro atendimento deste cliente.</p></div>`;
     }
@@ -720,31 +793,29 @@
 
   function renderOverview() {
     const professionals = professionalOptions();
+    const filterCount = attendanceFilterCount();
+    const resultCount = filteredRecords().length;
     return `<section class="attendance-overview">
-      <div class="attendance-overview-heading"><div><p class="attendance-eyebrow">Visão da operação</p><h2>Resumo do cliente</h2><span>Métricas e registros sempre limitados à empresa selecionada.</span></div><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Sem mistura de contas</span></div>
+      <div class="attendance-overview-heading"><div><p class="attendance-eyebrow">Visão da operação</p><h2>Resumo do cliente</h2><span>Métricas e registros sempre limitados à empresa selecionada.</span></div><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Loja isolada</span></div>
       ${renderMetrics()}
       <article class="attendance-panel attendance-list-panel">
         <header class="attendance-list-header">
-          <div><h2>Atendimentos recentes</h2><span data-attendance-result-count>${filteredRecords().length} registro${filteredRecords().length === 1 ? "" : "s"} no filtro</span></div>
+          <div class="attendance-list-heading"><p class="attendance-eyebrow">Histórico organizado</p><h2>Atendimentos registrados</h2><span data-attendance-result-count>${resultCount} registro${resultCount === 1 ? "" : "s"} exibido${resultCount === 1 ? "" : "s"}</span></div>
           <div class="attendance-list-tools">
-            <label class="attendance-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-filter="search" value="${escapeHtml(state.filters.search)}" placeholder="Buscar cliente, telefone ou OS" aria-label="Buscar atendimentos" /></label>
-            <select data-attendance-filter="tag" aria-label="Filtrar por classificação">
-              <option value="all" ${state.filters.tag === "all" ? "selected" : ""}>Todas as etiquetas</option>
-              ${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${state.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}
-            </select>
-            <select data-attendance-filter="professional" aria-label="Filtrar por profissional">
-              <option value="all">Todos os profissionais</option>
-              ${professionals.map((name) => `<option value="${escapeHtml(name)}" ${state.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-            </select>
-            <select data-attendance-filter="period" aria-label="Filtrar por período">
-              <option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option>
-              <option value="7d" ${state.filters.period === "7d" ? "selected" : ""}>Últimos 7 dias</option>
-              <option value="30d" ${state.filters.period === "30d" ? "selected" : ""}>Últimos 30 dias</option>
-              <option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option>
-            </select>
+            <label class="attendance-search"><span class="attendance-sr-only">Buscar nos atendimentos</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-filter="search" value="${escapeHtml(state.filters.search)}" placeholder="Nome, telefone, descrição ou OS" aria-label="Buscar atendimentos" /></label>
+            <button class="attendance-filter-button${state.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-action="toggle-filters" aria-expanded="${String(state.filtersOpen)}" aria-controls="attendanceFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros</span><b data-attendance-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button>
           </div>
         </header>
+        <div id="attendanceFilters" class="attendance-filter-panel" ${state.filtersOpen ? "" : "hidden"}>
+          <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-filter="tag"><option value="all" ${state.filters.tag === "all" ? "selected" : ""}>Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${state.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
+          <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${state.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
+          <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-filter="link"><option value="all" ${state.filters.link === "all" ? "selected" : ""}>Todos os vínculos</option><option value="linked" ${state.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${state.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${state.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
+          <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${state.filters.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.filters.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+          <button class="attendance-clear-filters" type="button" data-attendance-action="clear-filters"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar filtros</button>
+        </div>
+        <div class="attendance-list-status"><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${resultCount}</b> exibidos</span><small>${escapeHtml(operationalListCoverage())} · mais recentes primeiro</small></div>
         <div class="attendance-record-list" data-attendance-record-list>${renderRecordListContent()}</div>
+        <div data-attendance-list-pagination>${renderOperationalPagination()}</div>
       </article>
     </section>`;
   }
@@ -762,12 +833,30 @@
     const list = state.root.querySelector("[data-attendance-record-list]");
     const count = state.root.querySelector("[data-attendance-result-count]");
     const metrics = state.root.querySelector("[data-attendance-metrics]");
+    const status = state.root.querySelector(".attendance-list-status");
+    const pagination = state.root.querySelector("[data-attendance-list-pagination]");
+    const filterButton = state.root.querySelector('[data-attendance-action="toggle-filters"]');
+    const filterBadge = state.root.querySelector("[data-attendance-filter-count]");
     if (list) list.innerHTML = renderRecordListContent();
     if (count) {
       const total = filteredRecords().length;
-      count.textContent = `${total} registro${total === 1 ? "" : "s"} no filtro`;
+      count.textContent = `${total} registro${total === 1 ? "" : "s"} exibido${total === 1 ? "" : "s"}`;
     }
     if (metrics) metrics.outerHTML = renderMetrics();
+    if (status) {
+      const total = filteredRecords().length;
+      status.innerHTML = `<span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${total}</b> exibidos</span><small>${escapeHtml(operationalListCoverage())} · mais recentes primeiro</small>`;
+    }
+    if (pagination) pagination.innerHTML = renderOperationalPagination();
+    const filterCount = attendanceFilterCount();
+    if (filterButton) {
+      filterButton.classList.toggle("is-active", state.filtersOpen || filterCount > 0);
+      filterButton.setAttribute("aria-expanded", String(state.filtersOpen));
+    }
+    if (filterBadge) {
+      filterBadge.hidden = filterCount === 0;
+      filterBadge.textContent = String(filterCount);
+    }
   }
 
   function resolveEmbeddedAnalysisRoot(target) {
@@ -808,15 +897,20 @@
   }
 
   function embeddedDateInput(value) {
-    const date = new Date(value);
-    const offset = date.getTimezoneOffset();
-    return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(value));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
   }
 
   function embeddedAttendanceRange(period) {
     if (period === "all") return { startDate: null, endDate: null, label: "Todo o período" };
-    const today = new Date();
-    today.setHours(12, 0, 0, 0);
+    const todayInput = embeddedDateInput(new Date());
+    const today = new Date(`${todayInput}T12:00:00Z`);
     const start = new Date(today);
     if (period === "today") return { startDate: embeddedDateInput(today), endDate: embeddedDateInput(today), label: "Hoje" };
     start.setDate(start.getDate() - (period === "7d" ? 6 : 29));
@@ -827,79 +921,85 @@
     };
   }
 
-  function embeddedAttendanceMetricData(state) {
-    const aliases = {
-      today: ["today", "day", "hoje"],
-      "7d": ["7d", "week", "last_7_days", "last7days", "semana"],
-      "30d": ["30d", "month", "last_30_days", "last30days", "mes"],
-      all: ["all", "total", "overall", "todo_periodo"],
-    };
-    const containers = [state.serverMetrics?.periods, state.serverMetrics?.by_period, state.serverMetrics?.byPeriod, state.serverMetrics];
-    let serverPeriod = null;
-    for (const container of containers) {
-      if (!container || typeof container !== "object") continue;
-      const key = aliases[state.period].find((alias) => container[alias] && typeof container[alias] === "object");
-      if (key) {
-        serverPeriod = container[key];
-        break;
-      }
-    }
-    if (serverPeriod) {
-      const total = Number(firstDefined(serverPeriod.total, serverPeriod.attendances, serverPeriod.attendance_count, serverPeriod.attendanceCount, 0)) || 0;
-      const purchases = Number(firstDefined(serverPeriod.purchases, serverPeriod.purchase_count, serverPeriod.purchaseCount, 0)) || 0;
-      return {
-        total,
-        budgets: Number(firstDefined(serverPeriod.budgets, serverPeriod.budget_count, serverPeriod.budgetCount, 0)) || 0,
-        purchases,
-        conversion: Number(firstDefined(serverPeriod.conversion, serverPeriod.conversion_rate, serverPeriod.conversionRate, total ? Math.round((purchases / total) * 100) : 0)) || 0,
-        revenue: Number(firstDefined(serverPeriod.revenue, serverPeriod.purchase_revenue, serverPeriod.purchaseRevenue, serverPeriod.sales_value, 0)) || 0,
-        serviceValue: Number(firstDefined(serverPeriod.service_value, serverPeriod.serviceValue, serverPeriod.attendance_value, serverPeriod.attendanceValue, 0)) || 0,
-        linked: Number(firstDefined(serverPeriod.linked, 0)) || 0,
-        unmatched: Number(firstDefined(serverPeriod.unmatched, 0)) || 0,
-        ambiguous: Number(firstDefined(serverPeriod.ambiguous, 0)) || 0,
-        uniqueCustomers: Number(firstDefined(serverPeriod.unique_customers, serverPeriod.uniqueCustomers, 0)) || 0,
-        bonusPendingReview: Number(firstDefined(serverPeriod.bonus_pending_review, serverPeriod.bonusPendingReview, 0)) || 0,
-      };
-    }
+  function embeddedFilteredRecords(analysisState) {
+    const filters = analysisState.filters || {};
+    const query = normalizeText(filters.search);
+    return analysisState.records.filter((record) => {
+      if (filters.tag && filters.tag !== "all" && record.tag !== filters.tag) return false;
+      if (filters.professional && filters.professional !== "all" && normalizeText(record.professionalName) !== normalizeText(filters.professional)) return false;
+      const linked = record.linkedLead?.linked || record.linkedProspection?.linked;
+      if (filters.link === "linked" && !linked) return false;
+      if (filters.link === "standalone" && (linked || record.ambiguous)) return false;
+      if (filters.link === "review" && !record.ambiguous) return false;
+      if (!query) return true;
+      return normalizeText([
+        record.customerName,
+        record.phone,
+        record.description,
+        record.professionalName,
+        record.serviceOrder,
+        TAGS[record.tag]?.label,
+      ].join(" ")).includes(query);
+    }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
 
-    const purchases = state.records.filter((record) => record.tag === "purchase");
-    const linked = state.records.filter((record) => record.linkedLead?.linked || record.linkedProspection?.linked).length;
-    const uniqueCustomers = new Set(state.records.map((record) => onlyDigits(record.phone)).filter(Boolean)).size;
+  function embeddedAttendanceMetricData(records) {
+    const purchases = records.filter((record) => record.tag === "purchase");
+    const budgets = records.filter((record) => record.tag === "budget");
+    const linkedLead = records.filter((record) => record.linkedLead?.linked).length;
+    const linkedProspection = records.filter((record) => record.linkedProspection?.linked).length;
+    const linked = records.filter((record) => record.linkedLead?.linked || record.linkedProspection?.linked).length;
+    const revenue = purchases.reduce((sum, record) => sum + record.purchaseValue, 0);
+    const serviceValue = records.reduce((sum, record) => sum + record.serviceValue, 0);
     return {
-      total: state.records.length,
-      budgets: state.records.filter((record) => record.tag === "budget").length,
+      total: records.length,
+      budgets: budgets.length,
       purchases: purchases.length,
-      conversion: state.records.length ? Math.round((purchases.length / state.records.length) * 100) : 0,
-      revenue: purchases.reduce((sum, record) => sum + record.purchaseValue, 0),
-      serviceValue: state.records.reduce((sum, record) => sum + record.serviceValue, 0),
+      other: records.length - budgets.length - purchases.length,
+      conversion: records.length ? Math.round((purchases.length / records.length) * 100) : 0,
+      revenue,
+      ticket: purchases.length ? revenue / purchases.length : 0,
+      serviceValue,
+      averageServiceValue: records.length ? serviceValue / records.length : 0,
       linked,
-      unmatched: state.records.length - linked,
-      ambiguous: state.records.filter((record) => record.ambiguous).length,
-      uniqueCustomers,
-      bonusPendingReview: state.records.filter((record) => record.ambiguous && record.tag === "purchase").length,
+      linkedLead,
+      linkedProspection,
+      both: records.filter((record) => record.linkedLead?.linked && record.linkedProspection?.linked).length,
+      unmatched: records.length - linked,
+      ambiguous: records.filter((record) => record.ambiguous).length,
+      uniqueCustomers: new Set(records.map((record) => onlyDigits(record.phone)).filter(Boolean)).size,
     };
   }
 
   function embeddedAttendanceMetricCards(metrics) {
     const cards = [
-      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "blue" },
-      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "violet" },
-      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "green" },
-      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "cyan" },
-      { label: "Faturamento informado", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "green" },
-      { label: "Valor dos atendimentos", value: formatCurrency(metrics.serviceValue), icon: "fa-wallet", tone: "slate" },
+      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "forest" },
+      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
+      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "mint" },
+      { label: "Faturamento", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "emerald" },
+      { label: "Ticket médio", value: formatCurrency(metrics.ticket), icon: "fa-receipt", tone: "teal" },
     ];
-    return `<section class="attendance-metrics" aria-label="Resumo dos atendimentos">${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
+    return `<section class="attendance-analysis-kpis" data-attendance-analysis-kpis aria-label="Indicadores da análise">${cards.map((card) => `<article class="attendance-analysis-kpi is-${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
   }
 
-  function embeddedAttendanceLinkMetrics(metrics) {
-    const cards = [
-      { label: "Clientes únicos", value: metrics.uniqueCustomers, icon: "fa-users", tone: "blue" },
-      { label: "Com origem vinculada", value: metrics.linked, icon: "fa-link", tone: "green" },
-      { label: "Atendimentos avulsos", value: metrics.unmatched, icon: "fa-circle-dot", tone: "slate" },
-      { label: "Vínculos para revisar", value: metrics.ambiguous, icon: "fa-triangle-exclamation", tone: "violet" },
+  function embeddedAttendanceOutcomeMarkup(metrics) {
+    const stages = [
+      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "forest" },
+      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "emerald" },
+      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
+      { label: "Outros", value: metrics.other, icon: "fa-ellipsis", tone: "sage" },
     ];
-    return `<section class="attendance-metrics" aria-label="Qualidade dos vínculos">${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
+    return `<article class="attendance-analysis-card" data-attendance-analysis-outcomes><header><div><p class="attendance-eyebrow">Resultado</p><h3>Funil dos atendimentos</h3></div><span>${metrics.conversion}% em compra</span></header><div class="attendance-analysis-funnel">${stages.map((stage) => { const width = stage.label === "Atendimentos" ? 100 : metrics.total ? Math.round((stage.value / metrics.total) * 100) : 0; return `<div class="attendance-funnel-row is-${stage.tone}"><span><i class="fa-solid ${stage.icon}" aria-hidden="true"></i>${stage.label}</span><div><i style="width:${Math.max(width, stage.value ? 5 : 0)}%"></i></div><strong>${stage.value}<small>${stage.label === "Atendimentos" ? "base" : `${width}%`}</small></strong></div>`; }).join("")}</div></article>`;
+  }
+
+  function embeddedAttendanceFinanceMarkup(metrics) {
+    const rows = [
+      ["Faturamento em compras", formatCurrency(metrics.revenue), "fa-sack-dollar"],
+      ["Ticket médio", formatCurrency(metrics.ticket), "fa-receipt"],
+      ["Valor dos atendimentos", formatCurrency(metrics.serviceValue), "fa-wallet"],
+      ["Média por atendimento", formatCurrency(metrics.averageServiceValue), "fa-chart-simple"],
+    ];
+    return `<article class="attendance-analysis-card attendance-analysis-finance" data-attendance-analysis-finance><header><div><p class="attendance-eyebrow">Financeiro</p><h3>Receita e valor gerado</h3></div><span>Valores informados</span></header><div class="attendance-finance-grid">${rows.map(([label, value, icon], index) => `<div class="${index === 0 ? "is-featured" : ""}"><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></article>`;
   }
 
   function embeddedAttendanceProfessionalRows(records) {
@@ -919,27 +1019,99 @@
     return [...grouped.values()].sort((a, b) => b.purchases - a.purchases || b.revenue - a.revenue || b.total - a.total);
   }
 
-  function renderEmbeddedAttendanceProfessionals(state) {
-    const rows = embeddedAttendanceProfessionalRows(state.records);
-    if (!rows.length) return `<div class="attendance-list-empty"><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i></span><strong>Nenhum profissional no período</strong><p>Escolha outro intervalo para consultar o desempenho da equipe.</p></div>`;
-    return rows.map((item) => `<article class="attendance-record"><div class="attendance-record-accent attendance-record-accent--green" aria-hidden="true"></div><header><div class="attendance-record-person"><span>${escapeHtml(initials(item.name))}</span><div><strong>${escapeHtml(item.name)}</strong><small>${item.total} atendimento${item.total === 1 ? "" : "s"}</small></div></div><span class="attendance-record-tag attendance-record-tag--green"><i class="fa-solid fa-chart-line" aria-hidden="true"></i>${item.total ? Math.round((item.purchases / item.total) * 100) : 0}% conversão</span></header><footer><div class="attendance-record-links"><span class="attendance-link-badge attendance-link-badge--lead"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i>${item.budgets} orçamentos</span><span class="attendance-link-badge attendance-link-badge--prospection"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>${item.purchases} compras</span></div><div class="attendance-record-values"><span><small>Atendimentos</small><b>${escapeHtml(formatCurrency(item.serviceValue))}</b></span><span><small>Compras</small><b>${escapeHtml(formatCurrency(item.revenue))}</b></span></div></footer></article>`).join("");
+  function renderEmbeddedAttendanceProfessionals(records) {
+    const rows = embeddedAttendanceProfessionalRows(records).slice(0, 6);
+    if (!rows.length) return `<div class="attendance-analysis-empty"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><strong>Sem profissionais neste recorte</strong><span>Ajuste os filtros para ampliar a leitura.</span></div>`;
+    const maxTotal = Math.max(...rows.map((item) => item.total), 1);
+    return rows.map((item, index) => `<div class="attendance-professional-row"><b>${index + 1}</b><span class="attendance-professional-avatar">${escapeHtml(initials(item.name))}</span><div class="attendance-professional-copy"><strong>${escapeHtml(item.name)}</strong><span>${item.total} atendimento${item.total === 1 ? "" : "s"} · ${item.purchases} compra${item.purchases === 1 ? "" : "s"}</span><i><b style="width:${Math.max(Math.round((item.total / maxTotal) * 100), 5)}%"></b></i></div><div class="attendance-professional-result"><strong>${item.total ? Math.round((item.purchases / item.total) * 100) : 0}%</strong><span>${escapeHtml(formatCurrency(item.revenue))}</span></div></div>`).join("");
   }
 
-  function renderEmbeddedAttendanceContent(state) {
-    if (state.destroyed || !state.root.isConnected) return;
-    const metrics = embeddedAttendanceMetricData(state);
-    const range = embeddedAttendanceRange(state.period);
-    const detailLabel = state.truncated
-      ? `Amostra dos ${state.records.length} registros mais recentes de ${state.detailTotal}`
-      : `${state.records.length} registro${state.records.length === 1 ? "" : "s"} no detalhamento`;
-    const recent = state.records.slice(0, 20);
-    state.root.removeAttribute("aria-busy");
-    state.root.innerHTML = `<section class="attendance-overview attendance-embedded-overview">
-      <div class="attendance-overview-heading"><div><p class="attendance-eyebrow">Análise de atendimentos</p><h2>${escapeHtml(state.store.name)}</h2><span>${escapeHtml(range.label)} · métricas limitadas à empresa selecionada.</span></div><div class="attendance-header-actions"><label class="attendance-store-picker"><span>Período</span><span class="attendance-select-wrap"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${state.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${state.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.period === "all" ? "selected" : ""}>Todo o período</option></select></span></label><button class="attendance-icon-button" type="button" data-attendance-embedded-refresh aria-label="Atualizar análise" title="Atualizar"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Sem mistura de contas</span></div></div>
+  function embeddedAttendanceProfessionalPanel(records) {
+    return `<article class="attendance-analysis-card" data-attendance-analysis-professionals><header><div><p class="attendance-eyebrow">Equipe</p><h3>Desempenho por profissional</h3></div><span>Top 6 do recorte</span></header><div class="attendance-professional-list">${renderEmbeddedAttendanceProfessionals(records)}</div></article>`;
+  }
+
+  function embeddedAttendanceDimensionsMarkup(metrics) {
+    const items = [
+      ["Clientes únicos", metrics.uniqueCustomers, "fa-users", "forest"],
+      ["Com Lead", metrics.linkedLead, "fa-user-group", "emerald"],
+      ["Com Prospecção", metrics.linkedProspection, "fa-phone", "mint"],
+      ["Nos dois módulos", metrics.both, "fa-link", "lime"],
+      ["Avulsos", metrics.unmatched, "fa-circle-dot", "sage"],
+      ["Revisar vínculo", metrics.ambiguous, "fa-triangle-exclamation", "warning"],
+    ];
+    return `<article class="attendance-analysis-card" data-attendance-analysis-dimensions><header><div><p class="attendance-eyebrow">Etiquetas e vínculos</p><h3>Qualidade da base</h3></div><span>${metrics.linked} vinculados</span></header><div class="attendance-dimension-list">${items.map(([label, value, icon, tone]) => `<div class="is-${tone}"><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><strong>${value}</strong></div>`).join("")}</div></article>`;
+  }
+
+  function embeddedAttendanceFilterCount(analysisState) {
+    return Number(analysisState.filters.tag !== "all") + Number(analysisState.filters.professional !== "all") + Number(analysisState.filters.link !== "all");
+  }
+
+  function embeddedAttendanceFilterPanel(analysisState) {
+    const professionals = [...new Set(analysisState.records.map((record) => record.professionalName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return `<div id="attendanceAnalysisFilters" class="attendance-filter-panel attendance-analysis-filter-panel" ${analysisState.filtersOpen ? "" : "hidden"}>
+      <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-analysis-filter="tag"><option value="all">Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${analysisState.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
+      <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-analysis-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${analysisState.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
+      <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-analysis-filter="link"><option value="all">Todos os vínculos</option><option value="linked" ${analysisState.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${analysisState.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${analysisState.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
+      <button class="attendance-clear-filters" type="button" data-attendance-analysis-clear><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar filtros</button>
+    </div>`;
+  }
+
+  function embeddedAttendanceRecordList(analysisState, records) {
+    const recent = records.slice(0, 20);
+    if (!recent.length) return `<div class="attendance-list-empty"><span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span><strong>Nenhum atendimento encontrado</strong><p>Altere a busca ou os filtros para consultar outro recorte.</p></div>`;
+    return recent.map((record) => renderRecord(record, { compact: true })).join("");
+  }
+
+  function refreshEmbeddedAttendanceRegions(analysisState) {
+    if (analysisState.destroyed || !analysisState.root.isConnected) return;
+    const records = embeddedFilteredRecords(analysisState);
+    const metrics = embeddedAttendanceMetricData(records);
+    const replacements = [
+      ["[data-attendance-analysis-kpis]", embeddedAttendanceMetricCards(metrics)],
+      ["[data-attendance-analysis-outcomes]", embeddedAttendanceOutcomeMarkup(metrics)],
+      ["[data-attendance-analysis-finance]", embeddedAttendanceFinanceMarkup(metrics)],
+      ["[data-attendance-analysis-professionals]", embeddedAttendanceProfessionalPanel(records)],
+      ["[data-attendance-analysis-dimensions]", embeddedAttendanceDimensionsMarkup(metrics)],
+    ];
+    replacements.forEach(([selector, markup]) => {
+      const current = analysisState.root.querySelector(selector);
+      if (current) current.outerHTML = markup;
+    });
+    const list = analysisState.root.querySelector("[data-attendance-analysis-list]");
+    if (list) list.innerHTML = embeddedAttendanceRecordList(analysisState, records);
+    const count = analysisState.root.querySelector("[data-attendance-analysis-count]");
+    if (count) count.textContent = `${records.length} resultado${records.length === 1 ? "" : "s"} · exibindo até 20`;
+    const summary = analysisState.root.querySelector("[data-attendance-analysis-summary]");
+    if (summary) summary.innerHTML = `<span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${Math.min(records.length, 20)}</b> exibidos</span><small>${records.length} no recorte · ${analysisState.records.length} de ${analysisState.detailTotal} carregados</small>`;
+    const filterCount = embeddedAttendanceFilterCount(analysisState);
+    const button = analysisState.root.querySelector("[data-attendance-analysis-toggle]");
+    const badge = analysisState.root.querySelector("[data-attendance-analysis-filter-count]");
+    if (button) {
+      button.classList.toggle("is-active", analysisState.filtersOpen || filterCount > 0);
+      button.setAttribute("aria-expanded", String(analysisState.filtersOpen));
+    }
+    if (badge) {
+      badge.hidden = filterCount === 0;
+      badge.textContent = String(filterCount);
+    }
+  }
+
+  function renderEmbeddedAttendanceContent(analysisState) {
+    if (analysisState.destroyed || !analysisState.root.isConnected) return;
+    const records = embeddedFilteredRecords(analysisState);
+    const metrics = embeddedAttendanceMetricData(records);
+    const range = embeddedAttendanceRange(analysisState.period);
+    const filterCount = embeddedAttendanceFilterCount(analysisState);
+    const sourceLabel = analysisState.truncated
+      ? `Amostra protegida de ${analysisState.records.length} entre ${analysisState.detailTotal} registros`
+      : `${analysisState.records.length} registro${analysisState.records.length === 1 ? "" : "s"} carregado${analysisState.records.length === 1 ? "" : "s"}`;
+    analysisState.root.removeAttribute("aria-busy");
+    analysisState.root.innerHTML = `<section class="attendance-analysis">
+      <header class="attendance-analysis-header"><div class="attendance-analysis-title"><span class="attendance-analysis-title-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Análise de Atendimentos</p><h2>${escapeHtml(analysisState.store.name)}</h2><span>${escapeHtml(range.label)} · ${escapeHtml(sourceLabel)}</span></div></div><div class="attendance-analysis-header-actions"><label class="attendance-store-picker"><span>Período</span><span class="attendance-select-wrap"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${analysisState.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${analysisState.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${analysisState.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${analysisState.period === "all" ? "selected" : ""}>Todo o período</option></select></span></label><button class="attendance-icon-button" type="button" data-attendance-embedded-refresh aria-label="Atualizar análise" title="Atualizar"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Loja isolada</span></div></header>
       ${embeddedAttendanceMetricCards(metrics)}
-      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Qualidade dos vínculos</h2><span>Origem comercial identificada automaticamente pelo telefone.</span></div></header>${embeddedAttendanceLinkMetrics(metrics)}</article>
-      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Desempenho por profissional</h2><span>${escapeHtml(detailLabel)}</span></div></header><div class="attendance-record-list">${renderEmbeddedAttendanceProfessionals(state)}</div></article>
-      <article class="attendance-panel attendance-list-panel"><header class="attendance-list-header"><div><h2>Atendimentos recentes do período</h2><span>Até 20 registros para conferência rápida.</span></div></header><div class="attendance-record-list">${recent.length ? recent.map(renderRecord).join("") : `<div class="attendance-list-empty"><span><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span><strong>Nenhum atendimento no período</strong><p>Escolha outro intervalo para consultar o histórico.</p></div>`}</div></article>
+      <div class="attendance-analysis-grid attendance-analysis-grid--summary">${embeddedAttendanceOutcomeMarkup(metrics)}${embeddedAttendanceFinanceMarkup(metrics)}</div>
+      <div class="attendance-analysis-grid attendance-analysis-grid--detail">${embeddedAttendanceProfessionalPanel(records)}${embeddedAttendanceDimensionsMarkup(metrics)}</div>
+      <article class="attendance-panel attendance-list-panel attendance-analysis-list-panel"><header class="attendance-list-header"><div class="attendance-list-heading"><p class="attendance-eyebrow">Detalhamento</p><h2>Atendimentos do período</h2><span data-attendance-analysis-count>${records.length} resultado${records.length === 1 ? "" : "s"} · exibindo até 20</span></div><div class="attendance-list-tools"><label class="attendance-search"><span class="attendance-sr-only">Buscar na análise</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-analysis-search value="${escapeHtml(analysisState.filters.search)}" placeholder="Nome, telefone, descrição ou OS" aria-label="Buscar na análise de atendimentos" /></label><button class="attendance-filter-button${analysisState.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-analysis-toggle aria-expanded="${String(analysisState.filtersOpen)}" aria-controls="attendanceAnalysisFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros</span><b data-attendance-analysis-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button></div></header>${embeddedAttendanceFilterPanel(analysisState)}<div class="attendance-list-status" data-attendance-analysis-summary><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${Math.min(records.length, 20)}</b> exibidos</span><small>${records.length} no recorte · ${analysisState.records.length} de ${analysisState.detailTotal} carregados</small></div><div class="attendance-record-list" data-attendance-analysis-list>${embeddedAttendanceRecordList(analysisState, records)}</div></article>
     </section>`;
   }
 
@@ -960,11 +1132,12 @@
     let total = 0;
     let hasMore = true;
     while (hasMore && records.length < EMBEDDED_ANALYSIS_MAX_RECORDS) {
-      const raw = await state.bridge.rpc("lc_list_attendances", {
+      const raw = await state.bridge.rpc(DEFAULT_RPC.list, {
         p_store_id: state.storeId,
         p_search: null,
         p_tag: null,
         p_professional_id: null,
+        p_professional_name: null,
         p_link_status: null,
         p_start_date: range.startDate,
         p_end_date: range.endDate,
@@ -1039,27 +1212,74 @@
       serverMetrics: {},
       detailTotal: 0,
       truncated: false,
+      filtersOpen: false,
+      filters: { search: "", tag: "all", professional: "all", link: "all" },
       generation: 0,
       destroyed: false,
       onClick: null,
+      onInput: null,
       onChange: null,
     };
     embeddedAnalysisStates.set(mount, embeddedState);
     mount.classList.add("attendance-embedded-analysis");
-    embeddedState.onClick = (event) => {
+    embeddedState.onClick = async (event) => {
+      const copyButton = event.target.closest("[data-attendance-copy-phone]");
+      if (copyButton) {
+        const phone = String(copyButton.dataset.attendanceCopyPhone || "");
+        if (!phone) return;
+        try {
+          await global.navigator.clipboard.writeText(phone);
+          embeddedState.bridge?.notify?.("Telefone copiado.", "success");
+        } catch {
+          embeddedState.bridge?.notify?.("Não foi possível copiar o telefone neste navegador.", "warning");
+        }
+        return;
+      }
       if (event.target.closest("[data-attendance-embedded-retry], [data-attendance-embedded-refresh]")) {
         loadEmbeddedAttendanceAnalysis(embeddedState);
+        return;
       }
+      const toggle = event.target.closest("[data-attendance-analysis-toggle]");
+      if (toggle) {
+        embeddedState.filtersOpen = !embeddedState.filtersOpen;
+        const panel = mount.querySelector("#attendanceAnalysisFilters");
+        if (panel) panel.hidden = !embeddedState.filtersOpen;
+        toggle.classList.toggle("is-active", embeddedState.filtersOpen || embeddedAttendanceFilterCount(embeddedState) > 0);
+        toggle.setAttribute("aria-expanded", String(embeddedState.filtersOpen));
+        return;
+      }
+      if (event.target.closest("[data-attendance-analysis-clear]")) {
+        embeddedState.filters = { search: "", tag: "all", professional: "all", link: "all" };
+        embeddedState.filtersOpen = true;
+        renderEmbeddedAttendanceContent(embeddedState);
+      }
+    };
+    embeddedState.onInput = (event) => {
+      const input = event.target.closest("[data-attendance-analysis-search]");
+      if (!input || !mount.contains(input)) return;
+      embeddedState.filters.search = input.value;
+      refreshEmbeddedAttendanceRegions(embeddedState);
     };
     embeddedState.onChange = (event) => {
       const selector = event.target.closest("[data-attendance-embedded-period]");
-      if (!selector || !mount.contains(selector)) return;
-      const period = selector.value;
-      if (!["today", "7d", "30d", "all"].includes(period)) return;
-      embeddedState.period = period;
-      loadEmbeddedAttendanceAnalysis(embeddedState);
+      if (selector && mount.contains(selector)) {
+        const period = selector.value;
+        if (!["today", "7d", "30d", "all"].includes(period)) return;
+        embeddedState.period = period;
+        embeddedState.filters = { search: "", tag: "all", professional: "all", link: "all" };
+        embeddedState.filtersOpen = false;
+        loadEmbeddedAttendanceAnalysis(embeddedState);
+        return;
+      }
+      const filter = event.target.closest("[data-attendance-analysis-filter]");
+      if (!filter || !mount.contains(filter)) return;
+      const key = filter.dataset.attendanceAnalysisFilter;
+      if (!key || !(key in embeddedState.filters)) return;
+      embeddedState.filters[key] = filter.value;
+      refreshEmbeddedAttendanceRegions(embeddedState);
     };
     mount.addEventListener("click", embeddedState.onClick);
+    mount.addEventListener("input", embeddedState.onInput);
     mount.addEventListener("change", embeddedState.onChange);
 
     if (!access.store || access.reason) {
@@ -1078,6 +1298,7 @@
       embeddedState.destroyed = true;
       embeddedState.generation += 1;
       if (embeddedState.onClick) mount.removeEventListener("click", embeddedState.onClick);
+      if (embeddedState.onInput) mount.removeEventListener("input", embeddedState.onInput);
       if (embeddedState.onChange) mount.removeEventListener("change", embeddedState.onChange);
       embeddedAnalysisStates.delete(mount);
     }
@@ -1227,15 +1448,111 @@
     const custom = state.bridge?.attendances;
     if (operation === "workspace" && typeof custom?.load === "function") return custom.load(args);
     if (operation === "save" && typeof custom?.save === "function") return custom.save(args);
+    if (operation === "list" && typeof custom?.list === "function") return custom.list(args);
     if (typeof state.bridge?.rpc !== "function") throw new Error("Integração RPC de Atendimentos não configurada.");
     const names = { ...DEFAULT_RPC, ...(state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {}) };
     return state.bridge.rpc(names[operation], args);
   }
 
+  function attendanceProfessionalId(name) {
+    if (!name || name === "all") return null;
+    const professional = registeredProfessionalRecords().find((item) => normalizeText(item.name) === normalizeText(name));
+    const id = String(professional?.id || "");
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : null;
+  }
+
+  function normalizeOperationalPage(raw, storeId, offset = 0) {
+    const page = unwrapPayload(raw);
+    const responseStoreId = String(firstDefined(page.store_id, page.storeId, storeId));
+    if (responseStoreId !== storeId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+    const items = firstDefined(page.items, page.attendances, page.records, []);
+    const rows = Array.isArray(items) ? items : [];
+    if (rows.some((item) => String(firstDefined(item?.store_id, item?.storeId, storeId)) !== storeId)) {
+      throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+    }
+    const records = rows
+      .map((item, index) => normalizeRecord({ ...item, store_id: firstDefined(item?.store_id, item?.storeId, storeId) }, offset + index))
+      .filter((record) => record.storeId === storeId);
+    const total = Number(firstDefined(page.total, records.length)) || records.length;
+    return {
+      records,
+      total,
+      hasMore: Boolean(firstDefined(page.has_more, page.hasMore, offset + records.length < total)),
+    };
+  }
+
+  async function loadOperationalList({ append = false } = {}) {
+    if (!state.active || !state.selectedStoreId) return;
+    if (append && (state.listLoading || !state.listHasMore)) return;
+    const storeId = state.selectedStoreId;
+    const requestGeneration = ++state.listGeneration;
+    const offset = append ? state.listRecords.length : 0;
+    const range = embeddedAttendanceRange(state.filters.period);
+    const linkStatus = state.filters.link === "linked"
+      ? "matched"
+      : ["standalone", "review"].includes(state.filters.link) ? state.filters.link : null;
+    const professionalId = attendanceProfessionalId(state.filters.professional);
+    state.listLoading = true;
+    state.listError = "";
+    renderFilteredRegions();
+    try {
+      const raw = await rpc("list", {
+        p_store_id: storeId,
+        p_search: state.filters.search.trim() || null,
+        p_tag: state.filters.tag === "all" ? null : state.filters.tag,
+        p_professional_id: professionalId,
+        p_professional_name: state.filters.professional === "all" || professionalId ? null : state.filters.professional,
+        p_link_status: linkStatus,
+        p_start_date: range.startDate,
+        p_end_date: range.endDate,
+        p_limit: 30,
+        p_offset: offset,
+      });
+      if (!state.active || requestGeneration !== state.listGeneration || storeId !== state.selectedStoreId) return;
+      const page = normalizeOperationalPage(raw, storeId, offset);
+      if (append) {
+        const known = new Set(state.listRecords.map((record) => record.id));
+        state.listRecords = [...state.listRecords, ...page.records.filter((record) => !known.has(record.id))];
+      } else {
+        state.listRecords = page.records;
+      }
+      state.listTotal = page.total;
+      state.listHasMore = page.hasMore;
+      state.listLoaded = true;
+      state.listSource = "paged";
+      state.listError = "";
+    } catch (error) {
+      if (!state.active || requestGeneration !== state.listGeneration || storeId !== state.selectedStoreId) return;
+      if (handleEntitlementLoss(error, storeId)) return;
+      state.listError = readableError(error);
+    } finally {
+      if (state.active && requestGeneration === state.listGeneration && storeId === state.selectedStoreId) {
+        state.listLoading = false;
+        renderFilteredRegions();
+      }
+    }
+  }
+
+  function scheduleOperationalListLoad() {
+    if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
+    state.listSearchTimer = global.setTimeout(() => {
+      state.listSearchTimer = 0;
+      loadOperationalList();
+    }, 260);
+  }
+
   async function loadWorkspace({ quiet = false } = {}) {
     if (!state.active) return;
     if (!state.selectedStoreId) {
+      state.listGeneration += 1;
       state.records = [];
+      state.listRecords = [];
+      state.listTotal = 0;
+      state.listHasMore = false;
+      state.listLoading = false;
+      state.listLoaded = false;
+      state.listError = "";
+      state.listSource = "workspace";
       state.professionals = [];
       state.serverMetrics = {};
       state.loading = false;
@@ -1254,11 +1571,20 @@
       if (!state.active || requestGeneration !== state.generation || storeId !== state.selectedStoreId) return;
       const workspace = normalizeWorkspace(raw);
       state.records = workspace.records.filter((record) => !record.storeId || record.storeId === storeId);
+      state.listGeneration += 1;
+      state.listRecords = state.records.slice();
+      state.listTotal = state.listRecords.length;
+      state.listHasMore = state.listRecords.length >= 100;
+      state.listLoading = false;
+      state.listLoaded = false;
+      state.listError = "";
+      state.listSource = "workspace";
       state.professionals = workspace.professionals;
       state.serverMetrics = workspace.metrics;
       state.loading = false;
       state.loadError = "";
       renderWorkspace();
+      await loadOperationalList();
     } catch (error) {
       if (!state.active || requestGeneration !== state.generation) return;
       if (handleEntitlementLoss(error, storeId)) return;
@@ -1381,6 +1707,7 @@
     if (target.matches('[data-attendance-filter="search"]')) {
       state.filters.search = target.value;
       renderFilteredRegions();
+      scheduleOperationalListLoad();
     }
   }
 
@@ -1394,11 +1721,22 @@
       state.selectedStoreId = nextId;
       state.contextGeneration += 1;
       state.feedback = null;
+      if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
+      state.listSearchTimer = 0;
       state.records = [];
+      state.listGeneration += 1;
+      state.listRecords = [];
+      state.listTotal = 0;
+      state.listHasMore = false;
+      state.listLoading = false;
+      state.listLoaded = false;
+      state.listError = "";
+      state.listSource = "workspace";
       state.professionals = [];
       state.idempotencyKey = "";
       state.idempotencyFingerprint = "";
-      state.filters = { search: "", tag: "all", professional: "all", period: "30d" };
+      state.filtersOpen = false;
+      state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
       if (typeof state.bridge?.onStoreSelected === "function") {
         try {
           await state.bridge.onStoreSelected(nextId, selectedStore());
@@ -1419,14 +1757,43 @@
       const key = target.dataset.attendanceFilter;
       if (key && key in state.filters) state.filters[key] = target.value;
       renderFilteredRegions();
+      await loadOperationalList();
     }
   }
 
   async function onClick(event) {
+    const copyButton = event.target.closest("[data-attendance-copy-phone]");
+    if (copyButton) {
+      const phone = String(copyButton.dataset.attendanceCopyPhone || "");
+      if (!phone) return;
+      try {
+        await global.navigator.clipboard.writeText(phone);
+        notify("Telefone copiado.", "success");
+      } catch {
+        notify("Não foi possível copiar o telefone neste navegador.", "warning");
+      }
+      return;
+    }
     const button = event.target.closest("[data-attendance-action]");
     if (!button) return;
     const action = button.dataset.attendanceAction;
     if (action === "refresh") await loadWorkspace();
+    if (action === "load-more") await loadOperationalList({ append: true });
+    if (action === "retry-list") await loadOperationalList();
+    if (action === "toggle-filters") {
+      state.filtersOpen = !state.filtersOpen;
+      const panel = state.root?.querySelector("#attendanceFilters");
+      if (panel) panel.hidden = !state.filtersOpen;
+      button.classList.toggle("is-active", state.filtersOpen || attendanceFilterCount() > 0);
+      button.setAttribute("aria-expanded", String(state.filtersOpen));
+    }
+    if (action === "clear-filters") {
+      state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
+      state.filtersOpen = true;
+      const overview = state.root?.querySelector(".attendance-overview");
+      if (overview) overview.outerHTML = renderOverview();
+      await loadOperationalList();
+    }
     if (action === "dismiss-feedback") {
       state.feedback = null;
       button.closest(".attendance-save-feedback")?.remove();
@@ -1477,7 +1844,10 @@
     state.active = false;
     state.loading = false;
     state.generation += 1;
+    state.listGeneration += 1;
     state.contextGeneration += 1;
+    if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
+    state.listSearchTimer = 0;
   }
 
   function resetSession() {
@@ -1485,10 +1855,20 @@
     state.loading = false;
     state.saving = false;
     state.generation += 1;
+    state.listGeneration += 1;
     state.contextGeneration += 1;
     state.selectedStoreId = "";
     state.stores = [];
     state.records = [];
+    state.listRecords = [];
+    state.listTotal = 0;
+    state.listHasMore = false;
+    state.listLoading = false;
+    state.listLoaded = false;
+    state.listError = "";
+    state.listSource = "workspace";
+    if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
+    state.listSearchTimer = 0;
     state.professionals = [];
     state.serverMetrics = {};
     state.feedback = null;
@@ -1496,7 +1876,8 @@
     state.idempotencyKey = "";
     state.idempotencyFingerprint = "";
     state.pendingSave = null;
-    state.filters = { search: "", tag: "all", professional: "all", period: "30d" };
+    state.filtersOpen = false;
+    state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
     state.drafts.clear();
     state.bridge = {};
     if (state.root) state.root.replaceChildren();
@@ -1532,7 +1913,7 @@
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save"],
+        optional: ["initialStoreId", "initialAgencyId", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
       },
       rpc: {
         workspace: {
@@ -1563,6 +1944,22 @@
             bonus_amount: "numeric | null (returned by backend only)",
             bonus_reason: "text | null",
           },
+        },
+        list: {
+          name: DEFAULT_RPC.list,
+          args: {
+            p_store_id: "uuid",
+            p_search: "text | null",
+            p_tag: "budget | purchase | other | null",
+            p_professional_id: "uuid | null",
+            p_professional_name: "text | null",
+            p_link_status: "matched | standalone | review | null",
+            p_start_date: "date | null",
+            p_end_date: "date | null",
+            p_limit: 30,
+            p_offset: "integer",
+          },
+          returns: { items: "array", total: "integer", has_more: "boolean" },
         },
       },
       rules: [

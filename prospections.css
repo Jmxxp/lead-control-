@@ -19,9 +19,9 @@
 
 .module-switcher {
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  min-width: 250px;
+  min-width: 360px;
   padding: 5px;
   border: 1px solid rgba(23, 23, 23, 0.12);
   border-radius: 14px;
@@ -80,6 +80,11 @@ body.is-dark .module-switcher-button.is-active {
   --prospection-blue: #2f80ed;
   --prospection-amber: #d48616;
   --prospection-red: #c43d59;
+  --text: var(--ink);
+  --primary: var(--prospection-blue);
+  --primary-dark: #1d4ed8;
+  --danger: var(--prospection-red);
+  --card-shadow: 0 10px 28px rgba(20, 35, 29, 0.075);
   display: grid;
   gap: 20px;
   min-width: 0;
@@ -117,7 +122,7 @@ body.is-dark .module-switcher-button.is-active {
   background: linear-gradient(145deg, rgba(22, 133, 95, 0.14), rgba(47, 128, 237, 0.11));
   color: var(--prospection-green);
   font-size: 1.2rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: none;
 }
 
 .prospection-upgrade-shell {
@@ -407,30 +412,49 @@ body.is-dark .module-switcher-button.is-active {
 }
 
 .prospection-period-field select,
-.prospection-view input,
-.prospection-view textarea,
-.prospection-view select {
+:is(.prospection-view, .prospection-embedded-analysis) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="hidden"]), select, textarea) {
   width: 100%;
   min-height: 44px;
-  border: 1px solid var(--line);
+  border: 1px solid #aebbd0;
   border-radius: 10px;
-  background: var(--surface);
-  color: var(--ink);
+  background: #ffffff;
+  color: #172033;
+  color-scheme: light;
+  caret-color: #1d4ed8;
   padding: 10px 12px;
   outline: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
 
-.prospection-view textarea {
+:is(.prospection-view, .prospection-embedded-analysis) textarea {
   min-height: 100px;
   resize: vertical;
 }
 
-.prospection-view input:focus,
-.prospection-view textarea:focus,
-.prospection-view select:focus {
-  border-color: rgba(22, 133, 95, 0.55);
-  box-shadow: 0 0 0 4px rgba(22, 133, 95, 0.11);
+:is(.prospection-view, .prospection-embedded-analysis) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="hidden"]), select, textarea):focus {
+  border-color: #2563eb;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2), 0 8px 20px rgba(37, 99, 235, 0.1);
+}
+
+:is(.prospection-view, .prospection-embedded-analysis) :is(input, textarea)::placeholder {
+  color: #667085;
+  opacity: 1;
+}
+
+:is(.prospection-view, .prospection-embedded-analysis) select option,
+:is(.prospection-view, .prospection-embedded-analysis) select optgroup {
+  background: #ffffff;
+  color: #172033;
+}
+
+:is(.prospection-view, .prospection-embedded-analysis) :is(input, select, textarea):disabled {
+  border-color: #cbd5e1;
+  background: #eef2f7;
+  color: #526071;
+  opacity: 1;
 }
 
 .prospection-button {
@@ -1431,10 +1455,20 @@ body.is-dark .prospection-config-row {
 #appView .topbar h1 {
   overflow: hidden;
   max-width: 440px;
+  color: var(--ink);
   font-size: clamp(1.38rem, 2vw, 1.9rem);
   line-height: 1.04;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+body.is-prospections-module #appView > .topbar h1 {
+  color: #172033;
+}
+
+body.is-dark.is-prospections-module #appView > .topbar h1,
+body.is-dark-mode.is-prospections-module #appView > .topbar h1 {
+  color: #f7faf9;
 }
 
 #appView .topbar-brand-cluster {
@@ -1460,7 +1494,7 @@ body.is-dark .prospection-config-row {
 }
 
 #appView .module-switcher {
-  min-width: 218px;
+  min-width: 360px;
   gap: 3px;
   padding: 4px;
   border-radius: 10px;
@@ -1627,16 +1661,14 @@ body.is-dark .prospection-config-row {
 }
 
 .prospection-period-field select,
-.prospection-view input,
-.prospection-view textarea,
-.prospection-view select {
+:is(.prospection-view, .prospection-embedded-analysis) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="hidden"]), select, textarea) {
   min-height: 38px;
   padding: 8px 10px;
   border-radius: 8px;
   font-size: 0.8rem;
 }
 
-.prospection-view textarea {
+:is(.prospection-view, .prospection-embedded-analysis) textarea {
   min-height: 72px;
 }
 
@@ -2642,54 +2674,6 @@ body.is-prospections-module .prospection-view .store-settings-fields .config-sav
   font-size: 0.62rem;
 }
 
-.prospection-professional-records {
-  scroll-margin-top: 18px;
-}
-
-.prospection-employee-prospect-list {
-  display: grid;
-  gap: 7px;
-  max-height: 380px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.prospection-employee-prospect-list > article {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(150px, 0.65fr);
-  align-items: center;
-  gap: 14px;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--primary);
-  border-radius: 8px;
-  background: var(--surface-soft);
-}
-
-.prospection-employee-prospect-list > article > div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.prospection-employee-prospect-list strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.74rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prospection-employee-prospect-list span,
-.prospection-employee-prospect-list small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.61rem;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .prospection-account-card.is-locked {
   border-style: dashed;
   opacity: 0.82;
@@ -2804,9 +2788,6 @@ body.is-prospections-module .prospection-view .store-settings-fields .config-sav
     flex-direction: column;
   }
 
-  .prospection-employee-prospect-list > article {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 500px) {
@@ -3986,6 +3967,286 @@ body.is-dark .prospection-import-metrics article {
   }
 }
 
+/* Análise premium compartilhada entre a operação e a central unificada. */
+.prospection-analysis-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.prospection-analysis-control > i {
+  position: absolute;
+  z-index: 1;
+  left: 12px;
+  color: #334155;
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+.prospection-analysis-control > input,
+.prospection-analysis-control > select {
+  padding-left: 36px !important;
+}
+
+.prospection-insight-filters.is-embedded {
+  grid-template-columns: repeat(3, minmax(155px, 1fr)) auto;
+}
+
+.prospection-analysis-records-backdrop {
+  z-index: 110;
+  padding: 22px;
+  background: rgba(5, 10, 18, 0.72);
+  backdrop-filter: blur(18px) saturate(0.88);
+}
+
+.prospection-dialog.prospection-analysis-records-dialog {
+  width: min(1380px, 100%);
+  max-height: calc(100dvh - 44px);
+  border-color: color-mix(in srgb, var(--store-accent, #2f80ed) 24%, var(--line));
+  border-radius: 12px;
+}
+
+.prospection-analysis-records-dialog .prospection-dialog-body {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: min(680px, calc(100dvh - 120px));
+  overflow: hidden;
+}
+
+.prospection-analysis-record-filters {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.55fr) repeat(3, minmax(145px, 1fr));
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.prospection-analysis-filter-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.prospection-analysis-record-clear {
+  align-self: end;
+  min-height: 40px;
+}
+
+.prospection-analysis-records-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.prospection-analysis-records-summary strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.prospection-analysis-records-summary span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 760;
+}
+
+.prospection-analysis-records-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 9px;
+  min-height: 0;
+  padding-right: 5px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.prospection-analysis-record {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 9px 24px rgba(15, 23, 42, 0.055);
+}
+
+.prospection-analysis-record header,
+.prospection-analysis-record footer,
+.prospection-analysis-record-meta,
+.prospection-analysis-record-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.prospection-analysis-record header {
+  justify-content: space-between;
+}
+
+.prospection-analysis-record header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prospection-analysis-record header strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-analysis-record header span,
+.prospection-analysis-record-meta span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 730;
+}
+
+.prospection-analysis-record header em {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--record-status) 35%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--record-status) 9%, var(--surface));
+  color: var(--text);
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.prospection-analysis-record header em i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--record-status);
+}
+
+.prospection-analysis-record-meta span,
+.prospection-analysis-record-tags span,
+.prospection-analysis-record footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prospection-analysis-record-meta i,
+.prospection-analysis-record-tags i {
+  color: var(--store-accent, #2f80ed);
+}
+
+.prospection-analysis-record-tags span {
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--store-accent, #2f80ed) 8%, var(--surface-soft));
+  color: var(--muted);
+  font-size: 0.59rem;
+  font-weight: 780;
+}
+
+.prospection-analysis-record footer {
+  justify-content: space-between;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.prospection-analysis-record footer span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.prospection-analysis-record footer .is-positive {
+  color: #087f5b;
+}
+
+.prospection-analysis-record footer .is-purchase {
+  color: #a35b00;
+}
+
+.prospection-analysis-record-limit {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding: 11px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 780;
+}
+
+@media (max-width: 1050px) {
+  .prospection-analysis-record-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-insight-filters.is-embedded {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospection-insight-filters.is-embedded .prospection-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .prospection-analysis-records-backdrop {
+    padding: 0;
+  }
+
+  .prospection-dialog.prospection-analysis-records-dialog {
+    width: 100%;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .prospection-analysis-records-dialog .prospection-dialog-body {
+    min-height: 0;
+    max-height: calc(100dvh - 72px);
+    padding: 12px;
+  }
+
+  .prospection-analysis-record-filters,
+  .prospection-insight-filters.is-embedded,
+  .prospection-analysis-records-list {
+    grid-template-columns: 1fr;
+  }
+
+  .prospection-analysis-records-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .prospection-analysis-record header,
+  .prospection-analysis-record footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 /* Editor único de cliente — compacto, respirado e com salvamento em lote. */
 body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] {
   width: 100vw;
@@ -4733,33 +4994,33 @@ body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-in
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters input,
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select {
-  border-color: var(--bonus-navy-line);
-  background: #0f192a;
-  color: #e5edf8;
+  border-color: #aebbd0;
+  background: #ffffff;
+  color: #172033;
 }
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select {
-  border-color: var(--bonus-navy-line) !important;
-  background-color: #0f192a !important;
-  color: #e5edf8 !important;
+  border-color: #aebbd0 !important;
+  background-color: #ffffff !important;
+  color: #172033 !important;
 }
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select option,
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select optgroup {
-  background: #0f192a;
-  color: #e5edf8;
+  background: #ffffff;
+  color: #172033;
 }
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters input:focus,
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select:focus {
   border-color: var(--bonus-navy-accent);
-  background: #132036;
+  background: #ffffff;
   box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.22);
 }
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-insight-filters select:focus {
   border-color: var(--bonus-navy-accent) !important;
-  background-color: #132036 !important;
+  background-color: #ffffff !important;
 }
 
 body.is-dark .prospection-dialog:has(.prospection-bonus-filters) .prospection-dialog-close,

@@ -1,5 +1,5 @@
--- Configuracao central de IA: o admin salva uma unica chave e as empresas B2B
--- carregam essa configuracao no login para chamar o provedor diretamente.
+-- Configuracao central de IA: o admin salva uma unica chave e somente a Edge
+-- Function usa essa credencial para chamar o provedor.
 -- Rode depois de b2b_client_hierarchy_update.sql e client_scoped_configuration_update.sql.
 
 begin;
@@ -58,7 +58,7 @@ begin
   select
     coalesce(s.provider, 'deepseek'),
     coalesce(s.model, 'deepseek-chat'),
-    coalesce(s.api_key, ''),
+    ''::text,
     coalesce(nullif(btrim(s.system_prompt), ''),
       'Voce e uma IA especialista em analise comercial de leads para oticas. Responda somente ao que o usuario perguntou. Cada conversa recebe dados de uma unica loja selecionada. Nunca combine ou compare dados de lojas diferentes. Use somente os leads fornecidos no contexto e priorize recomendacoes praticas.'),
     coalesce(length(btrim(s.api_key)) > 0, false),

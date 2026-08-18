@@ -52,7 +52,8 @@
   let analysisEndDate = "";
   let analysisPeriod = "monthly";
   let analysisProfessionalId = "all";
-  let analysisDetailProfessionalId = "";
+  let analysisRecordFilters = null;
+  let analysisRecordReturnFocus = null;
   let bonusStoreId = "";
   let bonusStartDate = "";
   let bonusEndDate = "";
@@ -585,92 +586,10 @@
     return { store, reason: "", locked: false };
   }
 
-  function embeddedAnalysisPeriodWindow(period) {
-    const mapped = { today: "today", week: "week", month: "month", year: "year" }[period] || "month";
-    return periodWindow(mapped);
-  }
-
-  function embeddedAnalysisSettings(state) {
-    return state.settings.find((item) => item.storeId === state.storeId) || { storeId: state.storeId, ...DEFAULT_SETTINGS };
-  }
-
-  function embeddedAnalysisRows(state) {
-    const window = embeddedAnalysisPeriodWindow(state.period);
-    return state.prospects.filter((row) => row.storeId === state.storeId && isInWindow(row.createdAt, window));
-  }
-
-  function embeddedProspectionKpis(state, rows) {
-    const config = embeddedAnalysisSettings(state);
-    const returned = rows.filter((row) => row.returnedAt).length;
-    const purchasedRows = rows.filter((row) => row.purchasedAt);
-    const revenue = purchasedRows.reduce((sum, row) => sum + row.purchaseAmount, 0);
-    const bonusRows = purchasedRows.filter((row) => row.purchaseAmount >= config.bonusMinimum);
-    const values = [
-      ["fa-bullseye", "Prospecções", rows.length, "Registros iniciados no período"],
-      ["fa-store", "Retornaram", returned, `${percentage(returned, rows.length)}% das prospecções`],
-      ["fa-bag-shopping", "Compraram", purchasedRows.length, `${percentage(purchasedRows.length, rows.length)}% de conversão`],
-      ["fa-sack-dollar", "Faturamento", formatCurrency(revenue), `${purchasedRows.length ? formatCurrency(revenue / purchasedRows.length) : formatCurrency(0)} de ticket médio`],
-      ["fa-gift", "Bonificação", formatCurrency(bonusRows.length * config.bonusAmount), `${bonusRows.length} compras elegíveis`],
-    ];
-    return `<section class="prospection-insight-kpis" aria-label="Resumo das prospecções">${values.map(([icon, label, value, helper]) => `<article><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(helper)}</small></article>`).join("")}</section>`;
-  }
-
-  function embeddedProspectionProfessionals(rows) {
-    const grouped = new Map();
-    rows.forEach((row) => {
-      const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
-      if (!grouped.has(key)) grouped.set(key, { name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, revenue: 0 });
-      const item = grouped.get(key);
-      item.total += 1;
-      if (row.returnedAt) item.returned += 1;
-      if (row.purchasedAt) {
-        item.purchased += 1;
-        item.revenue += row.purchaseAmount;
-      }
-    });
-    const items = [...grouped.values()].sort((a, b) => b.purchased - a.purchased || b.revenue - a.revenue || b.total - a.total);
-    return `<section class="admin-professional-performance"><div class="admin-professional-performance-header"><h4>Profissionais</h4><span>Resultado da coorte iniciada no período</span></div><div class="admin-professional-list">${items.length ? items.map((item) => `<div class="admin-professional-row"><div class="admin-professional-name"><strong>${escapeHtml(item.name)}</strong><small>${formatCurrency(item.revenue)} em compras</small></div><div class="admin-professional-metrics"><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span></div><div class="admin-professional-rates"><span>${percentage(item.returned, item.total)}% visita</span><span>${percentage(item.purchased, item.total)}% compra</span></div></div>`).join("") : `<p class="admin-professional-empty">Nenhum responsável no período selecionado.</p>`}</div></section>`;
-  }
-
-  function embeddedProspectionTags(rows) {
-    const grouped = new Map();
-    rows.forEach((row) => (row.tagValues?.length ? row.tagValues : ["Sem etiqueta"]).forEach((label) => {
-      const key = normalize(label);
-      if (!grouped.has(key)) grouped.set(key, { label, total: 0, returned: 0, purchased: 0 });
-      const item = grouped.get(key);
-      item.total += 1;
-      if (row.returnedAt) item.returned += 1;
-      if (row.purchasedAt) item.purchased += 1;
-    }));
-    const items = [...grouped.values()].sort((a, b) => b.total - a.total || b.purchased - a.purchased || a.label.localeCompare(b.label, "pt-BR"));
-    return `<section class="admin-campaign-performance"><div class="admin-campaign-performance-header"><h4>Etiquetas e campanhas</h4><span>Volume e conversão dos registros filtrados</span></div><div class="admin-campaign-performance-list">${items.length ? items.map((item) => `<div class="admin-campaign-performance-row"><strong>${escapeHtml(item.label)}</strong><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span><em>${percentage(item.purchased, item.total)}%</em></div>`).join("") : `<p class="admin-professional-empty">Nenhuma etiqueta no período selecionado.</p>`}</div></section>`;
-  }
-
-  function embeddedProspectionRecentRows(rows) {
-    const recent = rows.slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 20);
-    return `<article class="prospection-panel prospection-professional-records"><div class="prospection-panel-heading"><div><p class="eyebrow">Detalhamento</p><h3>Registros recentes</h3><span>Até 20 prospecções da seleção atual.</span></div></div>${recent.length ? `<div class="prospection-employee-prospect-list">${recent.map((row) => `<article><div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.phone || "Sem telefone")} · ${formatDateTime(row.createdAt)}</span><small>${escapeHtml((row.tagValues || []).join(" · ") || PROBABILITIES[row.probability]?.label || "Sem etiqueta")}</small></div><div><span>${row.purchasedAt ? "Compra confirmada" : row.returnedAt ? "Retornou à loja" : "Em acompanhamento"}</span><strong>${row.purchasedAt ? formatCurrency(row.purchaseAmount) : "—"}</strong><small>${row.purchaseOrder ? `OS ${escapeHtml(row.purchaseOrder)}` : escapeHtml(row.professionalName || "Sem responsável")}</small></div></article>`).join("")}</div>` : emptyMarkup("Nenhuma prospecção neste período", "Escolha outro intervalo para consultar o histórico.")}</article>`;
-  }
-
   function renderEmbeddedProspectionContent(state) {
     if (state.destroyed || !state.root.isConnected) return;
-    const rows = embeddedAnalysisRows(state);
-    const store = state.store;
-    const config = embeddedAnalysisSettings(state);
-    const window = embeddedAnalysisPeriodWindow(state.period);
-    const periodDefinitions = [["today", "Hoje"], ["week", "Semana"], ["month", "Mês"], ["year", "Ano"]];
-    const trendEnd = window.end ? formatDateInput(addDays(window.end, -1)) : "";
     state.root.removeAttribute("aria-busy");
-    state.root.innerHTML = `<div class="prospection-prospec-analysis" style="--store-accent:${escapeHtml(config.accentColor)}">
-      <section class="prospection-insight-identity" style="--account-color:${escapeHtml(config.accentColor)}">
-        <div class="prospection-account-identity">${accountVisual(store.avatarUrl || store.avatar_url || "", store.name || "Cliente", "fa-store", config.logoBackgroundColor)}<div><small>Dados isolados deste cliente</small><strong>${escapeHtml(store.name || "Cliente")}</strong><span>${escapeHtml(window.label)} · ${rows.length} registros iniciados</span></div></div>
-        <span class="prospection-scope-lock"><i class="fa-solid fa-lock" aria-hidden="true"></i>Sem mistura de contas</span>
-      </section>
-      <div class="admin-period-controls" role="group" aria-label="Período da análise">${periodDefinitions.map(([value, label]) => `<button class="admin-period-button${state.period === value ? " is-active" : ""}" type="button" data-embedded-prospection-period="${value}" aria-pressed="${state.period === value}">${label}</button>`).join("")}</div>
-      ${embeddedProspectionKpis(state, rows)}
-      <section class="admin-comparison" aria-label="Funil de prospecção"><div><strong>${rows.length}</strong><span>Prospecções</span></div><div><strong>${rows.filter((row) => row.returnedAt).length}</strong><span>Retornaram</span></div><div><strong>${rows.filter((row) => row.purchasedAt).length}</strong><span>Compraram</span></div><div><strong>${percentage(rows.filter((row) => row.purchasedAt).length, rows.length)}%</strong><span>Conversão</span></div></section>
-      <div class="admin-analysis-grid"><div class="admin-professional-performance-slot">${embeddedProspectionProfessionals(rows)}</div><div class="admin-campaign-performance-slot">${embeddedProspectionTags(rows)}</div><div class="admin-store-chart"><section class="admin-trend-chart"><div class="admin-trend-heading"><div class="admin-trend-title"><strong>Ritmo de prospecção</strong><span>Distribuição dos registros iniciados em ${escapeHtml(window.label.toLowerCase())}</span></div></div>${rangeTrendMarkup(rows, formatDateInput(window.start), trendEnd)}</section></div></div>
-      ${embeddedProspectionRecentRows(rows)}
-    </div>`;
+    state.root.innerHTML = analysisExperienceMarkup(embeddedAnalysisContext(state));
   }
 
   function renderEmbeddedProspectionState(state, kind, message) {
@@ -698,11 +617,40 @@
         .map(mapProspect)
         .filter((row) => row.storeId === state.storeId);
       state.settings = (configuration.settings || []).map(mapSettings).filter((row) => row.storeId === state.storeId);
+      state.professionals = (configuration.professionals || []).map(mapProfessional).filter((row) => row.storeId === state.storeId);
+      state.tags = (configuration.tags || []).map(mapTag).filter((row) => row.storeId === state.storeId);
       renderEmbeddedProspectionContent(state);
     } catch (error) {
       if (state.destroyed || requestGeneration !== state.generation) return;
       renderEmbeddedProspectionState(state, "error", readableError(error));
     }
+  }
+
+  function applyEmbeddedAnalysisFilters(state, form) {
+    const data = new FormData(form);
+    const startDate = String(data.get("startDate") || "");
+    const endDate = String(data.get("endDate") || "");
+    if (startDate && endDate && startDate > endDate) {
+      state.bridge.notify?.("A data inicial não pode ser posterior à data final.", "error");
+      return;
+    }
+    state.startDate = startDate;
+    state.endDate = endDate;
+    state.professionalId = String(data.get("professionalId") || "all");
+    state.period = "custom";
+    state.recordFilters = null;
+    renderEmbeddedProspectionContent(state);
+  }
+
+  function setEmbeddedAnalysisPeriod(state, period) {
+    if (!["daily", "weekly", "monthly", "yearly"].includes(period)) return;
+    state.period = period;
+    const context = embeddedAnalysisContext(state);
+    const window = analysisPeriodWindow(period, context);
+    state.startDate = formatDateInput(window.start);
+    state.endDate = formatDateInput(addDays(window.end, -1));
+    state.recordFilters = null;
+    renderEmbeddedProspectionContent(state);
   }
 
   async function renderEmbeddedAnalysis({ root: target, bridge: embeddedBridge, storeId } = {}) {
@@ -714,33 +662,79 @@
     }
 
     const access = embeddedAnalysisStore(embeddedBridge, storeId);
+    const today = new Date();
     const state = {
       root: mount,
       bridge: embeddedBridge,
       storeId: String(storeId || ""),
       store: access.store,
-      period: "month",
+      period: "monthly",
+      startDate: formatDateInput(startOfMonth(today)),
+      endDate: formatDateInput(today),
+      professionalId: "all",
+      calendarDate: today,
+      recordFilters: null,
+      recordReturnFocus: null,
       prospects: [],
       settings: [],
+      professionals: [],
+      tags: [],
       generation: 0,
       destroyed: false,
       onClick: null,
+      onInput: null,
+      onChange: null,
+      onSubmit: null,
+      onKeydown: null,
     };
     embeddedAnalysisStates.set(mount, state);
     mount.classList.add("prospection-embedded-analysis");
     state.onClick = (event) => {
-      const periodButton = event.target.closest("[data-embedded-prospection-period]");
-      if (periodButton && mount.contains(periodButton)) {
-        const period = periodButton.dataset.embeddedProspectionPeriod;
-        if (["today", "week", "month", "year"].includes(period)) {
-          state.period = period;
-          renderEmbeddedProspectionContent(state);
-        }
+      if (event.target.matches("[data-prospection-analysis-records-dialog]")) {
+        closeAnalysisRecordsDialog(embeddedAnalysisContext(state));
         return;
       }
+      const button = event.target.closest("[data-embedded-prospection-action]");
+      const action = button?.dataset.embeddedProspectionAction || "";
+      if (action === "set-analysis-period") setEmbeddedAnalysisPeriod(state, button.dataset.analysisPeriod || "monthly");
+      else if (action === "calendar-prev" || action === "calendar-next") {
+        state.calendarDate = addMonths(state.calendarDate, action === "calendar-prev" ? -1 : 1);
+        renderEmbeddedProspectionContent(state);
+      } else if (action === "apply-date-shortcut") {
+        const range = shortcutRange(button.dataset.shortcutValue || "this-month");
+        state.startDate = formatDateInput(range.start);
+        state.endDate = formatDateInput(range.end);
+        state.period = "custom";
+        state.recordFilters = null;
+        renderEmbeddedProspectionContent(state);
+      } else if (action === "show-professional-records") {
+        openAnalysisRecordsDialog(embeddedAnalysisContext(state), button.dataset.professionalId || "all");
+      } else if (action === "close-analysis-records") closeAnalysisRecordsDialog(embeddedAnalysisContext(state));
+      else if (action === "clear-analysis-record-filters") resetAnalysisRecordFilters(embeddedAnalysisContext(state));
       if (event.target.closest("[data-embedded-prospection-retry]")) loadEmbeddedProspectionAnalysis(state);
     };
+    state.onInput = (event) => {
+      if (event.target.matches('[data-analysis-record-filter][name="search"]')) updateAnalysisRecordFilter(embeddedAnalysisContext(state), event.target);
+    };
+    state.onChange = (event) => {
+      if (event.target.matches("[data-analysis-record-filter]") && event.target.name !== "search") updateAnalysisRecordFilter(embeddedAnalysisContext(state), event.target);
+    };
+    state.onSubmit = (event) => {
+      const form = event.target.closest("[data-embedded-prospection-analysis-filters]");
+      if (!form) return;
+      event.preventDefault();
+      applyEmbeddedAnalysisFilters(state, form);
+    };
+    state.onKeydown = (event) => {
+      if (event.key === "Escape" && mount.querySelector("[data-prospection-analysis-records-dialog]")) {
+        closeAnalysisRecordsDialog(embeddedAnalysisContext(state));
+      }
+    };
     mount.addEventListener("click", state.onClick);
+    mount.addEventListener("input", state.onInput);
+    mount.addEventListener("change", state.onChange);
+    mount.addEventListener("submit", state.onSubmit);
+    document.addEventListener("keydown", state.onKeydown);
 
     if (!access.store || access.reason) {
       renderEmbeddedProspectionState(state, access.locked ? "locked" : "error", access.reason || "Cliente indisponível.");
@@ -758,11 +752,16 @@
       state.destroyed = true;
       state.generation += 1;
       if (state.onClick) mount.removeEventListener("click", state.onClick);
+      if (state.onInput) mount.removeEventListener("input", state.onInput);
+      if (state.onChange) mount.removeEventListener("change", state.onChange);
+      if (state.onSubmit) mount.removeEventListener("submit", state.onSubmit);
+      if (state.onKeydown) document.removeEventListener("keydown", state.onKeydown);
       embeddedAnalysisStates.delete(mount);
     }
     mount.classList.remove("prospection-embedded-analysis");
     mount.removeAttribute("aria-busy");
     mount.replaceChildren();
+    if (!document.querySelector(".prospection-dialog-backdrop")) document.body.classList.remove("is-modal-open");
     return Boolean(state);
   }
 
@@ -810,7 +809,6 @@
     analysisEndDate = "";
     analysisPeriod = "monthly";
     analysisProfessionalId = "all";
-    analysisDetailProfessionalId = "";
     bonusStoreId = "";
     bonusStartDate = "";
     bonusEndDate = "";
@@ -1498,6 +1496,7 @@
     document.body.classList.remove("is-modal-open");
     pendingPurchaseId = "";
     importDraft = null;
+    analysisRecordFilters = null;
     pendingConfigurationTransition = null;
     if (!preserveConfiguration) configurationSession = null;
   }
@@ -1550,14 +1549,15 @@
     return [...byProfessional.values()].sort((a, b) => b.purchased - a.purchased || b.returned - a.returned || b.total - a.total);
   }
 
-  function calendarMarkup(storeId) {
-    const year = calendarDate.getFullYear();
-    const month = calendarDate.getMonth();
+  function calendarMarkup(storeId, context = null) {
+    const activeCalendarDate = context?.calendarDate || calendarDate;
+    const year = activeCalendarDate.getFullYear();
+    const month = activeCalendarDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const offset = (firstDay.getDay() + 6) % 7;
     const days = new Date(year, month + 1, 0).getDate();
-    const goal = settingsFor(storeId).dailyGoal;
-    const storeRows = prospects.filter((row) => row.storeId === storeId);
+    const goal = analysisSettingsFor(storeId, context).dailyGoal;
+    const storeRows = analysisProspectSource(context).filter((row) => row.storeId === storeId);
     const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
     const cells = weekdays.map((weekday) => `<div class="weekday-cell">${weekday}</div>`);
     cells.push(...Array.from({ length: offset }, () => `<div class="calendar-empty"></div>`));
@@ -1578,7 +1578,8 @@
       cells.push(`<div class="calendar-day${isToday ? " is-today" : ""}${count > goal ? " is-over-goal" : ""}" style="background:${background};color:${color}" title="${count} prospecções feitas, ${returnedCount} viram a loja, ${purchasedCount} compraram"><span class="calendar-day-number">${day}</span><strong class="calendar-day-count">${count}</strong></div>`);
     }
     const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(firstDay);
-    return `<section class="calendar-panel" aria-labelledby="prospection-calendar-title"><div class="calendar-header"><div><h3 id="prospection-calendar-title">Calendário de meta</h3><p>Vermelho está longe da meta, verde está perto. Ao passar a meta, o dia brilha.</p></div><div class="calendar-controls"><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-prev" aria-label="Mês anterior"><i class="fa-solid fa-chevron-left"></i></button><strong>${escapeHtml(monthLabel)}</strong><button class="prospection-button is-quiet" type="button" data-prospection-action="calendar-next" aria-label="Próximo mês"><i class="fa-solid fa-chevron-right"></i></button></div></div><div class="calendar-grid" role="grid" aria-label="Metas diárias de ${escapeHtml(monthLabel)}">${cells.join("")}</div></section>`;
+    const titleId = context?.embedded ? "embedded-prospection-calendar-title" : "prospection-calendar-title";
+    return `<section class="calendar-panel" aria-labelledby="${titleId}"><div class="calendar-header"><div><h3 id="${titleId}">Calendário de meta</h3><p>Produção diária, retornos e compras.</p></div><div class="calendar-controls"><button class="prospection-button is-quiet" type="button" ${analysisActionAttributes(context, "calendar-prev")} aria-label="Mês anterior"><i class="fa-solid fa-chevron-left"></i></button><strong>${escapeHtml(monthLabel)}</strong><button class="prospection-button is-quiet" type="button" ${analysisActionAttributes(context, "calendar-next")} aria-label="Próximo mês"><i class="fa-solid fa-chevron-right"></i></button></div></div><div class="calendar-grid" role="grid" aria-label="Metas diárias de ${escapeHtml(monthLabel)}">${cells.join("")}</div></section>`;
   }
 
   function insightScopeStoreId(requestedStoreId = "") {
@@ -1593,11 +1594,11 @@
     return storeId ? [storeId] : [];
   }
 
-  function professionalFilterOptions(storeIds, selectedValue = "all") {
+  function professionalFilterOptions(storeIds, selectedValue = "all", context = null) {
     const allowed = new Set(storeIds);
     const values = new Map();
-    professionals.filter((row) => allowed.has(row.storeId)).forEach((row) => values.set(row.id, row.name));
-    prospects.filter((row) => allowed.has(row.storeId) && row.professionalName).forEach((row) => {
+    analysisProfessionalSource(context).filter((row) => allowed.has(row.storeId)).forEach((row) => values.set(row.id, row.name));
+    analysisProspectSource(context).filter((row) => allowed.has(row.storeId) && row.professionalName).forEach((row) => {
       values.set(row.professionalId || `name:${normalize(row.professionalName)}`, row.professionalName);
     });
     return `<option value="all"${selectedValue === "all" ? " selected" : ""}>Todos os responsáveis</option>${[...values.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")).map(([id, name]) => `<option value="${escapeHtml(id)}"${selectedValue === id ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}`;
@@ -1615,9 +1616,9 @@
     return allowedStores.map((store) => `<option value="${escapeHtml(store.id)}"${selectedValue === store.id ? " selected" : ""}>${escapeHtml(store.name)}</option>`).join("");
   }
 
-  function insightIdentityMarkup(store, helper) {
+  function insightIdentityMarkup(store, helper, context = null) {
     if (!store) return "";
-    const config = settingsFor(store.id);
+    const config = analysisSettingsFor(store.id, context);
     return `<section class="prospection-insight-identity" style="--account-color:${escapeHtml(config.accentColor)}">
       <div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><small>Dados isolados deste cliente</small><strong>${escapeHtml(store.name)}</strong><span>${escapeHtml(helper)}</span></div></div>
       <span class="prospection-scope-lock"><i class="fa-solid fa-lock"></i>Sem mistura de contas</span>
@@ -1639,9 +1640,9 @@
     return startValue === formatDateInput(range.start) && endValue === formatDateInput(range.end);
   }
 
-  function dateShortcutsMarkup(target, startValue, endValue) {
+  function dateShortcutsMarkup(target, startValue, endValue, context = null) {
     const definitions = [["this-week", "Esta semana"], ["last-week", "Semana passada"], ["this-month", "Este mês"]];
-    return `<div class="prospection-date-shortcuts" aria-label="Atalhos de período">${definitions.map(([value, label]) => `<button class="prospection-button is-quiet${shortcutIsActive(value, startValue, endValue) ? " is-active" : ""}" type="button" data-prospection-action="apply-date-shortcut" data-shortcut-target="${target}" data-shortcut-value="${value}">${label}</button>`).join("")}</div>`;
+    return `<div class="prospection-date-shortcuts" aria-label="Atalhos de período">${definitions.map(([value, label]) => `<button class="prospection-button is-quiet${shortcutIsActive(value, startValue, endValue) ? " is-active" : ""}" type="button" ${analysisActionAttributes(context, "apply-date-shortcut")} data-shortcut-target="${target}" data-shortcut-value="${value}">${label}</button>`).join("")}</div>`;
   }
 
   function insightKpisMarkup(rows, { bonusRows = rows, purchaseRows = rows } = {}) {
@@ -1708,20 +1709,6 @@
     return `<div class="prospection-performance-table${interactive ? " is-interactive" : ""}" role="table"><div class="prospection-performance-head" role="row"><span>Responsável</span><span>Feitas</span><span>Retornaram</span><span>Compraram</span><span>Faturamento</span><span>Bônus</span>${interactive ? "<span>Registros</span>" : ""}</div>${performance.map((row, index) => `<div class="prospection-performance-row" role="row"><span><b>${index + 1}</b><strong>${escapeHtml(row.name)}</strong></span><span>${row.total}</span><span>${row.returned}<small>${percentage(row.returned, row.total)}%</small></span><span>${row.purchased}<small>${percentage(row.purchased, row.total)}%</small></span><span>${formatCurrency(row.revenue)}</span><span class="is-bonus">${formatCurrency(row.bonus)}</span>${interactive ? `<span><button class="prospection-button is-quiet" type="button" data-prospection-action="show-professional-records" data-professional-id="${escapeHtml(row.id)}">Ver lista</button></span>` : ""}</div>`).join("")}</div>`;
   }
 
-  function professionalMatchesKey(row, professionalKey) {
-    const rowKey = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
-    return rowKey === professionalKey;
-  }
-
-  function professionalProspectDetailsMarkup(rows, professionalKey) {
-    if (!professionalKey) return "";
-    const selectedRows = rows.filter((row) => professionalMatchesKey(row, professionalKey)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const name = selectedRows[0]?.professionalName || "Sem responsável";
-    return `<article id="prospectionProfessionalRecords" class="prospection-panel prospection-professional-records"><div class="prospection-panel-heading"><div><p class="eyebrow">Registros individuais</p><h3>${escapeHtml(name)}</h3><span>${selectedRows.length} prospecções no período selecionado.</span></div><button class="prospection-button is-quiet" type="button" data-prospection-action="hide-professional-records"><i class="fa-solid fa-xmark"></i>Fechar lista</button></div>
-      ${selectedRows.length ? `<div class="prospection-employee-prospect-list">${selectedRows.map((row) => `<article><div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.phone || "Sem telefone")} · registrada em ${formatDateTime(row.createdAt)}</span><small>${row.returnedAt ? `Retornou em ${formatDate(row.returnedAt)}` : "Ainda não retornou"}</small></div><div><span>${row.purchasedAt ? "Compra confirmada" : "Sem compra"}</span><strong>${row.purchasedAt ? formatCurrency(row.purchaseAmount) : "—"}</strong><small>${row.purchaseOrder ? `OS ${escapeHtml(row.purchaseOrder)}` : escapeHtml(PROBABILITIES[row.probability]?.label || "")}</small></div></article>`).join("")}</div>` : emptyMarkup("Nenhuma prospecção encontrada", "Ajuste o período para consultar outros registros deste responsável.")}
-    </article>`;
-  }
-
   function storePerformanceMarkup(rows, storeIds) {
     const entries = storeIds.map((storeId) => {
       const store = storeById(storeId) || { name: "Cliente" };
@@ -1733,50 +1720,76 @@
     return `<article class="prospection-panel prospection-store-comparison"><div class="prospection-panel-heading"><div><p class="eyebrow">Clientes</p><h3>Desempenho da carteira</h3><span>Comparação por cliente no mesmo período.</span></div></div><div class="prospection-ranking">${entries.map((entry, index) => `<div class="prospection-ranking-row"><span class="prospection-ranking-position">${index + 1}</span><div class="prospection-ranking-name"><strong>${escapeHtml(entry.store.name)}</strong><span>${entry.metrics.total} feitas · ${entry.metrics.returned} retornaram</span></div><div class="prospection-ranking-value"><strong>${entry.metrics.conversion}%</strong><span>${formatCurrency(entry.revenue)}</span></div></div>`).join("")}</div></article>`;
   }
 
-  function analysisPeriodWindow(period = analysisPeriod) {
-    if (period === "custom") {
-      const range = dateRange(analysisStartDate, analysisEndDate);
+  function analysisProspectSource(context = null) {
+    return Array.isArray(context?.prospects) ? context.prospects : prospects;
+  }
+
+  function analysisProfessionalSource(context = null) {
+    return Array.isArray(context?.professionals) ? context.professionals : professionals;
+  }
+
+  function analysisTagSource(context = null) {
+    return Array.isArray(context?.tags) ? context.tags : tags;
+  }
+
+  function analysisSettingsFor(storeId, context = null) {
+    if (!context) return settingsFor(storeId);
+    return context.settings.find((item) => item.storeId === storeId) || { storeId, ...DEFAULT_SETTINGS };
+  }
+
+  function analysisActionAttributes(context, action) {
+    const attribute = context?.embedded ? "data-embedded-prospection-action" : "data-prospection-action";
+    return `${attribute}="${escapeHtml(action)}"`;
+  }
+
+  function analysisProfessionalMatches(row, selectedValue, context = null) {
+    return matchesProfessionalFilter(row, selectedValue ?? context?.professionalId ?? analysisProfessionalId);
+  }
+
+  function analysisPeriodWindow(period = analysisPeriod, context = null) {
+    const activePeriod = period || context?.period || analysisPeriod;
+    if (activePeriod === "custom") {
+      const range = dateRange(context?.startDate ?? analysisStartDate, context?.endDate ?? analysisEndDate);
       return { ...range, label: "período personalizado" };
     }
-    const mappedPeriod = { daily: "today", weekly: "week", monthly: "month", yearly: "year" }[period] || "month";
+    const mappedPeriod = { daily: "today", weekly: "week", monthly: "month", yearly: "year" }[activePeriod] || "month";
     const window = periodWindow(mappedPeriod);
-    return { ...window, label: { daily: "dia", weekly: "semana", monthly: "mês", yearly: "ano" }[period] || "mês" };
+    return { ...window, label: { daily: "dia", weekly: "semana", monthly: "mês", yearly: "ano" }[activePeriod] || "mês" };
   }
 
-  function analysisRowsForPeriod(storeId, period = analysisPeriod, applyProfessional = true) {
-    const window = analysisPeriodWindow(period);
-    return prospects.filter((row) => row.storeId === storeId && isInWindow(row.createdAt, window) && (!applyProfessional || matchesProfessionalFilter(row, analysisProfessionalId)));
+  function analysisRowsForPeriod(storeId, period = analysisPeriod, applyProfessional = true, context = null) {
+    const window = analysisPeriodWindow(period, context);
+    return analysisProspectSource(context).filter((row) => row.storeId === storeId && isInWindow(row.createdAt, window) && (!applyProfessional || analysisProfessionalMatches(row, context?.professionalId, context)));
   }
 
-  function analysisOverviewMarkup(storeId) {
+  function analysisOverviewMarkup(storeId, context = null) {
     const definitions = [["daily", "Hoje"], ["weekly", "Semana"], ["monthly", "Mês"], ["yearly", "Ano"]];
     return `<section class="admin-store-metrics" aria-label="Resumo da loja">${definitions.map(([period, label]) => {
-      const window = analysisPeriodWindow(period);
-      const rows = analysisRowsForPeriod(storeId, period, false);
-      const storeRows = prospects.filter((row) => row.storeId === storeId);
-      const returned = storeRows.filter((row) => isInWindow(row.returnedAt, window)).length;
-      const purchased = storeRows.filter((row) => isInWindow(row.purchasedAt, window)).length;
-      return `<div><strong>${rows.length}</strong><span>${label}</span><em>${returned} viram a loja</em><em class="admin-purchase-count">${purchased} compraram</em></div>`;
+      const rows = analysisRowsForPeriod(storeId, period, false, context);
+      const returned = rows.filter((row) => Boolean(row.returnedAt)).length;
+      const purchased = rows.filter((row) => Boolean(row.purchasedAt)).length;
+      return `<div><strong>${rows.length}</strong><span>${label}</span><em>${returned} retornaram</em><em class="admin-purchase-count">${purchased} compraram</em></div>`;
     }).join("")}</section>`;
   }
 
-  function analysisPeriodControlsMarkup() {
+  function analysisPeriodControlsMarkup(context = null) {
     const definitions = [["daily", "Dia"], ["weekly", "Semana"], ["monthly", "Mês"], ["yearly", "Ano"]];
-    return `<div class="admin-period-controls" aria-label="Período rápido">${definitions.map(([period, label]) => `<button class="admin-period-button${analysisPeriod === period ? " is-active" : ""}" type="button" data-prospection-action="set-analysis-period" data-analysis-period="${period}">${label}</button>`).join("")}</div>`;
+    const activePeriod = context?.period || analysisPeriod;
+    return `<div class="admin-period-controls" role="group" aria-label="Período rápido">${definitions.map(([period, label]) => `<button class="admin-period-button${activePeriod === period ? " is-active" : ""}" type="button" ${analysisActionAttributes(context, "set-analysis-period")} data-analysis-period="${period}" aria-pressed="${String(activePeriod === period)}">${label}</button>`).join("")}</div>`;
   }
 
-  function analysisComparisonMarkup(storeId, rows) {
-    const window = analysisPeriodWindow();
-    const storeRows = prospects.filter((row) => row.storeId === storeId && matchesProfessionalFilter(row, analysisProfessionalId));
-    const returned = storeRows.filter((row) => isInWindow(row.returnedAt, window)).length;
-    const purchased = storeRows.filter((row) => isInWindow(row.purchasedAt, window)).length;
-    const label = window.label;
-    return `<section class="admin-comparison"><div><strong>${rows.length}</strong><span>Prospecções neste ${label}</span></div><div><strong>${returned}</strong><span>Viram a loja neste ${label}</span></div><div><strong>${purchased}</strong><span>Compraram neste ${label}</span></div><div><strong>${percentage(purchased, rows.length)}%</strong><span>Compra sobre prospecções</span></div></section>`;
+  function analysisComparisonMarkup(storeId, rows, context = null) {
+    // A conversão usa uma única coorte: registros criados no período e os
+    // resultados vinculados a esses mesmos registros. Assim a taxa nunca é
+    // inflada por retornos ou compras de prospecções antigas.
+    const returned = rows.filter((row) => Boolean(row.returnedAt)).length;
+    const purchased = rows.filter((row) => Boolean(row.purchasedAt)).length;
+    return `<section class="admin-comparison" aria-label="Conversão no período"><div><strong>${rows.length}</strong><span>Prospecções</span></div><div><strong>${returned}</strong><span>Retornaram</span></div><div><strong>${purchased}</strong><span>Compraram</span></div><div><strong>${percentage(purchased, rows.length)}%</strong><span>Conversão</span></div></section>`;
   }
 
-  function analysisProfessionalPanelMarkup(storeId, rows) {
+  function analysisProfessionalPanelMarkup(storeId, rows, context = null) {
     const grouped = new Map();
-    professionalsFor(storeId, true).forEach((professional) => grouped.set(professional.id, { id: professional.id, name: professional.name, total: 0, returned: 0, purchased: 0, tags: new Map(), active: professional.active }));
+    analysisProfessionalSource(context).filter((professional) => professional.storeId === storeId).forEach((professional) => grouped.set(professional.id, { id: professional.id, name: professional.name, total: 0, returned: 0, purchased: 0, tags: new Map(), active: professional.active }));
     rows.forEach((row) => {
       const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
       if (!grouped.has(key)) grouped.set(key, { id: key, name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, tags: new Map(), active: true });
@@ -1787,15 +1800,15 @@
       (row.tagValues?.length ? row.tagValues : ["Sem campanha"]).forEach((tag) => item.tags.set(tag, (item.tags.get(tag) || 0) + 1));
     });
     const items = [...grouped.values()].filter((item) => item.active || item.total).sort((a, b) => b.total - a.total || b.returned - a.returned || a.name.localeCompare(b.name, "pt-BR"));
-    return `<section class="admin-professional-performance"><div class="admin-professional-performance-header"><h4>Profissionais</h4><span>Feitas, vieram, compraram e taxas</span></div><div class="admin-professional-list">${items.length ? items.map((item) => {
+    return `<section class="admin-professional-performance"><div class="admin-professional-performance-header"><h4>Profissionais</h4><span>Produção e conversão</span></div><div class="admin-professional-list">${items.length ? items.map((item) => {
       const tagPreview = [...item.tags.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([tag, count]) => `${escapeHtml(tag)} ${count}`).join(" / ") || "Sem campanha no período";
-      return `<div class="admin-professional-row"><div class="admin-professional-name"><strong>${escapeHtml(item.name)}</strong><small>${tagPreview}</small></div><div class="admin-professional-metrics"><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span></div><div class="admin-professional-actions"><div class="admin-professional-rates"><span>${percentage(item.returned, item.total)}% visita</span><span>${percentage(item.purchased, item.total)}% compra</span></div><button class="admin-professional-list-button" type="button" data-prospection-action="show-professional-records" data-professional-id="${escapeHtml(item.id)}">Listar</button></div></div>`;
+      return `<div class="admin-professional-row"><div class="admin-professional-name"><strong>${escapeHtml(item.name)}</strong><small>${tagPreview}</small></div><div class="admin-professional-metrics"><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span></div><div class="admin-professional-actions"><div class="admin-professional-rates"><span>${percentage(item.returned, item.total)}% retorno</span><span>${percentage(item.purchased, item.total)}% compra</span></div><button class="admin-professional-list-button" type="button" ${analysisActionAttributes(context, "show-professional-records")} data-professional-id="${escapeHtml(item.id)}">Listar</button></div></div>`;
     }).join("") : `<p class="admin-professional-empty">Nenhum profissional cadastrado nesta loja.</p>`}</div></section>`;
   }
 
-  function analysisCampaignPanelMarkup(storeId, rows) {
+  function analysisCampaignPanelMarkup(storeId, rows, context = null) {
     const grouped = new Map();
-    tagsFor(storeId).forEach((tag) => grouped.set(normalize(tag.label), { label: tag.label, total: 0, returned: 0, purchased: 0 }));
+    analysisTagSource(context).filter((tag) => tag.storeId === storeId).forEach((tag) => grouped.set(normalize(tag.label), { label: tag.label, total: 0, returned: 0, purchased: 0 }));
     rows.forEach((row) => (row.tagValues?.length ? row.tagValues : ["Sem campanha"]).forEach((label) => {
       const key = normalize(label);
       if (!grouped.has(key)) grouped.set(key, { label, total: 0, returned: 0, purchased: 0 });
@@ -1805,10 +1818,10 @@
       if (row.purchasedAt) item.purchased += 1;
     }));
     const items = [...grouped.values()].sort((a, b) => b.total - a.total || b.returned - a.returned || a.label.localeCompare(b.label, "pt-BR"));
-    return `<section class="admin-campaign-performance"><div class="admin-campaign-performance-header"><h4>Campanhas</h4><span>Feitas, vieram e compraram por etiqueta</span></div><div class="admin-campaign-performance-list">${items.length ? items.map((item) => `<div class="admin-campaign-performance-row"><strong>${escapeHtml(item.label)}</strong><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>vieram</small></span><span><b>${item.purchased}</b><small>compraram</small></span><em>${percentage(item.purchased, item.total)}%</em></div>`).join("") : `<p class="admin-professional-empty">Nenhuma campanha neste período.</p>`}</div></section>`;
+    return `<section class="admin-campaign-performance"><div class="admin-campaign-performance-header"><h4>Campanhas</h4><span>Resultado por etiqueta</span></div><div class="admin-campaign-performance-list">${items.length ? items.map((item) => `<div class="admin-campaign-performance-row"><strong>${escapeHtml(item.label)}</strong><span><b>${item.total}</b><small>feitas</small></span><span><b>${item.returned}</b><small>retornos</small></span><span><b>${item.purchased}</b><small>compras</small></span><em>${percentage(item.purchased, item.total)}%</em></div>`).join("") : `<p class="admin-professional-empty">Nenhuma campanha neste período.</p>`}</div></section>`;
   }
 
-  function analysisTrendBuckets(period = analysisPeriod) {
+  function analysisTrendBuckets(period = analysisPeriod, context = null) {
     const now = new Date();
     let starts = [];
     if (period === "daily") {
@@ -1821,7 +1834,7 @@
       const start = new Date(now.getFullYear(), 0, 1);
       starts = Array.from({ length: 12 }, (_, index) => addMonths(start, index));
     } else if (period === "custom") {
-      const window = analysisPeriodWindow("custom");
+      const window = analysisPeriodWindow("custom", context);
       const total = Math.max(1, Math.min(62, Math.ceil((window.end - window.start) / 86400000)));
       starts = Array.from({ length: total }, (_, index) => addDays(window.start, index));
     } else {
@@ -1836,15 +1849,16 @@
     });
   }
 
-  function analysisTrendMarkup(storeId) {
-    const storeRows = prospects.filter((row) => row.storeId === storeId && matchesProfessionalFilter(row, analysisProfessionalId));
-    const buckets = analysisTrendBuckets();
+  function analysisTrendMarkup(storeId, context = null) {
+    const activePeriod = context?.period || analysisPeriod;
+    const storeRows = analysisProspectSource(context).filter((row) => row.storeId === storeId && analysisProfessionalMatches(row, context?.professionalId, context));
+    const buckets = analysisTrendBuckets(activePeriod, context);
     const series = [
       { key: "createdAt", label: "Prospecções", color: "#2f80ed" },
       { key: "returnedAt", label: "Viram a loja", color: "#2fc49a" },
       { key: "purchasedAt", label: "Compraram", color: "#d48616" },
     ].map((item) => ({ ...item, values: buckets.map((bucket) => storeRows.filter((row) => isInWindow(row[item.key], bucket)).length) }));
-    const goal = ["weekly", "monthly"].includes(analysisPeriod) ? settingsFor(storeId).dailyGoal : 0;
+    const goal = ["weekly", "monthly"].includes(activePeriod) ? analysisSettingsFor(storeId, context).dailyGoal : 0;
     const maxValue = Math.max(1, goal, ...series.flatMap((item) => item.values));
     const width = 1080;
     const height = 320;
@@ -1868,12 +1882,235 @@
     }).join("");
     const labels = buckets.map((bucket, index) => index % labelEvery || (index !== 0 && index !== buckets.length - 1 && buckets.length > 35 && index % labelEvery) ? "" : `<text class="admin-line-label${bucket.weekend ? " is-weekend" : ""}" x="${x(index)}" y="${height - 18}">${escapeHtml(bucket.label)}</text>`).join("");
     const legend = series.map((item) => `<span style="--series-color:${item.color}"><i></i><b>${item.label}</b><small>Total ${item.values.reduce((sum, value) => sum + value, 0)} · pico ${Math.max(0, ...item.values)}</small></span>`).join("");
-    return `<section class="admin-trend-chart is-${analysisPeriod}"><div class="admin-trend-heading"><div class="admin-trend-title"><strong>Fluxo do período</strong><span>${buckets.length} blocos · evolução de prospecções, visitas e compras</span></div><div class="admin-trend-legend">${legend}</div></div><svg class="admin-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico de desempenho no período">${vertical}${horizontal}${goalLine}${paths}<g>${labels}</g></svg></section>`;
+    return `<section class="admin-trend-chart is-${activePeriod}"><div class="admin-trend-heading"><div class="admin-trend-title"><strong>Evolução</strong><span>Prospecções, retornos e compras</span></div><div class="admin-trend-legend">${legend}</div></div><svg class="admin-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Gráfico de desempenho no período">${vertical}${horizontal}${goalLine}${paths}<g>${labels}</g></svg></section>`;
   }
 
-  function analysisRows(storeIds) {
+  function analysisRows(storeIds, context = null) {
     const allowed = new Set(storeIds);
-    return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, analysisStartDate, analysisEndDate) && matchesProfessionalFilter(row, analysisProfessionalId));
+    const startDate = context?.startDate ?? analysisStartDate;
+    const endDate = context?.endDate ?? analysisEndDate;
+    const professionalId = context?.professionalId ?? analysisProfessionalId;
+    return analysisProspectSource(context).filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, startDate, endDate) && matchesProfessionalFilter(row, professionalId));
+  }
+
+  function currentAnalysisContext() {
+    return {
+      embedded: false,
+      state: null,
+      storeId: analysisStoreId,
+      store: storeById(analysisStoreId),
+      prospects,
+      settings,
+      professionals,
+      tags,
+      period: analysisPeriod,
+      startDate: analysisStartDate,
+      endDate: analysisEndDate,
+      professionalId: analysisProfessionalId,
+      calendarDate,
+    };
+  }
+
+  function embeddedAnalysisContext(state) {
+    return {
+      embedded: true,
+      state,
+      storeId: state.storeId,
+      store: state.store,
+      prospects: state.prospects,
+      settings: state.settings,
+      professionals: state.professionals,
+      tags: state.tags,
+      period: state.period,
+      startDate: state.startDate,
+      endDate: state.endDate,
+      professionalId: state.professionalId,
+      calendarDate: state.calendarDate,
+    };
+  }
+
+  function analysisRowsForContext(context) {
+    return context.period === "custom"
+      ? analysisRows([context.storeId], context)
+      : analysisRowsForPeriod(context.storeId, context.period, true, context);
+  }
+
+  function analysisRangeLabel(context) {
+    if (context.period === "custom") return `${formatInputDateDisplay(context.startDate)} a ${formatInputDateDisplay(context.endDate)}`;
+    const labels = { daily: "Hoje", weekly: "Esta semana", monthly: "Este mês", yearly: "Este ano" };
+    return labels[context.period] || "Este mês";
+  }
+
+  function analysisControlMarkup({ label, icon, control }) {
+    return `<label class="prospection-analysis-filter-field"><span>${escapeHtml(label)}</span><span class="prospection-analysis-control"><i class="fa-solid ${icon}" aria-hidden="true"></i>${control}</span></label>`;
+  }
+
+  function analysisCustomQueryMarkup(context) {
+    const storeField = context.embedded ? "" : analysisControlMarkup({
+      label: "Cliente",
+      icon: "fa-store",
+      control: `<select name="storeId">${insightStoreOptions(context.storeId)}</select>`,
+    });
+    const formIdentity = context.embedded ? "data-embedded-prospection-analysis-filters" : 'id="prospectionAnalysisFilters"';
+    const storeIds = [context.storeId];
+    return `<article class="prospection-panel prospection-custom-query"><div class="prospection-panel-heading"><div><p class="eyebrow">Refinar</p><h3>Filtros da análise</h3></div></div>
+      ${dateShortcutsMarkup("analysis", context.startDate, context.endDate, context)}
+      <form ${formIdentity} class="prospection-insight-filters${context.embedded ? " is-embedded" : ""}">
+        ${storeField}
+        ${analysisControlMarkup({ label: "Data inicial", icon: "fa-calendar-day", control: `<input name="startDate" type="date" value="${escapeHtml(context.startDate)}" required />` })}
+        ${analysisControlMarkup({ label: "Data final", icon: "fa-calendar-check", control: `<input name="endDate" type="date" value="${escapeHtml(context.endDate)}" required />` })}
+        ${analysisControlMarkup({ label: "Responsável", icon: "fa-user-tie", control: `<select name="professionalId">${professionalFilterOptions(storeIds, context.professionalId, context)}</select>` })}
+        <button class="prospection-button" type="submit"><i class="fa-solid fa-filter" aria-hidden="true"></i>Aplicar</button>
+      </form>
+    </article>`;
+  }
+
+  function analysisExperienceMarkup(context) {
+    const rows = analysisRowsForContext(context);
+    const config = analysisSettingsFor(context.storeId, context);
+    const store = context.store || { id: context.storeId, name: "Cliente" };
+    return `<div class="prospection-prospec-analysis${context.embedded ? " is-embedded" : ""}" style="--store-accent:${escapeHtml(config.accentColor)}">
+      ${insightIdentityMarkup(store, `${analysisRangeLabel(context)} · ${rows.length} registros · meta ${config.dailyGoal}/dia`, context)}
+      ${analysisOverviewMarkup(context.storeId, context)}
+      ${analysisPeriodControlsMarkup(context)}
+      ${analysisComparisonMarkup(context.storeId, rows, context)}
+      <div class="admin-analysis-grid"><div class="admin-professional-performance-slot">${analysisProfessionalPanelMarkup(context.storeId, rows, context)}</div><div class="admin-campaign-performance-slot">${analysisCampaignPanelMarkup(context.storeId, rows, context)}</div><div class="admin-store-chart">${analysisTrendMarkup(context.storeId, context)}</div></div>
+      ${calendarMarkup(context.storeId, context)}
+      ${analysisCustomQueryMarkup(context)}
+    </div>`;
+  }
+
+  function createAnalysisRecordFilters(professionalId = "all") {
+    return { search: "", period: "current", professionalId: professionalId || "all", tag: "all", probability: "all", returned: "all", purchased: "all" };
+  }
+
+  function analysisRecordFiltersFor(context) {
+    return context.embedded ? context.state.recordFilters : analysisRecordFilters;
+  }
+
+  function setAnalysisRecordFilters(context, filters) {
+    if (context.embedded) context.state.recordFilters = filters;
+    else analysisRecordFilters = filters;
+  }
+
+  function setAnalysisRecordReturnFocus(context, element) {
+    if (context.embedded) context.state.recordReturnFocus = element;
+    else analysisRecordReturnFocus = element;
+  }
+
+  function takeAnalysisRecordReturnFocus(context) {
+    const element = context.embedded ? context.state.recordReturnFocus : analysisRecordReturnFocus;
+    setAnalysisRecordReturnFocus(context, null);
+    return element;
+  }
+
+  function analysisRecordPeriodWindow(context, period) {
+    if (period === "all") return { start: null, end: null };
+    if (period === "current") return analysisPeriodWindow(context.period, context);
+    return analysisPeriodWindow({ today: "daily", week: "weekly", month: "monthly", year: "yearly" }[period] || "monthly", context);
+  }
+
+  function filteredAnalysisRecords(context, filters) {
+    const query = normalize(filters.search);
+    const window = analysisRecordPeriodWindow(context, filters.period);
+    return analysisProspectSource(context).filter((row) => {
+      if (row.storeId !== context.storeId || !isInWindow(row.createdAt, window)) return false;
+      if (!matchesProfessionalFilter(row, filters.professionalId)) return false;
+      if (filters.tag !== "all" && !(row.tagValues || []).some((tag) => normalize(tag) === filters.tag)) return false;
+      if (filters.probability !== "all" && row.probability !== filters.probability) return false;
+      if (filters.returned !== "all" && Boolean(row.returnedAt) !== (filters.returned === "yes")) return false;
+      if (filters.purchased !== "all" && Boolean(row.purchasedAt) !== (filters.purchased === "yes")) return false;
+      if (!query) return true;
+      return normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, row.purchaseOrder, ...(row.tagValues || [])].join(" ")).includes(query);
+    }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
+
+  function analysisRecordTagOptions(context, selectedValue) {
+    const labels = new Map();
+    analysisTagSource(context).filter((tag) => tag.storeId === context.storeId).forEach((tag) => labels.set(normalize(tag.label), tag.label));
+    analysisProspectSource(context).filter((row) => row.storeId === context.storeId).forEach((row) => (row.tagValues || []).forEach((tag) => labels.set(normalize(tag), tag)));
+    return `<option value="all"${selectedValue === "all" ? " selected" : ""}>Todas</option>${[...labels.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")).map(([value, label]) => `<option value="${escapeHtml(value)}"${selectedValue === value ? " selected" : ""}>${escapeHtml(label)}</option>`).join("")}`;
+  }
+
+  function analysisRecordListMarkup(context, filters) {
+    const rows = filteredAnalysisRecords(context, filters);
+    const visibleRows = rows.slice(0, 200);
+    const records = visibleRows.length ? visibleRows.map((row) => {
+      const probability = PROBABILITIES[row.probability] || PROBABILITIES.blue;
+      const tagsMarkup = (row.tagValues || []).slice(0, 4).map((tag) => `<span><i class="fa-solid fa-tag" aria-hidden="true"></i>${escapeHtml(tag)}</span>`).join("");
+      return `<article class="prospection-analysis-record"><header><div><strong>${escapeHtml(row.name || "Sem nome")}</strong><span>${escapeHtml(row.phone || "Sem telefone")} · ${formatDateTime(row.createdAt)}</span></div><em style="--record-status:${probability.color}"><i aria-hidden="true"></i>${escapeHtml(probability.label)}</em></header><div class="prospection-analysis-record-meta"><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>${escapeHtml(row.professionalName || "Sem responsável")}</span>${row.cpf ? `<span><i class="fa-solid fa-id-card" aria-hidden="true"></i>${escapeHtml(row.cpf)}</span>` : ""}</div>${tagsMarkup ? `<div class="prospection-analysis-record-tags">${tagsMarkup}</div>` : ""}<footer><span class="${row.returnedAt ? "is-positive" : ""}"><i class="fa-solid fa-store" aria-hidden="true"></i>${row.returnedAt ? `Retornou ${formatDate(row.returnedAt)}` : "Sem retorno"}</span><span class="${row.purchasedAt ? "is-purchase" : ""}"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>${row.purchasedAt ? `${formatCurrency(row.purchaseAmount)}${row.purchaseOrder ? ` · OS ${escapeHtml(row.purchaseOrder)}` : ""}` : "Sem compra"}</span></footer></article>`;
+    }).join("") : emptyMarkup("Nenhum registro encontrado", "Ajuste ou limpe os filtros.");
+    const limitNote = rows.length > visibleRows.length ? `<p class="prospection-analysis-record-limit"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Exibindo os 200 registros mais recentes de ${rows.length}.</p>` : "";
+    return { rows, markup: `${records}${limitNote}` };
+  }
+
+  function analysisRecordsDialogMarkup(context, filters) {
+    const result = analysisRecordListMarkup(context, filters);
+    const titleId = context.embedded ? "embedded-prospection-analysis-records-title" : "prospection-analysis-records-title";
+    const periodOptions = [["current", "Período da análise"], ["today", "Hoje"], ["week", "Esta semana"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]];
+    const probabilityOptions = `<option value="all"${filters.probability === "all" ? " selected" : ""}>Todos</option>${Object.entries(PROBABILITIES).map(([value, item]) => `<option value="${value}"${filters.probability === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}`;
+    return `<div class="prospection-dialog-backdrop prospection-analysis-records-backdrop" data-prospection-analysis-records-dialog><section class="prospection-dialog is-wide prospection-analysis-records-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><header class="prospection-dialog-header"><div><p class="eyebrow">Detalhamento</p><h2 id="${titleId}">Prospecções</h2></div><button class="prospection-dialog-close" type="button" ${analysisActionAttributes(context, "close-analysis-records")} aria-label="Fechar lista"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><div class="prospection-dialog-body">
+      <form class="prospection-analysis-record-filters" data-analysis-record-filters>
+        ${analysisControlMarkup({ label: "Buscar", icon: "fa-magnifying-glass", control: `<input name="search" data-analysis-record-filter type="search" value="${escapeHtml(filters.search)}" placeholder="Nome, telefone, CPF, OS ou anotação" autocomplete="off" />` })}
+        ${analysisControlMarkup({ label: "Período", icon: "fa-calendar-days", control: `<select name="period" data-analysis-record-filter>${periodOptions.map(([value, label]) => `<option value="${value}"${filters.period === value ? " selected" : ""}>${label}</option>`).join("")}</select>` })}
+        ${analysisControlMarkup({ label: "Responsável", icon: "fa-user-tie", control: `<select name="professionalId" data-analysis-record-filter>${professionalFilterOptions([context.storeId], filters.professionalId, context)}</select>` })}
+        ${analysisControlMarkup({ label: "Etiqueta", icon: "fa-tags", control: `<select name="tag" data-analysis-record-filter>${analysisRecordTagOptions(context, filters.tag)}</select>` })}
+        ${analysisControlMarkup({ label: "Status", icon: "fa-signal", control: `<select name="probability" data-analysis-record-filter>${probabilityOptions}</select>` })}
+        ${analysisControlMarkup({ label: "Retorno", icon: "fa-store", control: `<select name="returned" data-analysis-record-filter><option value="all"${filters.returned === "all" ? " selected" : ""}>Todos</option><option value="yes"${filters.returned === "yes" ? " selected" : ""}>Retornou</option><option value="no"${filters.returned === "no" ? " selected" : ""}>Não retornou</option></select>` })}
+        ${analysisControlMarkup({ label: "Compra", icon: "fa-bag-shopping", control: `<select name="purchased" data-analysis-record-filter><option value="all"${filters.purchased === "all" ? " selected" : ""}>Todas</option><option value="yes"${filters.purchased === "yes" ? " selected" : ""}>Comprou</option><option value="no"${filters.purchased === "no" ? " selected" : ""}>Não comprou</option></select>` })}
+        <button class="prospection-button is-secondary prospection-analysis-record-clear" type="button" ${analysisActionAttributes(context, "clear-analysis-record-filters")}><i class="fa-solid fa-eraser" aria-hidden="true"></i>Limpar</button>
+      </form>
+      <div class="prospection-analysis-records-summary"><strong data-analysis-record-count>${result.rows.length} registro${result.rows.length === 1 ? "" : "s"}</strong><span>Filtros combináveis, sempre nesta loja.</span></div>
+      <div class="prospection-analysis-records-list" data-analysis-record-results aria-live="polite">${result.markup}</div>
+    </div></section></div>`;
+  }
+
+  function openAnalysisRecordsDialog(context, professionalId = "all") {
+    const owner = context.embedded ? context.state.root : root;
+    const filters = createAnalysisRecordFilters(professionalId);
+    setAnalysisRecordReturnFocus(context, document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    setAnalysisRecordFilters(context, filters);
+    owner.querySelector("[data-prospection-analysis-records-dialog]")?.remove();
+    owner.insertAdjacentHTML("beforeend", analysisRecordsDialogMarkup(context, filters));
+    document.body.classList.add("is-modal-open");
+    requestAnimationFrame(() => owner.querySelector('[data-analysis-record-filter][name="search"]')?.focus());
+  }
+
+  function closeAnalysisRecordsDialog(context) {
+    const owner = context.embedded ? context.state.root : root;
+    owner.querySelector("[data-prospection-analysis-records-dialog]")?.remove();
+    setAnalysisRecordFilters(context, null);
+    if (!document.querySelector(".prospection-dialog-backdrop")) document.body.classList.remove("is-modal-open");
+    const returnFocus = takeAnalysisRecordReturnFocus(context);
+    if (returnFocus instanceof HTMLElement && returnFocus.isConnected) {
+      returnFocus.focus({ preventScroll: true });
+    }
+  }
+
+  function syncAnalysisRecordsDialog(context) {
+    const filters = analysisRecordFiltersFor(context);
+    if (!filters) return;
+    const owner = context.embedded ? context.state.root : root;
+    const result = analysisRecordListMarkup(context, filters);
+    const count = owner.querySelector("[data-analysis-record-count]");
+    const list = owner.querySelector("[data-analysis-record-results]");
+    if (count) count.textContent = `${result.rows.length} registro${result.rows.length === 1 ? "" : "s"}`;
+    if (list) list.innerHTML = result.markup;
+  }
+
+  function updateAnalysisRecordFilter(context, control) {
+    const filters = analysisRecordFiltersFor(context);
+    if (!filters || !Object.prototype.hasOwnProperty.call(filters, control.name)) return;
+    filters[control.name] = control.value;
+    syncAnalysisRecordsDialog(context);
+  }
+
+  function resetAnalysisRecordFilters(context) {
+    const owner = context.embedded ? context.state.root : root;
+    setAnalysisRecordFilters(context, createAnalysisRecordFilters());
+    const dialog = owner.querySelector("[data-prospection-analysis-records-dialog]");
+    if (dialog) dialog.outerHTML = analysisRecordsDialogMarkup(context, analysisRecordFiltersFor(context));
+    requestAnimationFrame(() => owner.querySelector('[data-analysis-record-filter][name="search"]')?.focus());
   }
 
   function openAnalysis(requestedStoreId) {
@@ -1886,42 +2123,18 @@
     }
     if (previousStoreId && previousStoreId !== analysisStoreId) {
       analysisProfessionalId = "all";
-      analysisDetailProfessionalId = "";
       analysisPeriod = "monthly";
       calendarDate = new Date();
     }
-    const storeIds = insightStoreIds(analysisStoreId);
-    const rows = analysisPeriod === "custom" ? analysisRows(storeIds) : analysisRowsForPeriod(analysisStoreId);
     const selectedStore = storeById(analysisStoreId);
     const title = selectedStore?.name || bridge.profile.storeName || "Minha empresa";
-    const rangeLabel = analysisPeriod === "custom"
-      ? `${formatInputDateDisplay(analysisStartDate)} a ${formatInputDateDisplay(analysisEndDate)}`
-      : `Visão de ${analysisPeriodWindow().label}`;
+    const context = currentAnalysisContext();
     openDialog(dialogShell({
       eyebrow: "Inteligência de prospecção",
       title,
       wide: true,
-      body: `<div class="prospection-prospec-analysis" style="--store-accent:${escapeHtml(settingsFor(analysisStoreId).accentColor)}">
-      ${insightIdentityMarkup(selectedStore, `${rangeLabel} · ${rows.length} registros · meta ${settingsFor(analysisStoreId).dailyGoal}/dia`)}
-      ${analysisOverviewMarkup(analysisStoreId)}
-      ${analysisPeriodControlsMarkup()}
-      ${analysisComparisonMarkup(analysisStoreId, rows)}
-      <div class="admin-analysis-grid"><div class="admin-professional-performance-slot">${analysisProfessionalPanelMarkup(analysisStoreId, rows)}</div><div class="admin-campaign-performance-slot">${analysisCampaignPanelMarkup(analysisStoreId, rows)}</div><div class="admin-store-chart">${analysisTrendMarkup(analysisStoreId)}</div></div>
-      ${calendarMarkup(analysisStoreId)}
-      <article class="prospection-panel prospection-custom-query"><div class="prospection-panel-heading"><div><p class="eyebrow">Consulta personalizada</p><h3>Buscar por data e responsável</h3><span>Use uma faixa exata quando precisar conferir um intervalo específico.</span></div></div>
-        ${dateShortcutsMarkup("analysis", analysisStartDate, analysisEndDate)}
-        <form id="prospectionAnalysisFilters" class="prospection-insight-filters">
-          <label>Cliente<select name="storeId">${insightStoreOptions(analysisStoreId)}</select></label>
-          <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(analysisStartDate)}" /></label>
-          <label>Data final<input name="endDate" type="date" value="${escapeHtml(analysisEndDate)}" /></label>
-          <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, analysisProfessionalId)}</select></label>
-          <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar análise</button>
-        </form>
-      </article>
-      ${professionalProspectDetailsMarkup(rows, analysisDetailProfessionalId)}
-      </div>`,
+      body: analysisExperienceMarkup(context),
     }));
-    if (analysisDetailProfessionalId) requestAnimationFrame(() => root.querySelector("#prospectionProfessionalRecords")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function bonusRows(storeIds) {
@@ -2250,6 +2463,16 @@
       };
     }
     renderConfigurationDialog({ preserveSession });
+  }
+
+  async function openClientConfiguration(storeId = "") {
+    if (!active || !bridge || !root.isConnected || !["admin", "technician"].includes(bridge.profile?.role)) return false;
+    const requestedStoreId = String(storeId || selectedStoreId || "");
+    if (!requestedStoreId) return false;
+    const allowedStoreIds = new Set(licensedScopedStores().map((store) => store.id));
+    if (!allowedStoreIds.has(requestedStoreId)) return false;
+    await openConfiguration(requestedStoreId);
+    return Boolean(root.querySelector("[data-prospection-configuration-dialog]"));
   }
 
   function canImportProspectionBackup() {
@@ -2776,7 +2999,6 @@
     const nextStoreId = bridge.profile.role === "store" ? bridge.profile.storeId : String(data.get("storeId") || "");
     if (nextStoreId !== analysisStoreId) analysisProfessionalId = "all";
     else analysisProfessionalId = String(data.get("professionalId") || "all");
-    analysisDetailProfessionalId = "";
     analysisStartDate = nextStart;
     analysisEndDate = nextEnd;
     analysisPeriod = "custom";
@@ -2823,7 +3045,6 @@
     analysisStartDate = formatDateInput(range.start);
     analysisEndDate = formatDateInput(range.end);
     analysisPeriod = "custom";
-    analysisDetailProfessionalId = "";
     openAnalysis(analysisStoreId || selectedStoreId);
   }
 
@@ -2833,7 +3054,6 @@
     const window = analysisPeriodWindow(period);
     analysisStartDate = formatDateInput(window.start);
     analysisEndDate = formatDateInput(addDays(window.end, -1));
-    analysisDetailProfessionalId = "";
     openAnalysis(analysisStoreId || selectedStoreId);
   }
 
@@ -3010,6 +3230,9 @@
 
   root.addEventListener("input", (event) => {
     if (event.target.closest("[data-config-store]")) updateConfigurationDraftFromInput(event.target);
+    if (event.target.matches('[data-analysis-record-filter][name="search"]')) {
+      updateAnalysisRecordFilter(currentAnalysisContext(), event.target);
+    }
     if (event.target.matches("[data-prospection-search]")) {
       listSearch = event.target.value;
       renderRecordList();
@@ -3028,6 +3251,10 @@
 
   root.addEventListener("change", (event) => {
     if (event.target.closest("[data-config-store]")) updateConfigurationDraftFromInput(event.target);
+    if (event.target.matches("[data-analysis-record-filter]") && event.target.name !== "search") {
+      updateAnalysisRecordFilter(currentAnalysisContext(), event.target);
+      return;
+    }
     if (event.target.matches("[data-prospection-import-file]")) {
       handleImportFile(event.target);
       return;
@@ -3076,7 +3303,9 @@
   root.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-prospection-action]");
     if (!button) {
-      if (event.target.classList.contains("prospection-unsaved-backdrop")) {
+      if (event.target.matches("[data-prospection-analysis-records-dialog]")) {
+        closeAnalysisRecordsDialog(currentAnalysisContext());
+      } else if (event.target.classList.contains("prospection-unsaved-backdrop")) {
         finishConfigurationTransition(false);
       } else if (event.target.classList.contains("prospection-dialog-backdrop")) {
         if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
@@ -3163,13 +3392,15 @@
     else if (action === "apply-date-shortcut") applyDateShortcut(button.dataset.shortcutTarget || "analysis", button.dataset.shortcutValue || "this-month");
     else if (action === "set-analysis-period") setAnalysisPeriod(button.dataset.analysisPeriod || "monthly");
     else if (action === "show-professional-records") {
-      analysisDetailProfessionalId = button.dataset.professionalId || "";
-      openAnalysis(analysisStoreId || selectedStoreId);
+      openAnalysisRecordsDialog(currentAnalysisContext(), button.dataset.professionalId || "all");
     }
     else if (action === "hide-professional-records") {
-      analysisDetailProfessionalId = "";
-      openAnalysis(analysisStoreId || selectedStoreId);
+      closeAnalysisRecordsDialog(currentAnalysisContext());
     }
+    else if (action === "close-analysis-records") {
+      closeAnalysisRecordsDialog(currentAnalysisContext());
+    }
+    else if (action === "clear-analysis-record-filters") resetAnalysisRecordFilters(currentAnalysisContext());
     else if (action === "export-report") exportReport(button.dataset.storeId || "");
     else if (action === "edit-prospect") { editingId = prospectId; prospectPrefill = null; render(); root.querySelector("#prospectForm")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
     else if (action === "cancel-edit") { editingId = ""; prospectPrefill = null; render(); }
@@ -3210,6 +3441,8 @@
       }
     } else if (active && event.key === "Escape" && root.querySelector(".prospection-unsaved-backdrop")) {
       finishConfigurationTransition(false);
+    } else if (active && event.key === "Escape" && root.querySelector("[data-prospection-analysis-records-dialog]")) {
+      closeAnalysisRecordsDialog(currentAnalysisContext());
     } else if (active && event.key === "Escape" && root.querySelector(".prospection-dialog-backdrop")) {
       if (importDraft?.status === "importing") bridge.notify("Aguarde a importação terminar.");
       else if (root.querySelector("[data-prospection-configuration-dialog]")) requestConfigurationTransition(() => forceCloseDialogs());
@@ -3233,5 +3466,6 @@
     renderFatalError,
     renderEmbeddedAnalysis,
     destroyEmbeddedAnalysis,
+    openClientConfiguration,
   };
 })();

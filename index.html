@@ -7,6 +7,7 @@
     <meta name="description" content="Sistema de controle de leads para óticas." />
     <meta name="theme-color" content="#002617" />
     <meta name="application-name" content="Controle de Leads" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Controle de Leads" />
@@ -28,16 +29,18 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260818-unified-analysis-1" />
-    <link rel="stylesheet" href="prospections.css?v=20260818-unified-analysis-1" />
-    <link rel="stylesheet" href="attendances.css?v=20260818-unified-analysis-1" />
-    <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260818-unified-analysis-1" disabled />
-    <link rel="stylesheet" href="mobile.css?v=20260818-unified-analysis-1" />
+    <link rel="stylesheet" href="styles.css?v=20260818-premium-unified-3" />
+    <link rel="stylesheet" href="prospections.css?v=20260818-premium-unified-3" />
+    <link rel="stylesheet" href="attendances.css?v=20260818-premium-unified-3" />
+    <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260818-premium-unified-3" disabled />
+    <link rel="stylesheet" href="mobile.css?v=20260818-premium-unified-3" />
+    <link rel="stylesheet" href="support-assistant.css?v=20260818-premium-unified-3" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260818-unified-analysis-1" defer></script>
-    <script src="prospections.js?v=20260818-unified-analysis-1" defer></script>
-    <script src="attendances.js?v=20260818-unified-analysis-1" defer></script>
+    <script src="app.js?v=20260818-premium-unified-3" defer></script>
+    <script src="prospections.js?v=20260818-premium-unified-3" defer></script>
+    <script src="attendances.js?v=20260818-premium-unified-3" defer></script>
+    <script src="support-assistant.js?v=20260818-premium-unified-3" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -113,6 +116,9 @@
           <button class="ghost-button topbar-button topbar-icon-button appointment-monitor-toggle" type="button" id="appointmentMonitorToggle" aria-label="Confirmar visitas" title="Confirmar visitas" aria-expanded="false" aria-controls="appointmentMonitorPanel" hidden>
             <i class="fa-solid fa-check" aria-hidden="true"></i>
             <b id="appointmentMonitorBadge" class="notification-badge" hidden>0</b>
+          </button>
+          <button class="ghost-button topbar-button topbar-icon-button support-assistant-toggle" type="button" id="supportAssistantToggle" aria-label="Abrir Assistente de Suporte" title="Assistente de Suporte" aria-expanded="false" aria-controls="supportAssistantPanel">
+            <i class="fa-solid fa-question" aria-hidden="true"></i>
           </button>
           <button class="ghost-button topbar-button topbar-icon-button" type="button" id="settingsButton" aria-label="Configurações" title="Configurações" hidden>
             <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -325,13 +331,13 @@
                 <span>Alterne o módulo sem misturar dados de clientes ou jornadas diferentes.</span>
               </div>
               <div id="unifiedAnalysisTabs" class="unified-analysis-tabs" role="tablist" aria-label="Tipo de análise">
-                <button class="unified-analysis-tab is-active" type="button" role="tab" aria-selected="true" data-unified-analysis="leads">
+                <button id="unifiedAnalysisLeadsTab" class="unified-analysis-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="adminAnalyticsPanel" data-unified-analysis="leads">
                   <i class="fa-solid fa-users" aria-hidden="true"></i><span>Leads</span>
                 </button>
-                <button class="unified-analysis-tab" type="button" role="tab" aria-selected="false" data-unified-analysis="prospections">
+                <button id="unifiedAnalysisProspectionsTab" class="unified-analysis-tab" type="button" role="tab" aria-selected="false" aria-controls="prospectionAnalyticsPanel" tabindex="-1" data-unified-analysis="prospections">
                   <i class="fa-solid fa-phone" aria-hidden="true"></i><span>Prospecções</span>
                 </button>
-                <button class="unified-analysis-tab" type="button" role="tab" aria-selected="false" data-unified-analysis="attendances">
+                <button id="unifiedAnalysisAttendancesTab" class="unified-analysis-tab" type="button" role="tab" aria-selected="false" aria-controls="attendanceAnalyticsPanel" tabindex="-1" data-unified-analysis="attendances">
                   <i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Atendimentos</span>
                 </button>
               </div>
@@ -387,7 +393,7 @@
             </div>
           </section>
 
-          <section id="adminAnalyticsPanel" class="analytics-panel" aria-label="Análise individual das campanhas" hidden>
+          <section id="adminAnalyticsPanel" class="analytics-panel" role="tabpanel" aria-labelledby="unifiedAnalysisLeadsTab" hidden>
             <div class="analytics-toolbar">
               <div class="analytics-toggle" id="analyticsToggle">
                 <span>
@@ -635,8 +641,8 @@
             </div>
           </section>
 
-          <section id="prospectionAnalyticsPanel" class="embedded-analysis-panel is-prospections" aria-label="Análise de Prospecções" hidden></section>
-          <section id="attendanceAnalyticsPanel" class="embedded-analysis-panel is-attendances attendance-view" aria-label="Análise de Atendimentos" hidden></section>
+          <section id="prospectionAnalyticsPanel" class="embedded-analysis-panel is-prospections" role="tabpanel" aria-labelledby="unifiedAnalysisProspectionsTab" hidden></section>
+          <section id="attendanceAnalyticsPanel" class="embedded-analysis-panel is-attendances attendance-view" role="tabpanel" aria-labelledby="unifiedAnalysisAttendancesTab" hidden></section>
 
           <section id="clientManagementArea" class="admin-workspace">
             <form id="storeForm" class="form-panel" autocomplete="off">
@@ -1046,7 +1052,7 @@
               </label>
 
               <button class="secondary-button filter-toggle" type="button" id="toggleFilters" aria-label="Filtros" aria-expanded="false" aria-controls="filtersPanel">
-                <i class="fa-solid fa-filter" aria-hidden="true"></i>Filtro
+                <i class="fa-solid fa-filter" aria-hidden="true"></i>Filtros
               </button>
             </div>
 

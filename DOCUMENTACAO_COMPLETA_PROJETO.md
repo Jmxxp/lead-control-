@@ -2,7 +2,7 @@
 
 > Retrato técnico e funcional verificado em **18 de agosto de 2026**.
 >
-> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. A retirada de anúncios/atribuição foi aplicada e verificada no banco remoto em 18 de agosto de 2026; banco, Edge Functions e frontend continuam tendo ciclos de implantação independentes.
+> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. Em 18 de agosto de 2026, a retirada de anúncios/atribuição, as três migrations desta entrega e a Edge Function `ai-analysis` versão 2 foram aplicadas e verificadas no remoto. O frontend continua tendo ciclo independente pelo GitHub Pages.
 
 ## 1. Resumo executivo
 
@@ -23,6 +23,8 @@ O módulo **Leads** está disponível para todas as lojas. **Prospecções e Ate
 Não existe ferramenta, conector, rastreador ou estrutura de dados para WhatsApp, Meta Ads ou Google Ads. Foram retirados frontend, tabelas, campos de atribuição, credenciais, filas, workers, webhooks, Edge Functions e agendamentos dessas integrações. `channel` e `campaign` continuam sendo campos comerciais comuns, preenchidos pela loja; valores históricos que mencionem uma plataforma são apenas texto, não conexão ou rastreamento externo. O provedor Google Gemini continua disponível exclusivamente para IA e não tem relação com Google Ads.
 
 Admin e Agência acessam uma **Central de análise única**. Depois de selecionar uma loja, um switch alterna entre Leads, Prospecções e Atendimentos sem trocar a loja nem combinar bases. As duas últimas abas respeitam a licença conjunta `prospection_enabled`.
+
+Todos os perfis autenticados possuem um **Assistente de Suporte IA** no botão `?`. Ele ensina exclusivamente os fluxos operacionais que um cliente usa, sem receber registros comerciais ou liberar áreas administrativas. Seus atalhos são limitados por uma lista fixa e pelo contexto visual/licença atual; a conversa existe somente em memória e desaparece ao recarregar ou encerrar a sessão.
 
 ## 2. Arquitetura geral
 
@@ -53,18 +55,20 @@ flowchart LR
 | Ícones | Font Awesome 6.5.2 via CDN | Ícones visuais da interface. |
 | Cliente de dados | `@supabase/supabase-js@2` via CDN | Chamadas RPC ao Supabase. |
 | Banco | Supabase PostgreSQL | Dados, permissões, regras, auditoria e retenção. |
-| Funções | Supabase Edge Functions/Deno | Proxy autenticado e streaming da IA. |
+| Funções | Supabase Edge Functions/Deno | Proxy autenticado da IA: streaming para análise e resposta JSON para suporte. |
 | Criptografia SQL | `pgcrypto` | Senhas, tokens, hashes e evidências. |
 | Agendamento | `pg_cron` | Retenção diária de Atendimentos. |
 | Hospedagem web | GitHub Pages | Publicação do site estático. |
 | PWA | Web App Manifest | Instalação em tela inicial e identidade visual. |
-| Persistência local | `localStorage` e IndexedDB | Sessão, tema, módulo, chats e autorizações de backup. |
-| IA externa | Gemini ou DeepSeek | Análises comerciais agregadas. |
+| Persistência local | `localStorage` e IndexedDB | Sessão, tema, módulo, chats da IA analítica e autorizações de backup; o chat de suporte não é persistido. |
+| IA externa | Gemini ou DeepSeek | Análises comerciais agregadas e orientações de suporte dentro de política restrita. |
 
 ### 2.2 Características importantes
 
 - É uma **SPA sem roteador por URL**: as telas são seções alternadas por JavaScript.
 - Admin e Agência usam uma única Central de análise; o estado compartilhado mantém uma loja por vez e o switch apenas troca o tipo de leitura.
+- O switch operacional do topo só aparece dentro do contexto de uma loja: sempre para o perfil Loja e, para Admin/Agência, somente depois de entrar em um cliente. Ele fica oculto nos painéis gerais de contas.
+- O último módulo Prospecções/Atendimentos é restaurado automaticamente somente para o perfil Loja. Admin e Agência iniciam no painel geral de Leads e usam o botão **Entrar** de um cliente antes de trocar o módulo.
 - O Supabase Auth **não é usado para login do produto**. Existe autenticação própria em `app_users` e `app_sessions`.
 - A chave `anon` do Supabase está no navegador, como esperado para cliente público. A segurança depende de RLS, revogação de acesso direto e validação de sessão dentro das RPCs.
 - Não há Service Worker. O app é instalável pelo manifesto, mas **não tem cache offline completo**.
@@ -93,7 +97,7 @@ flowchart TD
 - O Admin pode acessar qualquer loja do próprio tenant.
 - A Agência pode acessar somente lojas em que `technician_user_id` é o seu usuário.
 - A Loja pode acessar somente `app_users.store_id`.
-- Análises e IA trabalham com **uma loja selecionada por vez**; dados de lojas diferentes não são combinados.
+- Análises e IA analítica trabalham com **uma loja selecionada por vez**; dados de lojas diferentes não são combinados. O Assistente de Suporte é separado e não recebe dados comerciais da loja.
 
 ### 3.2 Limites de plano
 
@@ -124,9 +128,12 @@ Ao reduzir um limite abaixo do uso atual, o sistema preserva as lojas que já es
 | Configurar backup em HD | Sim | Sim | Não |
 | Configurar IA central | Sim | Não | Não |
 | Usar IA de análise | Sim | Sim | Não |
+| Usar Assistente de Suporte | Sim | Sim | Sim |
 | Administrar termos legais | Sim | Não | Não |
 | Acessar a central de termos assinados | Sim | Não | Não |
 | Assinar termos obrigatórios | Sim | Sim | Sim |
+
+O uso do Assistente de Suporte exige uma configuração central de IA ativa, mas não concede ao perfil acesso à chave nem a qualquer tela administrativa.
 
 ## 4. Hierarquia de arquivos
 
@@ -137,8 +144,10 @@ lead-control-/
 ├── styles.css                         # Design system e telas do núcleo
 ├── mobile.css                         # Responsividade compartilhada
 ├── prospections.js / prospections.css # Módulo de Prospecções
-├── prospec-original.css               # Camada visual original ativada pelo módulo
+├── prospec-original.css               # Camada visual original ativada só na operação
 ├── attendances.js / attendances.css   # Módulo de Atendimentos
+├── support-assistant.js / .css        # Assistente de Suporte, UI segura e responsiva
+├── SUPPORT_ASSISTANT_INTEGRATION.md   # Contrato técnico da integração do suporte
 ├── manifest.webmanifest               # Manifesto instalável/PWA
 ├── favicon.ico e logo__.png           # Identidade na raiz
 ├── assets/                            # Ícones, logo e preview social
@@ -160,9 +169,14 @@ lead-control-/
 ├── supabase/
 │   ├── config.toml                    # Configuração local das Edge Functions
 │   ├── migrations/
-│   │   └── 20260818171504_remove_marketing_attribution.sql
+│   │   ├── 20260818171504_remove_marketing_attribution.sql
+│   │   ├── 20260818182307_support_assistant_authorization.sql
+│   │   ├── 20260818190526_attendance_list_v2_filters.sql
+│   │   └── 20260818193000_redact_ai_settings_key.sql
 │   └── functions/
-│       └── ai-analysis/index.ts        # Única Edge Function do produto
+│       └── ai-analysis/
+│           ├── index.ts                # Única Edge Function do produto
+│           └── support_policy_test.ts  # Testes determinísticos da política de suporte
 └── .github/workflows/pages.yml         # Deploy do frontend no GitHub Pages
 ```
 
@@ -179,18 +193,21 @@ Arquivos `prospec-backup*.json` também são ignorados e podem conter dados pess
 3. `attendances.css`
 4. `prospec-original.css` inicialmente desabilitado
 5. `mobile.css`
-6. Font Awesome
-7. Supabase JS v2
-8. `app.js`
-9. `prospections.js`
-10. `attendances.js`
+6. `support-assistant.css`
+7. Font Awesome
+8. Supabase JS v2
+9. `app.js`
+10. `prospections.js`
+11. `attendances.js`
+12. `support-assistant.js`
 
 Os módulos expõem pontes globais:
 
 - `window.ProspectionsModule`
 - `window.AttendancesModule`
+- `window.SupportAssistant`
 
-`app.js` fornece a sessão, lojas, dados e navegação; cada módulo monta sua própria interface no contêiner correspondente.
+`app.js` fornece a sessão, lojas, dados e navegação; cada módulo monta sua própria interface no contêiner correspondente. O script do suporte é carregado por último para consumir os elementos e as pontes já registrados, sem depender de bundler.
 
 ## 5. Mapa de telas e interface
 
@@ -202,9 +219,10 @@ Aplicação
 │   └── Aceite legal obrigatório, quando pendente
 ├── Barra superior
 │   ├── Identidade, avatar e perfil
-│   ├── Seletor: Leads | Prospecções | Atendimentos
+│   ├── Seletor: Leads | Prospecções | Atendimentos, somente dentro de um cliente
 │   ├── Data
 │   ├── Alertas de agendamento
+│   ├── Assistente de Suporte (`?`)
 │   ├── Administração/configurações, conforme perfil
 │   ├── Tema
 │   └── Sair
@@ -236,6 +254,10 @@ Aplicação
 │   ├── Indicadores
 │   ├── Filtros
 │   └── Histórico
+├── Assistente de Suporte
+│   ├── Perguntas rápidas
+│   ├── Respostas em Markdown seguro
+│   └── Atalhos permitidos para fluxos do cliente
 └── Modais
     ├── Detalhe/edição de lead
     ├── Conta, loja e agência
@@ -251,12 +273,13 @@ Aplicação
 
 - Paleta base: fundo `#e8e8e8`, superfície `#ffffff`, texto `#171717`, verde `#16855f`, azul `#2563a5`, âmbar `#b46d12` e rosa `#b02f4c`.
 - Identidade por módulo: Leads usa superfícies neutras mais escuras; Prospecções usa acentos e fundos azulados; Atendimentos usa acentos e fundos esverdeados. A Central de análise mantém essa identidade no switch e no painel ativo.
-- Raio base: `8px`.
+- Raios visuais permanecem contidos: `8px` nos componentes legados e aproximadamente `10–12px` nos cards e campos padronizados de Prospecções e Atendimentos, sem formato excessivamente arredondado.
 - Fonte: pilha de sistema/Inter, sem download obrigatório de uma fonte externa.
 - Tema escuro: classes `body.is-dark` e `body.is-dark-mode` atendem partes antigas e novas.
 - Breakpoints compartilhados principais: `900px` e `720px`, com ajustes específicos em cada módulo.
 - No celular, a intenção atual é preservar a mesma interface e todos os recursos, apenas em uma composição mais densa.
 - Para Agência, a navegação superior possui somente Clientes, Análise e Backups; `has-three-sections` centraliza os três itens porque a central de termos assinados é exclusiva do Admin.
+- Campos de preenchimento de Prospecções e Atendimentos usam fundo branco, texto, placeholders e ícones escuros inclusive no tema escuro; o foco mantém o acento azul ou verde do respectivo módulo e a combinação foi definida para contraste AA.
 - Controles de formulário usam ao menos `16px` no mobile para evitar zoom automático do iOS.
 - `safe-area-inset-*`, `min-width: 0`, quebra de texto e contenção de mídia evitam cortes e rolagem horizontal acidental.
 
@@ -324,6 +347,7 @@ O Admin pode consultar pendências, aceites válidos/desatualizados e baixar um 
 4. A loja recebe conta de login e sempre tem Leads.
 5. O Admin pode ativar `prospection_enabled`, respeitando a franquia da Agência.
 6. Quando a licença é ativada, Prospecções e Atendimentos tornam-se acessíveis juntos.
+7. No cartão do cliente, **Entrar** abre o contexto isolado dessa loja; é nesse momento que o switch operacional do topo fica disponível para Admin/Agência.
 
 ### 7.2 Lead até atendimento e compra
 
@@ -365,6 +389,29 @@ flowchart LR
 ```
 
 Ao trocar a loja, o sistema invalida a renderização anterior. Os módulos embutidos desmontam eventos e DOM quando saem de foco; uma geração de requisição impede que uma resposta antiga reapareça no cliente novo.
+
+### 7.4 Assistente de Suporte
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário autenticado
+    participant W as support-assistant.js
+    participant E as ai-analysis
+    participant R as lc_support_assistant_runtime
+    participant P as Provedor de IA
+    U->>W: Pergunta sobre fluxo do cliente
+    W->>E: action=support + loja ativa opcional + até 6 mensagens + x-app-session
+    E->>R: valida sessão, perfil, capacidades e rate limit
+    R-->>E: configuração e IDs de ação permitidos
+    E->>E: bloqueia escopo proibido e identificadores pessoais
+    E->>P: manual estático + capacidades booleanas + pergunta aprovada
+    P-->>E: JSON com resposta e IDs sugeridos
+    E->>E: valida texto, tamanho e allowlist
+    E-->>W: answer_markdown + actions + scope
+    W->>W: monta Markdown com nós DOM e revalida ações visíveis
+```
+
+O assistente não envia Lead, Prospecção, Atendimento, métrica ou configuração da loja ao provedor. O histórico bruto também não é repassado: uma continuação curta recebe somente o tópico operacional derivado de mensagens anteriores do próprio usuário. Ao acionar um atalho, `app.js` revalida contexto, licença e alterações não salvas antes de usar a navegação normal.
 
 ## 8. Módulo Leads
 
@@ -511,8 +558,10 @@ O módulo consulta atendimentos por loja, tipo, período e texto. Ao selecionar 
 - Indicadores: total, retornos/visitas, compras, conversão, bônus e meta diária.
 - Períodos rápidos: hoje, semana, mês, ano e todo o período.
 - Gestão: cartões, rankings e tendências.
-- Na Central única: períodos Hoje, Semana, Mês e Ano; total, retornos, compras, conversão, faturamento, ticket, bonificação, funil, profissionais, etiquetas/campanhas, ritmo e os 20 registros mais recentes.
-- O módulo mantém detalhamentos operacionais por profissional, calendário e período personalizado para apoiar a execução diária; a entrada administrativa consolidada de análise fica na Central.
+- A análise aberta pela própria loja e a aba Prospecções da Central usam a mesma fonte visual e funcional, `analysisExperienceMarkup(context)`. Isso mantém identidade da loja, resumo de Hoje/Semana/Mês/Ano, períodos rápidos, comparação de resultados, desempenho por profissional e campanha/etiqueta, gráfico de evolução, calendário e refinamento por datas e responsável.
+- A taxa de conversão usa uma única **coorte**: Prospecções criadas no período formam o denominador, e retorno/compra são contados somente nesses mesmos registros. As séries de evolução continuam exibindo eventos pela data em que ocorreram, mas não são usadas como denominador da conversão; isso impede percentuais acima de 100% por mistura de períodos.
+- Em cada responsável, **Listar** abre o mesmo detalhamento na análise da loja e na Central. São sete controles combináveis: busca; período; responsável; etiqueta; status/probabilidade; retorno; compra. A busca cobre nome, telefone, CPF, OS, anotação, responsável e etiquetas. A lista ordena os mais recentes e exibe até 200 resultados, informando quando houver mais.
+- A listagem operacional principal continua com busca, período e situação; os filtros ampliados pertencem ao detalhamento acionado por **Listar**.
 - Bônus: agrupa atividade, retorno, compras, receita e prêmio por profissional, com rastreabilidade pela OS.
 
 Configuração inicial:
@@ -524,6 +573,8 @@ Configuração inicial:
 - fundo do logo: branco.
 
 A configuração completa é salva atomicamente e possui controle de revisão para impedir que duas telas sobrescrevam alterações concorrentes. Profissionais podem ser inativados ou arquivados; o histórico permanece.
+
+Para integrações internas aprovadas, o módulo expõe `window.ProspectionsModule.openClientConfiguration(storeId?)`. A API é estreita: só abre o fluxo existente de configuração quando módulo, perfil, loja e licença são válidos; ela não aceita ação ou seletor arbitrário. O catálogo atual do Assistente de Suporte não aciona essa API.
 
 ### 10.5 Importação e retenção
 
@@ -562,9 +613,15 @@ O servidor, não o frontend, decide elegibilidade, valor e profissional creditad
 
 ### 11.3 Painel
 
-Filtros: texto, tipo, profissional e período (hoje, 7 dias, 30 dias ou todo o período). Indicadores: total, orçamentos, compras, conversão, receita e valores de atendimento. A lista mostra origem e vínculos.
+Filtros operacionais: busca por nome, telefone, descrição ou OS; tipo; profissional; vínculo; e período (hoje, 7 dias, 30 dias ou todo o período). Cada item do painel de filtros possui ícone próprio. Vínculo distingue Lead/Prospecção, atendimento avulso e registro que precisa de revisão.
 
-Na Central única, a aba Atendimentos reutiliza os mesmos dados com `p_store_id` obrigatório e paginação: total, orçamentos, compras, conversão, faturamento, valor dos atendimentos, qualidade dos vínculos, profissionais e os 20 registros mais recentes. A superfície usa a paleta esverdeada do módulo.
+A lista operacional consulta `lc_list_attendances_v2` em páginas de 30, com busca atrasada em 260 ms para evitar uma chamada por tecla. Tipo, profissional, período e vínculo são combinados no servidor antes do total e da paginação. `matched` representa vínculo com Lead ou Prospecção, `standalone` representa atendimento sem vínculo e sem ambiguidade, e `review` representa correspondência ambígua. Profissionais atuais são filtrados por UUID; nomes preservados apenas em registros históricos usam o snapshot exato. Há estados de carregamento, erro/tentativa novamente, “Carregar mais 30” e conclusão, com deduplicação por ID. Enquanto a primeira página completa carrega, o snapshot recente do workspace pode ser mostrado como transição.
+
+Os cards exibem cliente, telefone, tipo, descrição, profissional, data, OS, origem em Lead/Prospecção, crédito/bonificação, valores e ações de ligar/copiar. Os indicadores cobrem total, orçamentos, compras, conversão, faturamento informado e valores de atendimento.
+
+Na Central única, a aba Atendimentos exige `p_store_id`, valida a loja no payload e pagina `lc_list_attendances_v2` de 200 em 200 até o limite protegido de 2.000 registros. O painel oferece períodos Hoje/7 dias/30 dias/Todo o período, KPIs, funil por tipo, financeiro, top 6 profissionais, qualidade de vínculos/clientes únicos e busca com filtros de tipo, profissional e vínculo. O detalhamento visual mostra os 20 registros mais recentes do recorte; quando a base excede 2.000, a tela identifica explicitamente que os cálculos usam uma amostra protegida.
+
+Toda a superfície usa paleta verde própria — floresta, esmeralda, menta, lima e sálvia — em tema claro e escuro. Inputs permanecem brancos com texto/ícones escuros, e os cards novos usam raios contidos de aproximadamente 10–12 px.
 
 Retenção: dois anos. O cron remoto `lc_attendance_retention_daily` executa diariamente às **03:17**; o upsert também possui fallback de limpeza.
 
@@ -587,8 +644,8 @@ Leads é sempre permitido. Prospecções e Atendimentos ficam desabilitados quan
 | Aba | Fonte e contrato | Conteúdo principal |
 |---|---|---|
 | Leads | Estado e cálculos do `app.js`: `selectedAnalyticsStoreId`, `renderAdminAnalytics`, `getAnalyticsBaseLeads` e `getAnalyticsLeads` | Funil, períodos, categorias internas, comparações, registros, exportação e IA agregada. |
-| Prospecções | `window.ProspectionsModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_list_prospections` e `lc_get_prospection_configuration` | KPIs, funil, profissionais, etiquetas/campanhas, ritmo e recentes. |
-| Atendimentos | `window.AttendancesModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_get_attendance_workspace` e `lc_list_attendances` paginado | KPIs, vínculos, profissionais e recentes. |
+| Prospecções | `window.ProspectionsModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_list_prospections` e `lc_get_prospection_configuration`; compartilha `analysisExperienceMarkup(context)` com `openAnalysis` | Resumos por período, coorte de conversão, profissionais, campanhas, evolução, calendário, filtros personalizados e modal **Listar** com sete controles combináveis. |
+| Atendimentos | `window.AttendancesModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_get_attendance_workspace` e `lc_list_attendances_v2` paginado | KPIs, funil, financeiro, top profissionais, qualidade de vínculos, busca/filtros e detalhe de até 20 sobre uma base protegida de até 2.000. |
 
 Os dois módulos embutidos expõem também `destroyEmbeddedAnalysis(root)`. A desmontagem remove listeners e DOM; o controle de geração ignora respostas obsoletas. Toda consulta continua sujeita às validações de papel, tenant, carteira, loja e licença do servidor.
 
@@ -602,9 +659,9 @@ Os dois módulos embutidos expõem também `destroyEmbeddedAnalysis(root)`. A de
 
 ## 13. Inteligência artificial
 
-### 13.1 Configuração
+### 13.1 Configuração central
 
-Somente o Admin altera a configuração central do tenant. Agência pode usar a IA, mas não visualizar a chave. Loja não tem acesso.
+Somente o Admin altera a configuração central do tenant. Agência pode usar a IA analítica, mas não visualizar a chave. Loja não usa a análise comercial por chat, porém todos os três perfis podem usar o Assistente de Suporte restrito.
 
 Provedores suportados:
 
@@ -613,7 +670,7 @@ Provedores suportados:
 
 `lc_get_ai_settings` devolve `api_key` vazio e apenas `has_api_key`. A chave real é lida pela Edge Function via RPC restrita a `service_role`.
 
-### 13.2 Privacidade e limites
+### 13.2 IA de análise comercial
 
 - Cada conversa recebe o recorte de uma única loja.
 - O contexto enviado é agregado/anonimizado: não inclui nome, telefone, observações nem OS.
@@ -628,6 +685,35 @@ Provedores suportados:
 
 O streaming é repassado como SSE. A interface permite parar, editar, copiar e excluir mensagens. O histórico fica apenas no navegador em `lead-control-ai-chats`, separado por conta e loja, com até 40 conversas.
 
+### 13.3 Assistente de Suporte IA
+
+O botão `?` abre o suporte para Admin, Agência e Loja após a autenticação. A resposta depende de o Admin ter configurado um provedor e uma chave válidos; na ausência disso, o runtime retorna indisponibilidade sem expor segredo. Apesar de estar disponível para todos os papéis, seu conhecimento é deliberadamente limitado aos fluxos do cliente:
+
+- Leads: cadastro, acompanhamento, filtros, exportação e agenda;
+- categorias, opções e sequência dos campos de Leads;
+- Prospecções: operação, análise e bonificação, quando disponível;
+- Atendimentos: cadastro, resumo, lista e filtros, quando disponível;
+- tema e saída da sessão.
+
+As perguntas rápidas atuais são **Cadastrar lead**, **Filtrar prospecções** e **Novo atendimento**.
+
+Contas, agências, planos/licenças, termos, backups, integrações, arquitetura, código, banco, APIs, credenciais e assuntos externos são bloqueados antes da chamada ao provedor. E-mail, CPF, CNPJ, telefone e UUID detectáveis também bloqueiam a pergunta. Nenhum objeto de negócio é aceito no payload: somente `action: "support"`, o UUID opcional da loja ativa em `store_id` e até seis mensagens textuais de no máximo 1.800 caracteres cada, com limite total de 7.200 no servidor. A UI mantém no máximo cerca de 6.800 caracteres e cancela a tentativa após 30 segundos.
+
+A resposta é JSON não-streaming com `answer_markdown`, `actions` e `scope: "client_flows_only"`, limitada a 2.600 caracteres no servidor. O navegador monta apenas parágrafos, listas e `**negrito**` usando nós DOM e `textContent`; não executa HTML, links, URLs, código ou comandos. O negrito das respostas do assistente usa o verde da identidade visual.
+
+Atalhos aceitos:
+
+| ID fixo | Fluxo |
+|---|---|
+| `open_leads` | Abre Leads no cliente atual. |
+| `open_prospections` | Abre Prospecções se o contexto e a licença permitirem. |
+| `open_attendances` | Abre Atendimentos se o contexto e a licença permitirem. |
+| `open_lead_configuration` | Abre Leads e o editor de categorias/opções. |
+
+O servidor devolve no máximo duas ações dentre as autorizadas pela RPC; o frontend ignora rótulos, ícones, seletores ou URLs recebidos, usa seu próprio catálogo e confere novamente a disponibilidade visual. Admin/Agência fora de um cliente não recebem atalhos de módulo. `app.js` ainda passa toda navegação pela proteção de alterações não salvas.
+
+O chat de suporte é efêmero: fica somente em `state.messages`, não usa `localStorage` nem tabela de transcrição e é apagado ao recarregar, sair ou trocar a sessão. O log em `ai_usage` guarda metadados operacionais — provedor, modelo, tipo, estimativa de tokens, latência e status — sem conteúdo da conversa. O limite é de 40 solicitações de suporte por usuário em uma janela móvel de uma hora. A autorização adquire um advisory lock por usuário e cria a reserva de uso na mesma transação da contagem; requisições paralelas não conseguem ultrapassar a cota. A Edge conclui essa mesma reserva por `usage_id`; se a conclusão falhar, a reserva continua contando para proteger o custo.
+
 ## 14. Persistência local do navegador
 
 | Chave/banco | Conteúdo |
@@ -635,10 +721,10 @@ O streaming é repassado como SSE. A interface permite parar, editar, copiar e e
 | `lead-control-session` | Token bruto e perfil restaurável. |
 | `lead-control-theme` | Tema claro ou escuro. |
 | `lead-control-module:<profile id>` | Último módulo aberto pelo perfil. |
-| `lead-control-ai-chats` | Chats locais de IA, por conta e loja. |
+| `lead-control-ai-chats` | Chats locais da IA de análise, por conta e loja. Não contém o Assistente de Suporte. |
 | IndexedDB `lead-control-backup` | Handles de pasta e manifestos de backup. |
 
-Limpar dados do site encerra a restauração local, remove chats e exige escolher novamente o HD. A sessão ainda pode permanecer válida no servidor até expirar/revogar, mas o navegador perde o token.
+Limpar dados do site encerra a restauração local, remove chats analíticos e exige escolher novamente o HD. A sessão ainda pode permanecer válida no servidor até expirar/revogar, mas o navegador perde o token. O suporte já desaparece em qualquer reload/logout porque sua conversa vive somente em memória.
 
 ## 15. Banco de dados — visão estrutural
 
@@ -694,6 +780,8 @@ Existe índice único parcial que limita o ambiente a um único usuário global 
 | `ai_settings` | `admin_user_id uuid!`, `provider!`, `model!`, `api_key!`, `system_prompt!`, `updated_by_user_id?`, `created_at!`, `updated_at!` |
 | `ai_usage` | `id uuid!`, `admin_user_id uuid!`, `user_id?`, `store_id?`, `provider!`, `model!`, `request_kind!`, `input_tokens?`, `output_tokens?`, `latency_ms?`, `status!`, `created_at!` |
 
+O Assistente de Suporte não cria uma tabela de conversa. O rate limit consulta `ai_usage` com `request_kind = 'support_assistant'` e usa o índice parcial `ai_usage_support_user_date_idx (user_id, created_at desc)`.
+
 ### 15.6 Estruturas de anúncios removidas
 
 A migração `20260818171504_remove_marketing_attribution.sql` elimina as duas gerações de integração. As seguintes tabelas **não fazem parte do modelo atual**:
@@ -706,7 +794,7 @@ A mesma migração remove de `lead_intelligence` todos os campos de UTM, IDs de 
 
 ### 15.7 Schema privado após a limpeza
 
-`app_private` continua obrigatório para `session_user`, wrappers `rpc_*`, triggers e helpers `SECURITY DEFINER`, mas não guarda credenciais de anúncios, estados OAuth ou tabelas de manutenção de integrações. Segredos da IA permanecem em `public.ai_settings` sem concessão direta ao navegador; somente a RPC restrita ao `service_role` entrega a configuração em tempo de execução à Edge Function.
+`app_private` continua obrigatório para `session_user`, wrappers `rpc_*`, triggers e helpers `SECURITY DEFINER`, mas não guarda credenciais de anúncios, estados OAuth ou tabelas de manutenção de integrações. Segredos da IA permanecem em `public.ai_settings` sem concessão direta ao navegador; somente RPCs de runtime restritas ao `service_role` entregam a configuração em tempo de execução à Edge Function.
 
 ## 16. Catálogo de RPCs
 
@@ -760,13 +848,16 @@ As funções `public.lc_*` são contratos usados pelo frontend. Em geral elas en
 ### 16.5 Atendimentos
 
 - `lc_get_attendance_workspace`
-- `lc_list_attendances`
+- `lc_list_attendances_v2` (uso atual, filtros exatos e paginação coerente)
+- `lc_list_attendances` (compatibilidade com clientes anteriores)
 - `lc_upsert_attendance`
 
 ### 16.6 Inteligência artificial
 
 - `lc_get_ai_settings`, `lc_save_ai_settings`
-- Restritas a `service_role`: `lc_ai_runtime_config`, `lc_log_ai_usage`
+- Restritas a `service_role`: `lc_ai_runtime_config`, `lc_support_assistant_runtime`, `lc_log_ai_usage`
+
+`public.lc_support_assistant_runtime(text, uuid)` é um wrapper `SECURITY INVOKER` sobre `app_private.rpc_support_assistant_runtime(text, uuid)`, que é `SECURITY DEFINER` com `search_path` explícito. O segundo argumento opcional é a loja ativa: quando informado, o runtime revalida o acesso àquela loja e calcula capacidades somente sobre sua licença; para Loja, o escopo é sempre a própria conta. O runtime revalida `session_user`, aceita apenas Admin/Agência/Loja ativos e aplica atomicamente o limite de 40 solicitações por hora por `user_id`, retornando o `usage_id` reservado. `lc_complete_support_assistant_usage` conclui somente essa reserva e somente via `service_role`. `EXECUTE` foi revogado de `PUBLIC`, `anon` e `authenticated` em todas as RPCs do runtime.
 
 ### 16.7 RPCs retiradas
 
@@ -792,6 +883,8 @@ O `DROP` dinâmico da migração é limitado por prefixo e schema para não atin
 | `lc_upsert_prospection` | sessão, loja, cadastro, profissional, probabilidade e tags | Cria/edita prospecção. |
 | `lc_set_prospection_outcome` | sessão, prospecção, retorno/compra/valor/OS | Atualiza resultado com rastreabilidade. |
 | `lc_upsert_attendance` | sessão, loja, profissional, cliente, telefone, descrição, tipo, valores, OS, idempotência | Registra, vincula e aplica resultados seguros. |
+| `lc_support_assistant_runtime` | sessão, loja opcional | Entrega somente à Edge Function a configuração da IA, capacidades, ações permitidas e uma reserva atômica de uso após validar perfil, escopo e rate limit. |
+| `lc_complete_support_assistant_usage` | reserva, tenant, usuário, tokens, latência e status | Finaliza somente a reserva de suporte correspondente; execução exclusiva de `service_role`. |
 
 ### 16.9 Automações internas por trigger
 
@@ -809,13 +902,15 @@ O conjunto permitido em `lead_events` é `lead_created`, `contacted`, `qualified
 
 | Função | Responsabilidade | Autorização |
 |---|---|---|
-| `ai-analysis` | Valida configuração e transmite Gemini/DeepSeek por streaming. | `x-app-session`; config real via service role. |
+| `ai-analysis` | IA analítica por SSE e Assistente de Suporte por JSON não-streaming, com políticas e formatos independentes. | `x-app-session`; configuração real via RPCs executadas como `service_role`. |
 
-`ai-analysis` é a única Edge Function presente em `supabase/functions/` e a única entrada em `supabase/config.toml`. `verify_jwt = false` é intencional porque o produto não usa Supabase Auth; a função exige `x-app-session` e resolve a configuração pela RPC `lc_ai_runtime_config` usando `SUPABASE_SERVICE_ROLE_KEY` somente no ambiente da função.
+`ai-analysis` é a única Edge Function presente em `supabase/functions/` e a única entrada em `supabase/config.toml`. `verify_jwt = false` é intencional porque o produto não usa Supabase Auth; a função exige `x-app-session`. Análise usa `lc_ai_runtime_config`; suporte usa `lc_support_assistant_runtime`. Ambas são chamadas pelo processo servidor com a chave de serviço, nunca pelo browser.
+
+Na ação `support`, o servidor aceita apenas `action`, `messages` e o `store_id` opcional da loja ativa, aplica a política determinística, revalida esse escopo no banco, envia ao provedor somente o manual estático, capacidades booleanas, IDs permitidos e a pergunta aprovada, e valida novamente o JSON de saída. Respostas de suporte usam `Cache-Control: no-store` e `X-Content-Type-Options: nosniff`.
 
 ### 17.2 Estado local e estado remoto
 
-Em 18 de agosto de 2026, o estado remoto foi conferido depois da limpeza: somente `ai-analysis` permanece ativa. `marketing-api` e `marketing-worker` foram excluídas; não há implantação de `marketing-conversions`, `whatsapp-api`, `whatsapp-webhook` ou `whatsapp-worker`.
+Em 18 de agosto de 2026, o estado remoto foi conferido depois da limpeza: somente `ai-analysis` permanece ativa, na versão 2, com a rota `action: "support"` publicada. `marketing-api` e `marketing-worker` foram excluídas; não há implantação de `marketing-conversions`, `whatsapp-api`, `whatsapp-webhook` ou `whatsapp-worker`. O smoke test remoto confirmou `OPTIONS 200`, requisição sem sessão `401`, sessão inválida `401` e negação `401` das RPCs de suporte aos papéis web.
 
 Excluir código do repositório não apaga automaticamente uma função publicada. Por isso, futuras manutenções devem sempre comparar o diretório local com `supabase functions list` e nunca reinstalar as funções descontinuadas acima.
 
@@ -823,7 +918,7 @@ O GitHub Pages não publica nem remove Edge Functions. A disponibilidade real da
 
 ### 17.3 Configuração sensível
 
-- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`: variáveis automáticas usadas pela Edge Function.
+- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`: variáveis preferenciais usadas pela Edge Function. O código também reconhece `SUPABASE_SECRET_KEY` e `SUPABASE_SECRET_KEYS.default` como formatos server-side alternativos.
 - A chave do provedor de IA é configurada por tenant em `ai_settings`; ela não volta para Admin/Agência em respostas comuns.
 - Gemini ou DeepSeek é escolhido pela configuração central do Admin.
 
@@ -853,6 +948,8 @@ Não existem segredos, chaves Vault ou variáveis de ambiente para anúncios ou 
 9. Idempotência em operações sujeitas a retry.
 10. Central de análise limitada a uma loja permitida; abas premium bloqueadas sem licença.
 11. Geração assíncrona e desmontagem dos painéis embutidos para impedir resposta obsoleta de outra loja.
+12. Assistente de Suporte restrito por classificador determinístico, bloqueio de identificadores pessoais, payload textual mínimo, capacidades booleanas e allowlist dupla — servidor e navegador.
+13. RPC de suporte sem `EXECUTE` para papéis web; acesso à chave e às capacidades somente via `service_role` dentro da Edge Function.
 
 ### 18.3 Dados sensíveis
 
@@ -861,7 +958,8 @@ Não existem segredos, chaves Vault ou variáveis de ambiente para anúncios ou 
 - CPF jurídico: hash + últimos 4 dígitos.
 - Chave do provedor de IA: nunca retornada por `lc_get_ai_settings`; leitura integral somente via RPC de serviço.
 - Avatares: imagens WebP/data URL no banco; upload fonte limitado a 8 MB e otimizado no navegador.
-- Sessão bruta e chats de IA: armazenamento local do navegador; exigem cuidado reforçado contra XSS.
+- Sessão bruta e chats da IA analítica: armazenamento local do navegador; exigem cuidado reforçado contra XSS.
+- Chat de suporte: somente memória da página, sem transcrição em `localStorage` ou banco; as mensagens aprovadas são processadas durante a requisição e somente metadados de uso são registrados.
 
 ## 19. Migrações e evolução do banco
 
@@ -873,11 +971,12 @@ Ordem recomendada para um ambiente novo:
 2. `prospection_configuration_batch_update.sql`
 3. `prospection_backup_import_update.sql`
 4. `attendance_module.sql`
-5. provisionar o Admin global com procedimento administrativo controlado;
-6. publicar somente `supabase/functions/ai-analysis`;
-7. configurar o provedor de IA pela conta Admin, se a ferramenta for usada.
+5. `supabase/migrations/20260818190526_attendance_list_v2_filters.sql`
+6. provisionar o Admin global com procedimento administrativo controlado;
+7. publicar somente `supabase/functions/ai-analysis`;
+8. configurar o provedor de IA pela conta Admin, se a ferramenta for usada.
 
-Os passos 2 e 3 completam, respectivamente, o salvamento atômico da configuração e a importação idempotente de backups de Prospecções; esses dois contratos não estão incorporados ao `database.sql` consolidado.
+Os passos 2 e 3 completam, respectivamente, o salvamento atômico da configuração e a importação idempotente de backups de Prospecções; esses dois contratos não estão incorporados ao `database.sql` consolidado. O runtime atômico do Assistente de Suporte e a ocultação da chave nas RPCs de configuração já estão no `database.sql` atual. Portanto, as migrations `20260818182307_support_assistant_authorization.sql` e `20260818193000_redact_ai_settings_key.sql` não devem ser reaplicadas em uma instalação limpa criada por esse arquivo.
 
 As migrações de remoção não são necessárias numa instalação limpa baseada no `database.sql` atual. `remove_whatsapp_module.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` existem para atualizar ambientes antigos.
 
@@ -889,7 +988,10 @@ Não reaplicar `database.sql` inteiro sem revisão. Para um banco existente:
 2. aplicar somente a migração relevante;
 3. usar `20260818171504_remove_marketing_attribution.sql` para retirar anúncios/atribuição;
 4. usar `remove_whatsapp_module.sql` apenas se ainda houver vestígios do módulo WhatsApp;
-5. validar tabelas, funções, grants, triggers, cron e funcionamento do app.
+5. aplicar `20260818182307_support_assistant_authorization.sql` antes de publicar o Assistente de Suporte;
+6. aplicar `20260818190526_attendance_list_v2_filters.sql` antes de publicar o frontend que chama a RPC v2;
+7. aplicar `20260818193000_redact_ai_settings_key.sql` para garantir que a chave da IA nunca volte ao navegador;
+8. validar tabelas, funções, grants, triggers, cron e funcionamento do app.
 
 A remoção de atribuição é propositalmente destrutiva: apaga métricas, conexões, filas, logs e campos de rastreamento. O arquivo é transacional, usa limites de lock/execução e restringe o `DROP` dinâmico às funções `ma_*`, mas backup e validação continuam obrigatórios.
 
@@ -907,6 +1009,9 @@ A remoção de atribuição é propositalmente destrutiva: apaga métricas, cone
 | `lead_contact_date_step1.sql`, `lead_contact_date_update.sql`, `lead_contact_date_mac.sql` | Data de contato e variantes de implantação. |
 | `lead_inspected_update.sql`, `lead_notes_update.sql`, `purchase_fields_update.sql` | Campos incrementais de Leads. |
 | `central_ai_configuration_update.sql` | IA central do tenant. |
+| `supabase/migrations/20260818182307_support_assistant_authorization.sql` | Runtime e autorização server-only do Assistente de Suporte, reserva atômica, conclusão de uso, capacidades e índice do rate limit. |
+| `supabase/migrations/20260818190526_attendance_list_v2_filters.sql` | Listagem v2 de Atendimentos, com profissional histórico e estados de vínculo exatos antes da paginação. |
+| `supabase/migrations/20260818193000_redact_ai_settings_key.sql` | Garante por migration rastreável que RPCs acessíveis ao navegador devolvam apenas `has_api_key`, nunca o segredo. |
 | `lead_intelligence_update.sql` | Inteligência comercial e eventos nativos de ciclo de vida, sem atribuição externa. |
 | `prospection_brand_identity_update.sql` | Identidade visual por loja. |
 | `prospection_configuration_batch_update.sql` + QA | Configuração atômica/revisões. |
@@ -934,7 +1039,7 @@ O workflow `.github/workflows/pages.yml` executa em push para `main` ou manualme
 
 1. checkout;
 2. configuração do GitHub Pages;
-3. cópia dos arquivos estáticos para `_site`;
+3. cópia dos arquivos estáticos para `_site`, incluindo `support-assistant.js` e `support-assistant.css` junto de `app.js`, módulos, estilos, manifesto, ícones e `assets/`;
 4. criação de `.nojekyll`;
 5. upload do artefato;
 6. deploy do Pages.
@@ -944,6 +1049,15 @@ Não existe build, minificação ou injeção de variáveis. Mudanças em URLs/c
 ### 21.2 Banco e funções
 
 Banco e Edge Functions **não são publicados pelo workflow do Pages**. São implantações separadas com Supabase CLI/SQL Editor.
+
+Para publicar esta versão em um ambiente existente, a ordem segura é:
+
+1. revisar e aplicar, nessa ordem, as migrations de suporte, listagem v2 de Atendimentos e ocultação da chave da IA;
+2. implantar `supabase/functions/ai-analysis` com a rota de suporte;
+3. publicar o frontend com `index.html`, `support-assistant.js` e `support-assistant.css`;
+4. testar Loja com e sem Prospecções e Admin/Agência dentro e fora de um cliente.
+
+Publicar apenas o frontend antes da migração e da Edge Function deixaria o botão visível, mas o runtime de suporte indisponível. Nesta entrega, as três migrations foram aplicadas e `ai-analysis` versão 2 foi implantada e testada antes da publicação do frontend.
 
 Comandos típicos:
 
@@ -984,6 +1098,7 @@ Abrir `http://127.0.0.1:4173`. Usar servidor HTTP evita restrições de módulos
 node --check app.js
 node --check prospections.js
 node --check attendances.js
+node --check support-assistant.js
 ```
 
 Checklist manual mínimo:
@@ -1001,6 +1116,11 @@ Checklist manual mínimo:
 - IA sem chave, com chave, streaming e interrupção;
 - Central de análise com a mesma loja nas três abas e bloqueio de licença;
 - troca rápida de cliente/aba sem reaparecimento de dados da seleção anterior;
+- Prospecções: mesma experiência na loja e na Central, coorte sem conversão acima de 100% e **Listar** com os sete controles combinados;
+- Atendimentos: busca, filtros com ícones, páginas de 30, carregar mais, retry, limite protegido da análise e aviso de amostra;
+- switch operacional oculto fora de cliente e visível dentro do cliente;
+- Assistente de Suporte para os três perfis, escopo recusado, PII recusada, sessão sem configuração, atalhos com/sem licença e limpeza do chat em logout/reload;
+- Markdown do suporte sem execução de HTML/URL e com `**negrito**` verde;
 - backup com e sem permissão do HD.
 
 ### 22.2 Banco
@@ -1015,7 +1135,16 @@ Executar os arquivos `*_qa.sql` em transação e confirmar rollback ao final. Va
 
 Validar `OPTIONS`/CORS, método diferente de POST, ausência ou expiração de `x-app-session`, configuração inexistente, provedor indisponível, limites de payload, streaming, interrupção e ausência de chave/service role em respostas e logs.
 
-Estado verificado em 18 de agosto de 2026: `ai-analysis` ativa, `OPTIONS` respondendo `200` e `POST` sem `x-app-session` bloqueado com `401`.
+Validações locais específicas do suporte:
+
+```bash
+deno check supabase/functions/ai-analysis/index.ts
+deno test --allow-env supabase/functions/ai-analysis/support_policy_test.ts
+```
+
+O teste automatizado cobre perguntas permitidas, continuação curta com tópico anterior, bloqueio de áreas privilegiadas/externas, bloqueio de identificadores pessoais, limite/formato do histórico, capacidade por módulo, prioridade de “análise de Leads” e impossibilidade de uma mensagem `assistant` forjada criar contexto. Neste checkout, em 18 de agosto de 2026, os quatro `node --check`, o `deno check`, o `deno lint`, os **7 testes Deno**, o lint remoto do banco e o QA visual em 390px/1440px foram executados com sucesso.
+
+Estado verificado em 18 de agosto de 2026: `ai-analysis` versão 2 ativa, `OPTIONS` respondendo `200`, `POST` sem sessão ou com sessão inválida bloqueado com `401`, e RPCs de runtime/conclusão recusadas aos papéis web com `401`.
 
 ## 23. Lacunas e riscos conhecidos no retrato atual
 
@@ -1023,22 +1152,25 @@ Estado verificado em 18 de agosto de 2026: `ai-analysis` ativa, `OPTIONS` respon
 
 1. **Deploy web, banco e Edge Functions são independentes.** A retirada desta versão já foi aplicada e verificada remotamente, mas um futuro commit do frontend sozinho continuará sem alterar banco, cron, Vault ou funções publicadas.
 2. **A migração de retirada é destrutiva.** Métricas, conexões, filas, logs e identificadores de atribuição apagados não são recuperáveis sem backup.
+3. **O suporte exige implantação coordenada.** Migração, Edge Function e frontend precisam seguir essa ordem; a presença remota de `ai-analysis` ainda não confirma que a rota local de suporte está publicada.
 
 ### Prioridade média
 
-3. `database.sql` é uma base consolidada extensa; reaplicá-la sem revisão em ambiente existente continua arriscado.
-4. Não há suíte automatizada completa de regressão visual/E2E para uma interface grande e muito dependente de perfil, licença, tema e largura.
-5. Sessão e chats ficam em `localStorage`; uma política CSP forte e revisão contínua contra XSS são importantes.
-6. `ai-analysis` responde CORS com origem ampla e depende da validação obrigatória de `x-app-session`; qualquer flexibilização dessa validação seria uma falha crítica.
-7. O backup automático depende de navegador aberto, API Chromium, permissão e HD conectado; não é um backup de servidor independente.
+4. `database.sql` é uma base consolidada extensa; reaplicá-la sem revisão em ambiente existente continua arriscado.
+5. Não há suíte automatizada completa de regressão visual/E2E para uma interface grande e muito dependente de perfil, licença, tema e largura.
+6. Sessão e chats da IA analítica ficam em `localStorage`; uma política CSP forte e revisão contínua contra XSS são importantes. O Markdown do novo suporte é seguro por construção, mas não corrige renderizadores legados da IA analítica.
+7. `ai-analysis` responde CORS com origem ampla e depende da validação obrigatória de `x-app-session`; qualquer flexibilização dessa validação ou dos grants `service_role` seria uma falha crítica.
+8. A política do suporte é determinística e testada, mas alterações no manual, expressões de escopo ou catálogo de ações exigem atualizar e repetir os testes. O recurso também depende de um provedor/chave central configurados pelo Admin.
+9. O backup automático depende de navegador aberto, API Chromium, permissão e HD conectado; não é um backup de servidor independente.
 
 ### Limitações intencionais
 
-8. PWA sem Service Worker: instalável, mas não offline.
-9. A Central analisa uma loja por vez; não compara nem combina clientes.
-10. Prospecções e Atendimentos ficam indisponíveis sem a licença conjunta.
-11. Os painéis embutidos mostram até 20 registros recentes; consultas operacionais completas continuam nos módulos e exportações.
-12. A retenção remove históricos antigos conforme regras de dois anos/730 dias.
+10. PWA sem Service Worker: instalável, mas não offline.
+11. A Central analisa uma loja por vez; não compara nem combina clientes.
+12. Prospecções e Atendimentos ficam indisponíveis sem a licença conjunta.
+13. **Listar** em Prospecções mostra até 200 registros filtrados. A análise de Atendimentos carrega até 2.000 registros por período e exibe até 20 no detalhamento; ambas informam o limite quando aplicável.
+14. O chat de suporte é descartado em reload/logout por design e não oferece histórico recuperável.
+15. A retenção remove históricos antigos conforme regras de dois anos/730 dias.
 
 ## 24. Retiradas definitivas
 
@@ -1101,6 +1233,8 @@ O estado correto do produto é:
 | Idempotência | Garantia de que retries não duplicam uma operação. |
 | RLS | Segurança em nível de linha do PostgreSQL. |
 | Snapshot | Cópia histórica de nome/configuração no momento do evento. |
+| Coorte | Conjunto de registros criados no mesmo recorte e usado como base comum de uma taxa. |
+| Allowlist | Lista fechada de IDs aceitos; qualquer ação fora dela é descartada. |
 
 ## 26. Fonte de verdade por assunto
 
@@ -1109,9 +1243,10 @@ O estado correto do produto é:
 | Estrutura visual | `index.html` e arquivos CSS |
 | Fluxos do núcleo/Leads | `app.js` |
 | Prospecções | `prospections.js`, `prospections.css` e RPCs `lc_*prospection*` |
-| Atendimentos | `attendances.js`, `attendances.css`, `attendance_module.sql` |
+| Atendimentos | `attendances.js`, `attendances.css`, `attendance_module.sql` e `supabase/migrations/20260818190526_attendance_list_v2_filters.sql` |
 | Central única de análise | `index.html`, `app.js`, `styles.css`, `mobile.css` e APIs embutidas dos dois módulos |
-| IA | `app.js`, `central_ai_configuration_update.sql`, `ai-analysis/index.ts` |
+| IA de análise | `app.js`, `central_ai_configuration_update.sql`, `supabase/functions/ai-analysis/index.ts` |
+| Assistente de Suporte IA | `support-assistant.js`, `support-assistant.css`, `SUPPORT_ASSISTANT_INTEGRATION.md`, `supabase/functions/ai-analysis/index.ts`, `supabase/functions/ai-analysis/support_policy_test.ts`, `supabase/migrations/20260818182307_support_assistant_authorization.sql` e `supabase/migrations/20260818193000_redact_ai_settings_key.sql` |
 | Retirada de anúncios/atribuição | `lead_intelligence_update.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` |
 | Retirada do WhatsApp | `remove_whatsapp_module.sql` |
 | Segurança/permissões reais | Schema e funções do banco remoto |

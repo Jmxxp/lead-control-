@@ -532,6 +532,7 @@ function bindEvents() {
     const button = event.target.closest("[data-unified-analysis]");
     if (button) setUnifiedAnalysisModule(button.dataset.unifiedAnalysis);
   });
+  unifiedAnalysisTabs?.addEventListener("keydown", handleUnifiedAnalysisTabKeydown);
   [legalAcceptanceSearch, legalAcceptanceRoleFilter, legalAcceptanceStatusFilter].forEach((element) => {
     element?.addEventListener("input", renderLegalAcceptanceList);
   });
@@ -549,6 +550,8 @@ function bindEvents() {
     if (event.target === legalDocumentModal) closeLegalDocumentModal();
   });
   window.addEventListener("focus", recheckLegalTermsForActiveSession);
+  window.addEventListener("lead-control:support-context-request", handleSupportContextRequest);
+  window.addEventListener("lead-control:support-navigate", handleSupportNavigation);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") recheckLegalTermsForActiveSession();
   });
@@ -870,9 +873,10 @@ async function openProfile(profile) {
   }
 
   const preferredModule = localStorage.getItem(getSystemModuleStorageKey()) || "leads";
-  if (["prospections", "attendances"].includes(preferredModule)) {
+  if (profile.role === "store" && ["prospections", "attendances"].includes(preferredModule)) {
     await setSystemModule(preferredModule, { persist: false });
   } else {
+    activeSystemModule = "leads";
     updateSystemModuleControls();
   }
 }
@@ -1145,6 +1149,7 @@ async function handleLegalTermsLogout() {
 function showAdminDashboard() {
   activeStoreContext = null;
   activeTechnicianContext = null;
+  attendanceStoreSelectionId = "";
   companyWorkspaceSection = "clients";
   selectedAnalyticsStoreId = "";
   clientWalletSearch.value = "";
@@ -1170,6 +1175,7 @@ function showStoreDashboard() {
     name: currentProfile.storeName || currentProfile.username,
     username: currentProfile.username,
   };
+  attendanceStoreSelectionId = activeStoreContext.id || "";
   sessionRole.textContent = `Cliente · ${activeStoreContext?.name || currentProfile.username}`;
   backAdminButton.hidden = true;
   settingsButton.hidden = true;
@@ -1284,6 +1290,9 @@ function updateSystemModuleControls() {
   const isProspections = activeSystemModule === "prospections";
   const isAttendances = activeSystemModule === "attendances";
   const prospectionsAllowed = canUseProspections();
+  const isInsideClient = Boolean(currentProfile && (currentProfile.role === "store" || activeStoreContext));
+  moduleSwitcher.hidden = !isInsideClient;
+  moduleSwitcher.setAttribute("aria-hidden", String(!isInsideClient));
   moduleLeadsButton.classList.toggle("is-active", isLeads);
   moduleProspectionsButton.classList.toggle("is-active", isProspections);
   moduleAttendancesButton.classList.toggle("is-active", isAttendances);
@@ -1305,6 +1314,47 @@ function updateSystemModuleControls() {
   moduleAttendancesButton.title = prospectionsAllowed
     ? "Registrar e acompanhar atendimentos"
     : "Atendimentos é liberado junto com Prospecções";
+  window.SupportAssistant?.refreshCapabilities?.();
+}
+
+function getSupportAvailableActions() {
+  const isInsideClient = Boolean(currentProfile && (currentProfile.role === "store" || activeStoreContext));
+  if (!isInsideClient) return [];
+
+  const actions = ["open_leads", "open_lead_configuration"];
+  if (canUseProspections()) actions.push("open_prospections", "open_attendances");
+  return actions;
+}
+
+function handleSupportContextRequest(event) {
+  if (typeof event.detail?.provide !== "function") return;
+  event.detail.provide({
+    supabaseUrl: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+    sessionToken: currentProfile?.sessionToken || "",
+    storeId: activeStoreContext?.id || currentProfile?.storeId || "",
+    availableActions: getSupportAvailableActions(),
+  });
+}
+
+function handleSupportNavigation(event) {
+  const actionId = String(event.detail?.actionId || "");
+  if (!getSupportAvailableActions().includes(actionId)) return;
+  event.preventDefault();
+
+  guardUnsavedOptions(async () => {
+    if (actionId === "open_prospections") {
+      await setSystemModule("prospections");
+      return;
+    }
+    if (actionId === "open_attendances") {
+      await setSystemModule("attendances");
+      return;
+    }
+
+    await setSystemModule("leads");
+    if (actionId === "open_lead_configuration") toggleStoreOptionsMode(true);
+  });
 }
 
 function canUseProspections() {
@@ -1314,6 +1364,16 @@ function canUseProspections() {
   }
   const profileStore = stores.find((store) => store.id === currentProfile.storeId);
   return Boolean(profileStore?.prospectionEnabled ?? currentProfile.prospectionEnabled);
+}
+
+function getOperationalModuleStores() {
+  if (!currentProfile) return [];
+  const scopedStoreId = currentProfile.role === "store"
+    ? currentProfile.storeId
+    : activeStoreContext?.id;
+  if (!scopedStoreId) return [];
+  const scopedStore = stores.find((store) => store.id === scopedStoreId);
+  return scopedStore ? [{ ...scopedStore }] : [];
 }
 
 function setProspectionVisualMode(enabled, operation = false) {
@@ -1417,7 +1477,7 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     try {
       await window.ProspectionsModule.activate({
         profile: { ...currentProfile },
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
         initialStoreId: activeStoreContext?.id || currentProfile.storeId || "",
@@ -1455,10 +1515,10 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
     try {
       await window.AttendancesModule.activate({
         profile: { ...currentProfile },
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
-        initialStoreId: attendanceStoreSelectionId || activeStoreContext?.id || currentProfile.storeId || "",
+        initialStoreId: activeStoreContext?.id || currentProfile.storeId || attendanceStoreSelectionId || "",
         initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
         rpc: authenticatedRpc,
         notify: showAppNotification,
@@ -2027,6 +2087,7 @@ async function openStoreAsAdmin(storeId) {
   if (!store || (currentProfile.role === "technician" && store.technicianId !== currentProfile.id)) return;
 
   activeStoreContext = store;
+  attendanceStoreSelectionId = store.id;
   sessionRole.textContent = `${currentProfile.role === "technician" ? "Agência" : "Admin"} · ${store.name}`;
   backAdminButton.hidden = false;
   appointmentMonitorToggle.hidden = false;
@@ -2045,6 +2106,7 @@ function openTechnicianAsAdmin(technicianId) {
   if (!technician) return;
 
   activeStoreContext = null;
+  attendanceStoreSelectionId = "";
   activeTechnicianContext = technician;
   companyWorkspaceSection = "clients";
   selectedAnalyticsStoreId = "";
@@ -2076,6 +2138,7 @@ function returnToAdmin() {
   const wasInsideStore = Boolean(activeStoreContext);
   clearFormButton.hidden = false;
   activeStoreContext = null;
+  attendanceStoreSelectionId = "";
   if (currentProfile.role === "admin" && activeTechnicianContext && !wasInsideStore) {
     activeTechnicianContext = null;
     companyWorkspaceSection = "clients";
@@ -2682,6 +2745,22 @@ function setUnifiedAnalysisModule(module) {
   renderAdminDashboard();
 }
 
+function handleUnifiedAnalysisTabKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const available = unifiedAnalysisButtons.filter((button) => !button.disabled);
+  if (!available.length) return;
+  const currentIndex = Math.max(0, available.indexOf(document.activeElement));
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? available.length - 1
+      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + available.length) % available.length;
+  event.preventDefault();
+  const next = available[nextIndex];
+  setUnifiedAnalysisModule(next.dataset.unifiedAnalysis);
+  next.focus();
+}
+
 function renderUnifiedAnalysisShell(selectedStore, isAnalytics) {
   if (!unifiedAnalysisSwitcher) return;
   unifiedAnalysisSwitcher.hidden = !isAnalytics;
@@ -2701,6 +2780,7 @@ function renderUnifiedAnalysisShell(selectedStore, isAnalytics) {
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", String(active));
     button.disabled = !hasSelection || locked;
+    button.tabIndex = active && !button.disabled ? 0 : -1;
     button.title = !hasSelection
       ? "Selecione um cliente"
       : locked
@@ -3300,16 +3380,22 @@ function renderLeadList() {
   leadList.innerHTML = filteredLeads
     .map(
       (lead) => `
-        <article class="lead-card">
-          <div class="lead-card-top">
-            <div class="lead-person">
-              <strong>${escapeHtml(lead.name)}</strong>
-              <span>${escapeHtml(lead.storeName || "")}</span>
+        <article class="lead-card operation-record-card operation-record-card--leads">
+          <div class="operation-record-head">
+            <div class="operation-record-identity">
+              <span class="operation-record-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span>
+              <div class="lead-person">
+                <strong>${escapeHtml(lead.name)}</strong>
+                <span>${escapeHtml(lead.storeName || "Cliente da loja")}</span>
+              </div>
             </div>
+            <span class="operation-record-status">${escapeHtml(formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)))}</span>
           </div>
-          <div class="lead-tags">
-            ${renderTag(`Etapa: ${formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead))}`)}
-            ${renderTag(lead.ownerName ? `Responsável: ${lead.ownerName}` : "")}
+          <div class="operation-record-contact-row">
+            ${lead.phone ? `<a class="operation-record-phone" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>${escapeHtml(lead.phone)}</a>` : `<span class="operation-record-phone is-empty"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
+            ${lead.ownerName ? `<span class="operation-record-owner"><i class="fa-solid fa-user-check" aria-hidden="true"></i>${escapeHtml(lead.ownerName)}</span>` : ""}
+          </div>
+          <div class="lead-tags operation-record-chip-row">
             ${renderTag(lead.channel)}
             ${renderTag(formatLeadContactDate(lead) ? `Contato: ${formatLeadContactDate(lead)}` : "")}
             ${renderTag(lead.campaign)}
@@ -3323,12 +3409,15 @@ function renderLeadList() {
             ${renderCustomLeadTags(lead)}
           </div>
           ${renderLeadNotes(lead.notes)}
-          <div class="card-actions">
-            ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
-            <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}">Editar</button>
-            <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}">Excluir</button>
-            <button class="mini-button view-button" type="button" data-action="view" data-id="${lead.id}">Visualizar</button>
-          </div>
+          <footer class="operation-record-footer">
+            <div class="card-actions operation-record-actions">
+              ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
+              <button class="mini-button view-button" type="button" data-action="view" data-id="${lead.id}"><i class="fa-solid fa-eye" aria-hidden="true"></i>Ver</button>
+              <button class="mini-button" type="button" data-action="edit" data-id="${lead.id}"><i class="fa-solid fa-pen" aria-hidden="true"></i>Editar</button>
+              <button class="mini-button danger" type="button" data-action="delete" data-id="${lead.id}"><i class="fa-solid fa-trash" aria-hidden="true"></i>Excluir</button>
+            </div>
+            <time class="operation-record-stamp" datetime="${escapeHtml(lead.createdAt || "")}"><small>Cadastrado</small>${escapeHtml(formatDateTime(lead.createdAt))}</time>
+          </footer>
         </article>
       `,
     )
@@ -7715,11 +7804,8 @@ function getFilteredLeads() {
   const visible = getVisibleStoreLeads();
   const search = normalizeSearchText(searchInput.value.trim());
 
-  if (search) {
-    return visible.filter((lead) => matchesLeadSearch(lead, search));
-  }
-
   return visible.filter((lead) => {
+    const matchesSearch = !search || matchesLeadSearch(lead, search);
     const matchesSimpleFilters =
       matchesFilter(lead.channel, channelFilter.value) &&
       matchesFilter(lead.campaign, campaignFilter.value) &&
@@ -7734,7 +7820,7 @@ function getFilteredLeads() {
     const matchesStart = !startDateFilter.value || contactDate >= startDateFilter.value;
     const matchesEnd = !endDateFilter.value || contactDate <= endDateFilter.value;
 
-    return matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
+    return matchesSearch && matchesSimpleFilters && matchesCustomFilters && matchesStart && matchesEnd;
   });
 }
 

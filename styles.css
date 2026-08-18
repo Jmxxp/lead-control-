@@ -1345,9 +1345,7 @@ body.is-dark .unified-analysis-tab[data-unified-analysis="attendances"].is-activ
   border: 1px solid color-mix(in srgb, var(--green) 32%, var(--line));
   border-radius: 16px;
   background: color-mix(in srgb, var(--surface) 97%, var(--green) 3%);
-  box-shadow:
-    0 28px 70px rgba(0, 0, 0, 0.24),
-    0 0 0 1px color-mix(in srgb, #ffffff 32%, transparent) inset;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.24);
 }
 
 .analytics-client-search {
@@ -4456,6 +4454,155 @@ body.is-dark .secondary-button {
   background: var(--surface);
 }
 
+/* Linguagem visual compartilhada pelos registros operacionais. */
+.operation-record-card {
+  --record-accent: #334155;
+  position: relative;
+  isolation: isolate;
+  gap: 13px;
+  padding: 16px 16px 14px 20px;
+  border-color: color-mix(in srgb, var(--record-accent) 36%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--record-accent) 4%);
+  box-shadow: none;
+}
+
+.operation-record-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 10px 0 0 10px;
+  background: var(--record-accent);
+}
+
+.operation-record-card--leads {
+  --record-accent: #64748b;
+}
+
+body.is-dark .operation-record-card--leads {
+  --record-accent: #94a3b8;
+  border-color: #343b46;
+  background: #111318;
+  box-shadow: none;
+}
+
+.operation-record-head,
+.operation-record-footer,
+.operation-record-contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.operation-record-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.operation-record-avatar {
+  display: inline-grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--record-accent) 34%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--record-accent) 14%, var(--surface));
+  color: var(--record-accent);
+}
+
+.operation-record-status,
+.operation-record-phone,
+.operation-record-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--record-accent) 34%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--record-accent) 12%, var(--surface));
+  color: color-mix(in srgb, var(--record-accent) 82%, var(--ink));
+  padding: 5px 10px;
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1.15;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.operation-record-status {
+  flex: 0 1 auto;
+  justify-content: center;
+  text-align: center;
+}
+
+.operation-record-phone.is-empty {
+  color: var(--muted);
+}
+
+.operation-record-contact-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.operation-record-chip-row {
+  gap: 7px;
+}
+
+.operation-record-chip-row span {
+  min-height: 29px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+body.is-dark .operation-record-chip-row span {
+  border-color: #333942;
+  background: #1c2027;
+  color: #d2d7df;
+}
+
+.operation-record-footer {
+  align-items: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.operation-record-actions {
+  min-width: 0;
+}
+
+.operation-record-actions .mini-button {
+  min-height: 38px;
+  border-radius: 8px;
+  padding-inline: 12px;
+}
+
+.operation-record-stamp {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-align: right;
+}
+
+.operation-record-stamp small {
+  color: var(--record-accent);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .management-card {
   grid-template-columns: 1fr;
   align-items: stretch;
@@ -5539,12 +5686,8 @@ body.is-dark .lead-tags span {
   overflow: hidden;
   border-color: rgba(255, 255, 255, 0.16);
   border-radius: 28px;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(40, 194, 143, 0.16), transparent 30%),
-    linear-gradient(180deg, rgba(26, 31, 27, 0.98), rgba(12, 14, 13, 0.98));
-  box-shadow:
-    0 36px 110px rgba(0, 0, 0, 0.72),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  background: #101311;
+  box-shadow: 0 36px 110px rgba(0, 0, 0, 0.72);
   padding: 0;
   transform-origin: calc(100% - 90px) 16px;
   animation: ai-dialog-expand 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -5553,12 +5696,8 @@ body.is-dark .lead-tags span {
 body.is-dark .ai-chat-dialog,
 body:not(.is-dark) .ai-chat-dialog {
   border-color: rgba(255, 255, 255, 0.16);
-  background:
-    radial-gradient(circle at 8% 0%, rgba(40, 194, 143, 0.16), transparent 30%),
-    linear-gradient(180deg, rgba(26, 31, 27, 0.98), rgba(12, 14, 13, 0.98));
-  box-shadow:
-    0 36px 110px rgba(0, 0, 0, 0.72),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  background: #101311;
+  box-shadow: 0 36px 110px rgba(0, 0, 0, 0.72);
 }
 
 .ai-chat-header {
@@ -5569,9 +5708,7 @@ body:not(.is-dark) .ai-chat-dialog {
   min-height: 126px;
   padding: 26px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
-    rgba(255, 255, 255, 0.015);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .ai-chat-brand {
@@ -5676,12 +5813,8 @@ body:not(.is-dark) .ai-chat-dialog {
   min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 50% 100%, rgba(40, 194, 143, 0.07), transparent 36%),
-    rgba(9, 11, 10, 0.64);
-  box-shadow:
-    0 20px 58px rgba(0, 0, 0, 0.36),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  background: rgba(9, 11, 10, 0.76);
+  box-shadow: 0 20px 58px rgba(0, 0, 0, 0.36);
 }
 
 .ai-chat-main {
@@ -7269,9 +7402,9 @@ body.is-dark .option-row input,
 body.is-dark .option-add input,
 body.is-dark .category-label-editor input,
 body.is-dark .custom-category-heading input {
-  border-color: #505050;
-  background-color: #202020;
-  color: #f7f7f7;
+  border-color: #cbd5e1;
+  background-color: #ffffff;
+  color: #111827;
 }
 
 body:not(.is-dark) .category-label-editor input,
@@ -7287,7 +7420,7 @@ body:not(.is-dark) textarea::placeholder {
 
 body.is-dark input::placeholder,
 body.is-dark textarea::placeholder {
-  color: #aeb6bf;
+  color: #64748b;
   opacity: 1;
 }
 
@@ -7310,13 +7443,29 @@ select {
 }
 
 body.is-dark select {
-  color-scheme: dark;
-  background-color: #202020 !important;
+  color-scheme: light;
+  background-color: #ffffff !important;
   background-image:
-    linear-gradient(45deg, transparent 50%, #e4e4e4 50%),
-    linear-gradient(135deg, #e4e4e4 50%, transparent 50%) !important;
-  border-color: #505050 !important;
-  color: #f7f7f7 !important;
+    linear-gradient(45deg, transparent 50%, #334155 50%),
+    linear-gradient(135deg, #334155 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 19px) calc(50% - 2px),
+    calc(100% - 13px) calc(50% - 2px) !important;
+  background-repeat: no-repeat !important;
+  background-size: 6px 6px, 6px 6px !important;
+  border-color: #cbd5e1 !important;
+  color: #111827 !important;
+}
+
+body:not(.is-dark) select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, #505653 50%),
+    linear-gradient(135deg, #505653 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 19px) calc(50% - 2px),
+    calc(100% - 13px) calc(50% - 2px) !important;
+  background-repeat: no-repeat !important;
+  background-size: 6px 6px, 6px 6px !important;
 }
 
 select option,
@@ -7332,13 +7481,13 @@ select option:checked {
 
 body.is-dark select option,
 body.is-dark select optgroup {
-  background: #1d1d1d;
-  color: #f7f7f7;
+  background: #ffffff;
+  color: #111827;
 }
 
 body.is-dark select option:checked {
-  background: #14533f;
-  color: #ffffff;
+  background: #dff4eb;
+  color: #0f5f45;
 }
 
 select option:disabled {
@@ -7346,7 +7495,20 @@ select option:disabled {
 }
 
 body.is-dark select option:disabled {
-  color: #9b9b9b;
+  color: #64748b;
+}
+
+body.is-dark input[type="date"] {
+  color-scheme: light;
+}
+
+body.is-dark input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.72;
+  filter: none;
+}
+
+body.is-dark .password-toggle {
+  color: #334155;
 }
 
 body:not(.is-dark) .secondary-button {
