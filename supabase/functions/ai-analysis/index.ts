@@ -68,7 +68,7 @@ const SUPPORT_ACTION_CATALOG = {
 } as const;
 
 const SUPPORT_SCOPE_REPLY = [
-  "Posso ajudar somente com o uso das telas do cliente:",
+  "Posso orientar você nestas áreas:",
   "",
   "- **Leads** e seus filtros, cadastro e acompanhamento",
   "- **Prospecções** e organização dos contatos",
@@ -92,7 +92,7 @@ NAVEGAÇÃO GERAL
 
 LEADS
 - Abra Leads pelo seletor superior.
-- Para cadastrar, informe nome, telefone e data do contato. Complete etapa, responsável, canal, campanha, início da conversa, conclusão e observações quando forem úteis.
+- Para cadastrar, informe nome, telefone e data do contato. O CPF é opcional e ajuda o sistema a reconhecer a mesma pessoa quando ela retornar. Complete etapa, responsável, canal, campanha, início da conversa, conclusão e observações quando forem úteis.
 - Informe se houve agendamento. Quando houver, escolha data e horário.
 - Depois da visita, informe se o cliente visitou e se comprou. Em uma compra, valor e ordem de serviço são obrigatórios.
 - A etapa comercial, responsável e campos adicionais ajudam a organizar o acompanhamento.
@@ -116,15 +116,15 @@ PROSPECÇÕES
 - Use a busca e abra Filtros para combinar período e situação; os cards mais recentes aparecem primeiro.
 - Edite pelo próprio card e mantenha retorno, visita e compra atualizados. Em compra, confira valor e ordem de serviço.
 - O botão Análise abre os indicadores da própria loja. Escolha período e profissional, combine os filtros e abra o detalhamento dos registros quando precisar conferir o resultado.
-- O botão Bonificações mostra somente os resultados da própria loja, com produção por responsável e compras que atingiram a regra visível na tela.
+- O quadro semanal mostra quem deve receber bonificação e quais clientes compraram. O botão Bonificações abre a conferência por responsável, cliente, valor e OS.
 
 ATENDIMENTOS
 - Abra Atendimentos pelo seletor superior quando o módulo estiver disponível.
-- Escolha o profissional e informe cliente, telefone e descrição. O telefone procura vínculos em Leads e Prospecções ao salvar.
+- Escolha o profissional e informe cliente, descrição e ao menos telefone ou CPF. O sistema cruza os identificadores com Leads e Prospecções ao salvar.
 - Classifique o atendimento. Se for compra, informe valor da compra e ordem de serviço.
 - O valor do atendimento é opcional.
 - O Resumo do cliente mostra atendimentos, orçamentos, compras, conversão, faturamento informado e valor dos atendimentos da própria loja.
-- A lista aceita busca por nome, telefone, descrição ou OS. Abra Filtros para combinar tipo, profissional, vínculo e período; Limpar filtros restaura o recorte inicial.
+- A lista aceita busca por nome, telefone, CPF, descrição ou OS. Abra Filtros para combinar tipo, profissional, vínculo e período; Limpar filtros restaura o recorte inicial.
 - Os cards mostram contexto, profissional, data, origem vinculada, valores e, quando houver telefone, ações para ligar ou copiar.
 - Confira o retorno exibido depois de salvar para saber quais vínculos foram encontrados.
 

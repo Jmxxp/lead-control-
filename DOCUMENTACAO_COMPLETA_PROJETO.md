@@ -278,7 +278,7 @@ Aplicação
 - Tema escuro: classes `body.is-dark` e `body.is-dark-mode` atendem partes antigas e novas.
 - Breakpoints compartilhados principais: `900px` e `720px`, com ajustes específicos em cada módulo.
 - No celular, a intenção atual é preservar a mesma interface e todos os recursos, apenas em uma composição mais densa.
-- Para Agência, a navegação superior possui somente Clientes, Análise e Backups; `has-three-sections` centraliza os três itens porque a central de termos assinados é exclusiva do Admin.
+- Para Agência, a navegação superior possui Clientes, Análise e Backups; no desktop os itens ficam alinhados à direita e, no celular, preservam rolagem horizontal compacta.
 - Campos de preenchimento de Prospecções e Atendimentos usam fundo branco, texto, placeholders e ícones escuros inclusive no tema escuro; o foco mantém o acento azul ou verde do respectivo módulo e a combinação foi definida para contraste AA.
 - Controles de formulário usam ao menos `16px` no mobile para evitar zoom automático do iOS.
 - `safe-area-inset-*`, `min-width: 0`, quebra de texto e contenção de mídia evitam cortes e rolagem horizontal acidental.
@@ -687,7 +687,7 @@ O streaming é repassado como SSE. A interface permite parar, editar, copiar e e
 
 ### 13.3 Assistente de Suporte IA
 
-O botão `?` abre o suporte para Admin, Agência e Loja após a autenticação. A resposta depende de o Admin ter configurado um provedor e uma chave válidos; na ausência disso, o runtime retorna indisponibilidade sem expor segredo. Apesar de estar disponível para todos os papéis, seu conhecimento é deliberadamente limitado aos fluxos do cliente:
+O botão `?` fica visível no topo de Leads, Prospecções e Atendimentos após a autenticação. A resposta depende de o Admin ter configurado um provedor e uma chave válidos; na ausência disso, o runtime retorna indisponibilidade sem expor segredo. O conhecimento operacional cobre:
 
 - Leads: cadastro, acompanhamento, filtros, exportação e agenda;
 - categorias, opções e sequência dos campos de Leads;

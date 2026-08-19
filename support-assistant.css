@@ -356,6 +356,56 @@
 }
 
 @media (max-width: 720px) {
+  #appView > .topbar {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "identity"
+      "modules";
+  }
+
+  #appView > .topbar:has(> .module-switcher[hidden]) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "identity";
+  }
+
+  #appView > .topbar > .topbar-identity {
+    min-height: 68px;
+    padding-right: min(48vw, 180px);
+  }
+
+  #appView > .topbar > .topbar-actions {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    z-index: 2;
+  }
+
+  #appView #supportAssistantToggle:not([hidden]) {
+    position: fixed;
+    top: max(14px, env(safe-area-inset-top));
+    right: auto;
+    bottom: auto;
+    left: calc(100vw - 62px);
+    z-index: 74;
+    display: grid;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    place-items: center;
+    border-color: color-mix(in srgb, var(--green) 38%, var(--line));
+    border-radius: 15px;
+    background: color-mix(in srgb, var(--surface) 92%, var(--green) 8%);
+    color: var(--green-dark);
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--green) 24%, rgba(0, 0, 0, 0.18));
+  }
+
+  #appView #supportAssistantToggle.is-active {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .support-assistant-panel {
     right: 8px;
     bottom: max(8px, env(safe-area-inset-bottom));

@@ -29,17 +29,17 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260818-premium-unified-3" />
-    <link rel="stylesheet" href="prospections.css?v=20260818-premium-unified-4" />
-    <link rel="stylesheet" href="attendances.css?v=20260818-premium-unified-3" />
+    <link rel="stylesheet" href="styles.css?v=20260819-weekly-identity-1" />
+    <link rel="stylesheet" href="prospections.css?v=20260819-weekly-identity-1" />
+    <link rel="stylesheet" href="attendances.css?v=20260819-weekly-identity-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260818-premium-unified-3" disabled />
-    <link rel="stylesheet" href="mobile.css?v=20260818-premium-unified-4" />
-    <link rel="stylesheet" href="support-assistant.css?v=20260818-premium-unified-4" />
+    <link rel="stylesheet" href="mobile.css?v=20260819-weekly-identity-1" />
+    <link rel="stylesheet" href="support-assistant.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260818-premium-unified-5" defer></script>
-    <script src="prospections.js?v=20260818-premium-unified-3" defer></script>
-    <script src="attendances.js?v=20260818-premium-unified-3" defer></script>
+    <script src="app.js?v=20260819-weekly-identity-1" defer></script>
+    <script src="prospections.js?v=20260819-weekly-identity-1" defer></script>
+    <script src="attendances.js?v=20260819-weekly-identity-1" defer></script>
     <script src="support-assistant.js?v=20260818-premium-unified-4" defer></script>
   </head>
   <body>
@@ -104,6 +104,9 @@
           </button>
         </div>
         <div class="topbar-actions">
+          <button class="ghost-button topbar-button topbar-icon-button support-assistant-toggle" type="button" id="supportAssistantToggle" aria-label="Abrir Assistente de Suporte" title="Assistente de Suporte" aria-expanded="false" aria-controls="supportAssistantPanel">
+            <i class="fa-solid fa-question" aria-hidden="true"></i>
+          </button>
           <div class="topbar-status" aria-label="Resumo do dia">
             <div class="today-card" aria-label="Data atual">
               <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
@@ -116,9 +119,6 @@
           <button class="ghost-button topbar-button topbar-icon-button appointment-monitor-toggle" type="button" id="appointmentMonitorToggle" aria-label="Confirmar visitas" title="Confirmar visitas" aria-expanded="false" aria-controls="appointmentMonitorPanel" hidden>
             <i class="fa-solid fa-check" aria-hidden="true"></i>
             <b id="appointmentMonitorBadge" class="notification-badge" hidden>0</b>
-          </button>
-          <button class="ghost-button topbar-button topbar-icon-button support-assistant-toggle" type="button" id="supportAssistantToggle" aria-label="Abrir Assistente de Suporte" title="Assistente de Suporte" aria-expanded="false" aria-controls="supportAssistantPanel">
-            <i class="fa-solid fa-question" aria-hidden="true"></i>
           </button>
           <button class="ghost-button topbar-button topbar-icon-button" type="button" id="settingsButton" aria-label="Configurações" title="Configurações" hidden>
             <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -901,6 +901,19 @@
                     inputmode="tel"
                     placeholder="(00) 00000-0000"
                     required
+                  />
+                </label>
+
+                <label class="field">
+                  <span>CPF</span>
+                  <input
+                    id="cpf"
+                    name="cpf"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="14"
+                    placeholder="000.000.000-00"
                   />
                 </label>
 

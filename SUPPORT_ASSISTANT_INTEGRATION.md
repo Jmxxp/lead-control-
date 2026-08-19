@@ -2,7 +2,7 @@
 
 ## Objetivo e escopo
 
-O Assistente de Suporte é aberto pelo botão `?` do topo após a autenticação. Ele ensina somente superfícies que o perfil cliente realmente usa:
+O Assistente de Suporte é aberto pelo botão `?`, visível no topo de todos os módulos após a autenticação. Ele orienta as superfícies operacionais do cliente:
 
 - navegação entre Leads, Prospecções e Atendimentos;
 - cadastro, visualização, edição, filtros e exportação de Leads;

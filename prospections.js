@@ -18,6 +18,7 @@
     accentColor: "#16855f",
     logoBackgroundColor: "#ffffff",
   });
+  const BONUS_ALL_STORES = "all-stores";
   const ATTENDANCE_TYPES = Object.freeze({
     all: { label: "Todos os tipos", icon: "fa-layer-group" },
     budget: { label: "Orçamentos", singular: "Orçamento", icon: "fa-file-invoice-dollar" },
@@ -58,6 +59,8 @@
   let bonusStartDate = "";
   let bonusEndDate = "";
   let bonusProfessionalId = "all";
+  let bonusPurchases = [];
+  let bonusRequest = 0;
   let pendingPurchaseId = "";
   let importDraft = null;
   let configurationSession = null;
@@ -255,6 +258,7 @@
       customerName: String(row.customer_name || row.customerName || row.name || "Cliente sem nome"),
       phone: formatPhone(phoneSource),
       phoneNormalized: canonicalPhoneDigits(phoneSource) || onlyDigits(phoneSource),
+      cpf: formatCpf(row.customer_cpf || row.cpf || row.customerCpf || ""),
       description: String(row.description || row.notes || row.observations || ""),
       tag,
       tagLabel: String(row.tag_label || ATTENDANCE_TYPES[tag]?.singular || "Atendimento"),
@@ -297,21 +301,23 @@
 
   function prospectResolutionForAttendance(attendance) {
     const key = normalizePhoneKey(attendance?.phone || attendance?.phoneNormalized);
+    const cpfKey = onlyDigits(attendance?.cpf);
     const storeProspects = prospects.filter((row) => row.storeId === attendance?.storeId);
-    const phoneMatches = key
-      ? storeProspects.filter((row) => normalizePhoneKey(row.phone) === key)
-      : [];
+    const identityMatches = storeProspects.filter((row) => (
+      (key && normalizePhoneKey(row.phone) === key)
+      || (cpfKey && onlyDigits(row.cpf) === cpfKey)
+    ));
     const linkedProspect = attendance.linkedProspectId
       ? storeProspects.find((row) => row.id === attendance.linkedProspectId) || null
       : null;
-    const matchCount = Math.max(Number(attendance.prospectionMatchCount || 0), phoneMatches.length);
+    const matchCount = Math.max(Number(attendance.prospectionMatchCount || 0), identityMatches.length);
     if (attendance.prospectionAmbiguous || matchCount > 1) {
       return { prospect: null, ambiguous: true, count: matchCount };
     }
     return {
-      prospect: linkedProspect || (phoneMatches.length === 1 ? phoneMatches[0] : null),
+      prospect: linkedProspect || (identityMatches.length === 1 ? identityMatches[0] : null),
       ambiguous: false,
-      count: linkedProspect || phoneMatches.length === 1 ? 1 : 0,
+      count: linkedProspect || identityMatches.length === 1 ? 1 : 0,
     };
   }
 
@@ -392,6 +398,25 @@
       purchaseOrder: row.purchase_order || "",
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  function mapBonusPurchase(row) {
+    return {
+      id: String(row.prospection_id || row.id || ""),
+      storeId: String(row.store_id || ""),
+      storeName: String(row.store_name || storeById(row.store_id)?.name || "Cliente"),
+      name: String(row.customer_name || row.name || "Cliente"),
+      professionalId: String(row.professional_id || ""),
+      professionalName: String(row.professional_name || "Sem responsável"),
+      purchasedAt: row.purchased_at || "",
+      purchaseAmount: Number(row.purchase_amount || 0),
+      purchaseOrder: String(row.purchase_order || ""),
+      bonusMinimum: Number(row.bonus_minimum ?? settingsFor(row.store_id).bonusMinimum),
+      bonusAmount: Number(row.bonus_amount ?? settingsFor(row.store_id).bonusAmount),
+      bonusEligible: Boolean(row.bonus_eligible),
+      bonusAwardedAmount: Number(row.bonus_awarded_amount || 0),
+      bonusStatus: String(row.bonus_credit_status || ""),
     };
   }
 
@@ -480,11 +505,14 @@
   }
 
   function isBonusEligible(prospect) {
+    if (typeof prospect.bonusEligible === "boolean") return prospect.bonusEligible;
     return Boolean(prospect.purchasedAt) && prospect.purchaseAmount >= settingsFor(prospect.storeId).bonusMinimum;
   }
 
   function bonusFor(rows) {
-    return rows.reduce((sum, row) => sum + (isBonusEligible(row) ? settingsFor(row.storeId).bonusAmount : 0), 0);
+    return rows.reduce((sum, row) => sum + (isBonusEligible(row)
+      ? Number(row.bonusAwardedAmount ?? row.bonusAmount ?? settingsFor(row.storeId).bonusAmount)
+      : 0), 0);
   }
 
   function metricsFor(rows) {
@@ -766,9 +794,17 @@
   }
 
   async function loadData() {
-    const [prospectRows, configurationRows] = await Promise.all([
+    const [prospectRows, configurationRows, bonusRowsResult] = await Promise.all([
       bridge.rpc("lc_list_prospections"),
       bridge.rpc("lc_get_prospection_configuration"),
+      bridge.rpc("lc_list_prospection_bonus_purchases", {
+        p_start_date: bonusStartDate || null,
+        p_end_date: bonusEndDate || null,
+        p_store_id: null,
+      }).catch((error) => {
+        if (/does not exist|could not find the function/i.test(String(error?.message || error))) return [];
+        throw error;
+      }),
     ]);
     prospects = (Array.isArray(prospectRows) ? prospectRows : []).map(mapProspect);
     const configuration = normalizeRpcObject(configurationRows);
@@ -776,6 +812,7 @@
     professionals = (configuration.professionals || []).map(mapProfessional);
     tagCategories = (configuration.categories || []).map(mapTagCategory);
     tags = (configuration.tags || []).map(mapTag);
+    bonusPurchases = (Array.isArray(bonusRowsResult) ? bonusRowsResult : []).map(mapBonusPurchase);
     configurationNeedsRefresh = false;
   }
 
@@ -784,8 +821,16 @@
       await loadData();
       return;
     }
-    const rows = await bridge.rpc("lc_list_prospections");
+    const [rows, bonusRowsResult] = await Promise.all([
+      bridge.rpc("lc_list_prospections"),
+      bridge.rpc("lc_list_prospection_bonus_purchases", {
+        p_start_date: formatDateInput(startOfWeek(new Date())),
+        p_end_date: formatDateInput(new Date()),
+        p_store_id: null,
+      }).catch(() => []),
+    ]);
     prospects = (Array.isArray(rows) ? rows : []).map(mapProspect);
+    bonusPurchases = (Array.isArray(bonusRowsResult) ? bonusRowsResult : []).map(mapBonusPurchase);
   }
 
   async function activate(nextBridge) {
@@ -813,6 +858,8 @@
     bonusStartDate = "";
     bonusEndDate = "";
     bonusProfessionalId = "all";
+    bonusPurchases = [];
+    bonusRequest += 1;
     initializeInsightDates();
     pendingPurchaseId = "";
     root.innerHTML = loadingMarkup();
@@ -945,6 +992,36 @@
     </section>`;
   }
 
+  function weeklyBonusPreviewMarkup(storeIds) {
+    const allowed = new Set(Array.isArray(storeIds) ? storeIds : [storeIds]);
+    const rows = bonusPurchases
+      .filter((row) => allowed.has(row.storeId))
+      .sort((a, b) => new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0));
+    const eligibleRows = rows.filter(isBonusEligible);
+    const grouped = new Map();
+    eligibleRows.forEach((row) => {
+      const key = row.professionalId || `name:${normalize(row.professionalName)}`;
+      const item = grouped.get(key) || { name: row.professionalName || "Sem responsável", clients: 0, amount: 0 };
+      item.clients += 1;
+      item.amount += Number(row.bonusAwardedAmount ?? row.bonusAmount ?? 0);
+      grouped.set(key, item);
+    });
+    const people = [...grouped.values()].sort((a, b) => b.amount - a.amount || b.clients - a.clients);
+    const total = bonusFor(eligibleRows);
+    return `<section class="prospection-weekly-bonus" aria-labelledby="weekly-bonus-title">
+      <div class="prospection-weekly-bonus-summary">
+        <span class="prospection-weekly-bonus-icon"><i class="fa-solid fa-gift" aria-hidden="true"></i></span>
+        <div><p class="eyebrow">Fechamento desta semana</p><h3 id="weekly-bonus-title">Quem bonificar e quem comprou</h3><span>Compras rastreadas de segunda-feira até hoje.</span></div>
+        <div class="prospection-weekly-bonus-total"><small>Total a bonificar</small><strong>${formatCurrency(total)}</strong><span>${eligibleRows.length} compra${eligibleRows.length === 1 ? "" : "s"} elegível${eligibleRows.length === 1 ? "" : "eis"}</span></div>
+        <button class="prospection-button" type="button" data-prospection-action="open-bonus"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Ver fechamento</button>
+      </div>
+      <div class="prospection-weekly-bonus-detail">
+        <div><small>Equipe a bonificar</small>${people.length ? `<ul>${people.slice(0, 5).map((person) => `<li><span>${escapeHtml(person.name)}</span><strong>${formatCurrency(person.amount)}</strong><small>${person.clients} cliente${person.clients === 1 ? "" : "s"}</small></li>`).join("")}</ul>` : `<p>Nenhum bônus devido até agora.</p>`}</div>
+        <div><small>Clientes que compraram</small>${rows.length ? `<ul>${rows.slice(0, 5).map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${formatCurrency(row.purchaseAmount)}</strong><small>${escapeHtml(row.storeName)}${row.purchaseOrder ? ` · OS ${escapeHtml(row.purchaseOrder)}` : ""}</small></li>`).join("")}</ul>` : `<p>Nenhuma compra de prospecção nesta semana.</p>`}</div>
+      </div>
+    </section>`;
+  }
+
   function renderManagementDashboard() {
     const storesInScope = scopedStores();
     const isAdmin = bridge.profile.role === "admin";
@@ -973,6 +1050,7 @@
         </div>
       </header>
       ${metricCards(rows)}
+      ${weeklyBonusPreviewMarkup(storesInScope.filter((store) => store.prospectionEnabled !== false).map((store) => store.id))}
       <div class="prospection-dashboard-layout">
         <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Carteira</p><h3>${isAdmin && !agency ? "Agências" : "Clientes atendidos"}</h3><span>Logos, resultados e acesso rápido por conta.</span></div></div><div class="prospection-card-list">${renderManagementCards(storesInScope, isAdmin && !agency)}</div></article>
         <aside class="prospection-management-aside"><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Evolução</p><h3>Ritmo de prospecção</h3><span>${escapeHtml(periodWindow().label)}</span></div></div>${chartMarkup(rows)}</article><article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Destaques</p><h3>Ranking da carteira</h3><span>Conversão por cliente licenciado.</span></div></div>${rankingMarkup(storesInScope.filter((store) => store.prospectionEnabled !== false))}</article></aside>
@@ -1070,6 +1148,7 @@
     selectedStoreId = store.id;
     ensureAttendanceListState(store.id);
     root.innerHTML = `${operationContextMarkup(store)}
+      ${weeklyBonusPreviewMarkup([store.id])}
       <section id="operationWorkspace" class="workspace">
         ${prospectFormMarkup(store.id)}
         ${prospectListPanelMarkup(store.id)}
@@ -1210,7 +1289,7 @@
     return `<div class="prospection-attendance-query">
       ${dateShortcutsMarkup("attendance", state.startDate, state.endDate)}
       <form id="prospectionAttendanceFilters" class="prospection-attendance-filters">
-        <label class="prospection-attendance-search"><span>Buscar cliente</span><div><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input name="search" type="search" value="${escapeHtml(state.search)}" placeholder="Nome, telefone ou descrição" /></div></label>
+        <label class="prospection-attendance-search"><span>Buscar cliente</span><div><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input name="search" type="search" value="${escapeHtml(state.search)}" placeholder="Nome, telefone, CPF ou descrição" /></div></label>
         <label><span>Tipo</span><select name="tag">${types}</select></label>
         <label><span>Data inicial</span><input name="startDate" type="date" value="${escapeHtml(state.startDate)}" required /></label>
         <label><span>Data final</span><input name="endDate" type="date" value="${escapeHtml(state.endDate)}" required /></label>
@@ -1247,8 +1326,8 @@
     const value = row.tag === "purchase" ? row.purchaseValue || row.serviceValue : row.serviceValue;
     return `<article class="prospection-attendance-card" data-attendance-type="${escapeHtml(row.tag)}">
       <div class="prospection-attendance-card-head">
-        <div class="prospection-attendance-person"><span>${escapeHtml(row.customerName.slice(0, 1).toUpperCase() || "C")}</span><div><h3>${escapeHtml(row.customerName)}</h3><p>${escapeHtml(row.phone || "Telefone não informado")}</p></div></div>
-        <div class="prospection-attendance-badges"><span class="prospection-attendance-type"><i class="fa-solid ${type.icon}" aria-hidden="true"></i>${escapeHtml(row.tagLabel)}</span>${existing ? `<span class="prospection-attendance-existing"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Já em Prospecções</span>` : resolution.ambiguous ? `<span class="prospection-attendance-ambiguous"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${resolution.count} registros com este telefone</span>` : ""}</div>
+        <div class="prospection-attendance-person"><span>${escapeHtml(row.customerName.slice(0, 1).toUpperCase() || "C")}</span><div><h3>${escapeHtml(row.customerName)}</h3><p>${escapeHtml([row.phone, row.cpf].filter(Boolean).join(" · ") || "Contato não informado")}</p></div></div>
+        <div class="prospection-attendance-badges"><span class="prospection-attendance-type"><i class="fa-solid ${type.icon}" aria-hidden="true"></i>${escapeHtml(row.tagLabel)}</span>${existing ? `<span class="prospection-attendance-existing"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Já em Prospecções</span>` : resolution.ambiguous ? `<span class="prospection-attendance-ambiguous"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${resolution.count} registros com esta identificação</span>` : ""}</div>
       </div>
       <div class="prospection-attendance-context"><small>Contexto do atendimento</small><p>${escapeHtml(row.description || "Nenhuma descrição foi informada neste atendimento.")}</p></div>
       <div class="prospection-attendance-meta">
@@ -1353,11 +1432,12 @@
     renderProspectListPanel({ scrollTop: append ? undefined : 0 });
 
     try {
-      const raw = await bridge.rpc("lc_list_attendances", {
+      const raw = await bridge.rpc("lc_list_attendances_v3", {
         p_store_id: requestedStoreId,
         p_search: state.search || null,
         p_tag: state.tag === "all" ? null : state.tag,
         p_professional_id: null,
+        p_professional_name: null,
         p_link_status: null,
         p_start_date: state.startDate || null,
         p_end_date: state.endDate || null,
@@ -1456,7 +1536,7 @@
       prospectPrefill = {
         name: attendance.customerName,
         phone: attendance.phone,
-        cpf: "",
+        cpf: attendance.cpf,
         notes: context,
         probability: "blue",
         professionalId: activeProfessional?.id || "",
@@ -1479,7 +1559,7 @@
       bridge.notify("Este atendimento não está mais disponível na lista.", "error");
       return;
     }
-    listSearch = attendance.phone || attendance.phoneNormalized;
+    listSearch = attendance.phone || attendance.phoneNormalized || attendance.cpf;
     listStatus = "all";
     dashboardPeriod = "all";
     listMode = "records";
@@ -1487,7 +1567,7 @@
     attendanceListRequest += 1;
     state.loading = false;
     renderProspectListPanel({ focusSelector: "[data-prospection-search]", scrollTop: 0 });
-    bridge.notify("Encontramos mais de uma prospecção com este telefone. Revise os registros antes de continuar.");
+    bridge.notify("Encontramos mais de uma prospecção com esta identificação. Revise os registros antes de continuar.");
   }
 
   function forceCloseDialogs({ preserveConfiguration = false } = {}) {
@@ -2139,7 +2219,7 @@
 
   function bonusRows(storeIds) {
     const allowed = new Set(storeIds);
-    return prospects.filter((row) => allowed.has(row.storeId) && row.purchasedAt && isInOptionalRange(row.purchasedAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
+    return bonusPurchases.filter((row) => allowed.has(row.storeId) && row.purchasedAt && isInOptionalRange(row.purchasedAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
   }
 
   function bonusActivityRows(storeIds) {
@@ -2163,7 +2243,7 @@
       const item = ensure(row);
       item.purchased += 1;
       item.revenue += row.purchaseAmount;
-      if (isBonusEligible(row)) item.bonus += settingsFor(row.storeId).bonusAmount;
+      if (isBonusEligible(row)) item.bonus += Number(row.bonusAwardedAmount ?? row.bonusAmount ?? settingsFor(row.storeId).bonusAmount);
     });
     const entries = [...grouped.values()].sort((a, b) => b.bonus - a.bonus || b.purchased - a.purchased || b.revenue - a.revenue);
     if (!entries.length) return emptyMarkup("Nenhum responsável no período", "As atividades e compras aparecerão aqui após os primeiros registros.");
@@ -2174,33 +2254,80 @@
     if (!rows.length) return emptyMarkup("Nenhuma compra encontrada", "Ajuste o período ou registre as compras realizadas pelos clientes prospectados.");
     return `<div class="prospection-bonus-records">${rows.sort((a, b) => new Date(b.purchasedAt) - new Date(a.purchasedAt)).map((row) => {
       const eligible = isBonusEligible(row);
-      const config = settingsFor(row.storeId);
-      return `<article class="prospection-bonus-record${eligible ? " is-eligible" : ""}"><div><span>${escapeHtml(row.storeName)}</span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.professionalName || "Sem responsável")} · ${formatDate(row.purchasedAt)}</small></div><div><span>OS</span><strong>${escapeHtml(row.purchaseOrder || "—")}</strong></div><div><span>Faturamento</span><strong>${formatCurrency(row.purchaseAmount)}</strong><small>Mínimo ${formatCurrency(config.bonusMinimum)}</small></div><div><span>Bonificação</span><strong>${eligible ? formatCurrency(config.bonusAmount) : "Não elegível"}</strong><small>${eligible ? "Compra válida" : "Abaixo do mínimo"}</small></div></article>`;
+      const minimum = Number(row.bonusMinimum ?? settingsFor(row.storeId).bonusMinimum);
+      const awarded = Number(row.bonusAwardedAmount ?? row.bonusAmount ?? settingsFor(row.storeId).bonusAmount);
+      return `<article class="prospection-bonus-record${eligible ? " is-eligible" : ""}"><div><span>${escapeHtml(row.storeName)}</span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.professionalName || "Sem responsável")} · ${formatDate(row.purchasedAt)}</small></div><div><span>OS</span><strong>${escapeHtml(row.purchaseOrder || "—")}</strong></div><div><span>Faturamento</span><strong>${formatCurrency(row.purchaseAmount)}</strong><small>Mínimo ${formatCurrency(minimum)}</small></div><div><span>Bonificação</span><strong>${eligible ? formatCurrency(awarded) : "Não elegível"}</strong><small>${eligible ? "Compra válida" : "Abaixo do mínimo"}</small></div></article>`;
     }).join("")}</div>`;
   }
 
-  function openBonus(requestedStoreId) {
+  function bonusScopeStoreId(requestedStoreId = "") {
+    if (bridge.profile.role === "store") return bridge.profile.storeId;
+    if (requestedStoreId === BONUS_ALL_STORES) return BONUS_ALL_STORES;
+    if (requestedStoreId && isLicensedStore(requestedStoreId)) return requestedStoreId;
+    if (selectedStoreId && isLicensedStore(selectedStoreId)) return selectedStoreId;
+    return BONUS_ALL_STORES;
+  }
+
+  function bonusScopeStoreIds(scopeId = bonusStoreId) {
+    if (scopeId === BONUS_ALL_STORES) return licensedScopedStores().map((store) => store.id);
+    return scopeId && isLicensedStore(scopeId) ? [scopeId] : [];
+  }
+
+  function bonusStoreOptions(selectedValue = BONUS_ALL_STORES) {
+    if (bridge.profile.role === "store") return `<option value="${escapeHtml(bridge.profile.storeId)}">${escapeHtml(storeById(bridge.profile.storeId)?.name || "Minha empresa")}</option>`;
+    return `<option value="${BONUS_ALL_STORES}"${selectedValue === BONUS_ALL_STORES ? " selected" : ""}>Todos os clientes da carteira</option>${licensedScopedStores().map((store) => `<option value="${escapeHtml(store.id)}"${selectedValue === store.id ? " selected" : ""}>${escapeHtml(store.name)}</option>`).join("")}`;
+  }
+
+  function bonusIdentityMarkup(storeIds) {
+    if (bonusStoreId !== BONUS_ALL_STORES) {
+      return insightIdentityMarkup(storeById(bonusStoreId), `${formatInputDateDisplay(bonusStartDate)} a ${formatInputDateDisplay(bonusEndDate)} · faturamento e OS desta loja`);
+    }
+    return `<section class="prospection-insight-identity"><div class="prospection-account-identity"><span class="prospection-account-icon" aria-hidden="true"><i class="fa-solid fa-building"></i></span><div><small>Carteira consolidada</small><strong>Todos os clientes da agência</strong><span>${storeIds.length} cliente${storeIds.length === 1 ? "" : "s"} · ${formatInputDateDisplay(bonusStartDate)} a ${formatInputDateDisplay(bonusEndDate)}</span></div></div><span class="prospection-scope-lock"><i class="fa-solid fa-shield-halved"></i>Escopo autorizado</span></section>`;
+  }
+
+  async function openBonus(requestedStoreId) {
     initializeInsightDates();
     const previousStoreId = bonusStoreId;
-    bonusStoreId = insightScopeStoreId(bridge.profile.role === "store" ? bridge.profile.storeId : requestedStoreId || selectedStoreId || bonusStoreId);
-    if (!bonusStoreId) {
+    bonusStoreId = bonusScopeStoreId(bridge.profile.role === "store" ? bridge.profile.storeId : requestedStoreId || selectedStoreId || bonusStoreId);
+    const storeIds = bonusScopeStoreIds(bonusStoreId);
+    if (!storeIds.length) {
       bridge.notify("Libere Prospecções para um cliente antes de abrir as bonificações.", "error");
       return;
     }
     if (previousStoreId && previousStoreId !== bonusStoreId) bonusProfessionalId = "all";
-    const storeIds = insightStoreIds(bonusStoreId);
+    const request = ++bonusRequest;
+    openDialog(dialogShell({
+      eyebrow: "Remuneração variável",
+      title: "Carregando bonificações",
+      wide: true,
+      body: `<div class="prospection-loading-card" role="status"><span class="prospection-loading-icon"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i></span><div><h2>Conferindo compras e responsáveis</h2><span>Aplicando período e escopo da carteira.</span></div></div>`,
+    }));
+    try {
+      const raw = await bridge.rpc("lc_list_prospection_bonus_purchases", {
+        p_start_date: bonusStartDate || null,
+        p_end_date: bonusEndDate || null,
+        p_store_id: bonusStoreId === BONUS_ALL_STORES ? null : bonusStoreId,
+      });
+      if (!active || request !== bonusRequest) return;
+      bonusPurchases = (Array.isArray(raw) ? raw : []).map(mapBonusPurchase);
+    } catch (error) {
+      if (request !== bonusRequest) return;
+      closeDialogs();
+      bridge.notify(readableError(error), "error");
+      return;
+    }
     const rows = bonusRows(storeIds);
     const activityRows = bonusActivityRows(storeIds);
     const eligibleRows = rows.filter(isBonusEligible);
-    const titleStore = storeById(bonusStoreId);
+    const titleStore = bonusStoreId === BONUS_ALL_STORES ? null : storeById(bonusStoreId);
     openDialog(dialogShell({
       eyebrow: "Remuneração variável",
-      title: titleStore ? `Bonificações · ${titleStore.name}` : "Bonificações",
+      title: titleStore ? `Bonificações · ${titleStore.name}` : "Bonificações da carteira",
       wide: true,
-      body: `${insightIdentityMarkup(titleStore, `${formatInputDateDisplay(bonusStartDate)} a ${formatInputDateDisplay(bonusEndDate)} · faturamento e OS desta loja`)}
+      body: `${bonusIdentityMarkup(storeIds)}
       ${dateShortcutsMarkup("bonus", bonusStartDate, bonusEndDate)}
       <form id="prospectionBonusFilters" class="prospection-insight-filters prospection-bonus-filters">
-        <label>Cliente<select name="storeId">${insightStoreOptions(bonusStoreId)}</select></label>
+        <label>Cliente<select name="storeId">${bonusStoreOptions(bonusStoreId)}</select></label>
         <label>Data inicial<input name="startDate" type="date" value="${escapeHtml(bonusStartDate)}" /></label>
         <label>Data final<input name="endDate" type="date" value="${escapeHtml(bonusEndDate)}" /></label>
         <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, bonusProfessionalId)}</select></label>

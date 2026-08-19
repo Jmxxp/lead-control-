@@ -453,6 +453,7 @@ video {
   /* Leads e administracao. */
   .company-workspace-nav {
     display: grid;
+    justify-content: initial;
     grid-auto-columns: minmax(108px, 1fr);
     grid-auto-flow: column;
     grid-template-columns: none;

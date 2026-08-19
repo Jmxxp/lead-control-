@@ -737,8 +737,8 @@ input.avatar-file-input {
 .feature-capacity-summary > span.is-full i { color: #d48616; }
 
 .company-workspace-nav {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  justify-content: flex-end;
   gap: 12px;
   margin-bottom: 18px;
   padding: 8px;
@@ -746,6 +746,10 @@ input.avatar-file-input {
   border-radius: calc(var(--radius) + 4px);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   box-shadow: 0 16px 40px rgba(23, 38, 32, 0.08);
+}
+
+.company-workspace-nav .company-nav-button {
+  flex: 0 1 260px;
 }
 
 .unified-analysis-switcher {
@@ -904,13 +908,13 @@ body.is-dark .unified-analysis-tab[data-unified-analysis="attendances"].is-activ
 
 @media (max-width: 1100px) {
   .company-workspace-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: wrap;
   }
 }
 
 @media (min-width: 721px) {
   .company-workspace-nav.has-three-sections {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: flex-end;
   }
 }
 

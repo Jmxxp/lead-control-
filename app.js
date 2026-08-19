@@ -363,6 +363,7 @@ const toggleOptionsEditButton = $("#toggleOptionsEdit");
 const editingIdInput = $("#editingId");
 const nameInput = $("#name");
 const phoneInput = $("#phone");
+const cpfInput = $("#cpf");
 const contactDateInput = $("#contactDate");
 const searchInput = $("#search");
 const appointmentMonitorToggle = $("#appointmentMonitorToggle");
@@ -711,6 +712,9 @@ function bindEvents() {
   toggleOptionsEditButton.addEventListener("click", () => toggleStoreOptionsMode(true));
   phoneInput.addEventListener("input", () => {
     phoneInput.value = formatPhone(phoneInput.value);
+  });
+  cpfInput.addEventListener("input", () => {
+    cpfInput.value = formatCpfInput(cpfInput.value);
   });
   purchaseAmountInput.addEventListener("input", () => {
     purchaseAmountInput.value = purchaseAmountInput.value.replace(/[^\d.,]/g, "");
@@ -2179,6 +2183,7 @@ async function handleLeadSubmit(event) {
     p_lead_id: editingIdInput.value || null,
     p_name: nameInput.value.trim(),
     p_phone: phoneInput.value.trim(),
+    p_cpf: cpfInput.value.trim() || null,
     p_contact_date: contactDateInput.value || null,
     p_channel: selectedValues.channel,
     p_campaign: selectedValues.campaign,
@@ -2198,6 +2203,12 @@ async function handleLeadSubmit(event) {
 
   if (!payload.p_name || !payload.p_phone) {
     showFormMessage("Preencha nome e telefone.");
+    return;
+  }
+
+  if (payload.p_cpf && !isValidCpf(payload.p_cpf)) {
+    showFormMessage("Informe um CPF válido ou deixe o campo vazio.");
+    cpfInput.focus();
     return;
   }
 
@@ -2229,13 +2240,13 @@ async function handleLeadSubmit(event) {
   try {
     setFormBusy(form, true);
     try {
-      await authenticatedRpc("lc_upsert_lead_with_intelligence", {
+      await authenticatedRpc("lc_upsert_lead_with_intelligence_v2", {
         ...payload,
         p_intelligence: intelligencePayload,
       });
     } catch (error) {
       if (!isMissingRpcError(error)) throw error;
-      const savedLeadId = await authenticatedRpc("lc_upsert_lead", payload);
+      const savedLeadId = await authenticatedRpc("lc_upsert_lead_v2", payload);
       const leadId = Array.isArray(savedLeadId) ? savedLeadId[0] : savedLeadId;
       if (leadId) {
         await authenticatedRpc("lc_save_lead_intelligence", {
@@ -2276,6 +2287,7 @@ function editLead(id) {
   editingIdInput.value = lead.id;
   nameInput.value = lead.name;
   phoneInput.value = lead.phone;
+  cpfInput.value = lead.cpf || "";
   contactDateInput.value = lead.contactDate || "";
   selectedValues = {
     channel: lead.channel || "",
@@ -2456,7 +2468,7 @@ async function rescheduleAppointmentMonitorLead() {
 
   try {
     setFormBusy(appointmentForm, true);
-    await authenticatedRpc("lc_upsert_lead", buildLeadUpsertPayload(lead, {
+    await authenticatedRpc("lc_upsert_lead_v2", buildLeadUpsertPayload(lead, {
       p_scheduled: "Sim",
       p_scheduled_visit_date: appointmentDateInput.value,
       p_scheduled_visit_time: appointmentTimeInput.value || null,
@@ -2584,7 +2596,7 @@ async function refreshRemoteState() {
     optionRowsRequest,
     customCategoryRowsRequest,
     categoryLabelRowsRequest,
-    authenticatedRpc("lc_list_leads"),
+    authenticatedRpc("lc_list_leads_v2"),
     technicianRowsRequest,
     accountUsageRequest,
     avatarRowsRequest,
@@ -3394,9 +3406,10 @@ function renderLeadList() {
             </div>
             <span class="operation-record-status">${escapeHtml(formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)))}</span>
           </div>
-          <div class="operation-record-contact-row">
-            ${lead.phone ? `<a class="operation-record-phone" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>${escapeHtml(lead.phone)}</a>` : `<span class="operation-record-phone is-empty"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
-            ${lead.ownerName ? `<span class="operation-record-owner"><i class="fa-solid fa-user-check" aria-hidden="true"></i>${escapeHtml(lead.ownerName)}</span>` : ""}
+	          <div class="operation-record-contact-row">
+	            ${lead.phone ? `<a class="operation-record-phone" href="${formatPhoneUrl(lead.phone)}" aria-label="Ligar para ${escapeHtml(lead.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>${escapeHtml(lead.phone)}</a>` : `<span class="operation-record-phone is-empty"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}
+	            ${lead.cpf ? `<span class="operation-record-owner"><i class="fa-solid fa-id-card" aria-hidden="true"></i>${escapeHtml(lead.cpf)}</span>` : ""}
+	            ${lead.ownerName ? `<span class="operation-record-owner"><i class="fa-solid fa-user-check" aria-hidden="true"></i>${escapeHtml(lead.ownerName)}</span>` : ""}
           </div>
           <div class="lead-tags operation-record-chip-row">
             ${renderTag(lead.channel)}
@@ -3523,7 +3536,7 @@ async function handleAppointmentMonitorClick(event) {
 async function markAppointmentLeadVisited(lead, button) {
   try {
     button.disabled = true;
-    await authenticatedRpc("lc_upsert_lead", buildLeadUpsertPayload(lead, {
+    await authenticatedRpc("lc_upsert_lead_v2", buildLeadUpsertPayload(lead, {
       p_visited: "Sim",
       p_bought: lead.bought || "Não",
     }));
@@ -3561,6 +3574,7 @@ function openLeadDetailsModal(id) {
       <h3>Contato</h3>
       <div class="lead-details-grid">
         ${renderLeadDetailItem("Telefone", lead.phone)}
+        ${renderLeadDetailItem("CPF", lead.cpf)}
         ${renderLeadDetailItem("Data do contato", formatLeadContactDate(lead))}
         ${renderLeadDetailItem("Registrado em", formatDateTime(lead.createdAt))}
       </div>
@@ -5650,8 +5664,8 @@ function buildLeadsExcelWorkbook(exportRows, { scopeLabel = "Todos os leads carr
     {
       name: "Leads",
       rows: leadRows,
-      columnWidths: [12, 18, 28, 16, 54, 72, 18, 16, 14, 14, 14],
-      tableColumnCount: 11,
+      columnWidths: [12, 18, 18, 28, 16, 54, 72, 18, 16, 14, 14, 14],
+      tableColumnCount: 12,
       frozenRows: 1,
     },
     {
@@ -5671,6 +5685,7 @@ function buildLeadTableExportColumns() {
   return [
     { header: "DATA", value: (lead) => formatLeadContactDate(lead) || formatDateInputValue(getLeadCreatedDateValue(lead)) },
     { header: "TELEFONE", value: (lead) => lead.phone || "" },
+    { header: "CPF", value: (lead) => lead.cpf || "" },
     { header: "NOME", value: (lead) => lead.name || "" },
     { header: "CANAL", value: (lead) => lead.channel || "" },
     {
@@ -5697,13 +5712,13 @@ function buildLeadTableRows(exportRows, tableColumns, totalRevenue) {
   ];
 
   if (rows.length < 32) {
-    const emptyRow = Array.from({ length: 11 }, () => "");
+    const emptyRow = Array.from({ length: tableColumns.length + 2 }, () => "");
     while (rows.length < 32) rows.push([...emptyRow]);
   }
 
-  rows[1] = rows[1] || Array.from({ length: 11 }, () => "");
-  rows[1][9] = totalRevenue || 0;
-  rows[1][10] = "";
+  rows[1] = rows[1] || Array.from({ length: tableColumns.length + 2 }, () => "");
+  rows[1][tableColumns.length] = totalRevenue || 0;
+  rows[1][tableColumns.length + 1] = "";
   return rows;
 }
 
@@ -5779,6 +5794,7 @@ function buildLeadExportColumns(categories = customCategories) {
     { header: "Loja", value: (lead) => lead.storeName },
     { header: "Nome do lead", value: (lead) => lead.name },
     { header: "Telefone", value: (lead) => lead.phone },
+    { header: "CPF", value: (lead) => lead.cpf || "" },
     { header: "E-mail", value: (lead) => lead.email || "" },
     { header: "Etapa comercial", value: (lead) => formatLifecycleStatus(lead.lifecycleStatus || inferLeadLifecycleStatus(lead)) },
     { header: "Qualificado", value: (lead) => lead.qualified ? "Sim" : "Não" },
@@ -6306,6 +6322,7 @@ async function fingerprintLead(lead) {
     contactDate: lead.contactDate,
     name: lead.name,
     phone: lead.phone,
+    cpf: lead.cpf,
     channel: lead.channel,
     campaign: lead.campaign,
     conversationStart: lead.conversationStart,
@@ -7834,6 +7851,8 @@ function matchesLeadSearch(lead, search) {
     lead.name,
     lead.phone,
     onlyDigits(lead.phone),
+    lead.cpf,
+    onlyDigits(lead.cpf),
     lead.storeName,
     lead.channel,
     lead.campaign,
@@ -8232,6 +8251,7 @@ function mapLeadRow(row, intelligence = null) {
     storeName: row.store_name,
     name: row.name,
     phone: row.phone,
+    cpf: row.cpf || "",
     channel: row.channel || "",
     campaign: row.campaign || "",
     conversationStart: row.conversation_start || "",
@@ -8393,6 +8413,7 @@ function buildLeadUpsertPayload(lead, overrides = {}) {
     p_lead_id: lead.id,
     p_name: lead.name,
     p_phone: lead.phone,
+    p_cpf: lead.cpf || null,
     p_contact_date: (overrides.p_contact_date ?? lead.contactDate) || null,
     p_channel: lead.channel,
     p_campaign: lead.campaign,

@@ -3,8 +3,8 @@
 
   const DEFAULT_RPC = Object.freeze({
     workspace: "lc_get_attendance_workspace",
-    save: "lc_upsert_attendance",
-    list: "lc_list_attendances_v2",
+    save: "lc_upsert_attendance_v2",
+    list: "lc_list_attendances_v3",
   });
 
   const TAGS = Object.freeze({
@@ -68,6 +68,26 @@
     .trim();
 
   const onlyDigits = (value) => String(value ?? "").replace(/\D/g, "");
+
+  function formatCpf(value) {
+    const digits = onlyDigits(value).slice(0, 11);
+    return digits
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1-$2");
+  }
+
+  function isValidCpf(value) {
+    const digits = onlyDigits(value);
+    if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+    const digit = (length) => {
+      let total = 0;
+      for (let index = 0; index < length; index += 1) total += Number(digits[index]) * (length + 1 - index);
+      const remainder = (total * 10) % 11;
+      return remainder === 10 ? 0 : remainder;
+    };
+    return digit(9) === Number(digits[9]) && digit(10) === Number(digits[10]);
+  }
 
   const firstDefined = (...values) => values.find((value) => value !== undefined && value !== null);
 
@@ -252,6 +272,7 @@
       professionalName: String(firstDefined(source.professional_name, source.professionalName, source.performed_by, source.performedBy, "Não informado")),
       customerName: String(firstDefined(source.customer_name, source.customerName, source.client_name, source.clientName, source.name, "Cliente não informado")),
       phone: formatPhone(firstDefined(source.phone, source.customer_phone, source.customerPhone, source.telephone, "")),
+      cpf: formatCpf(firstDefined(source.customer_cpf, source.cpf, source.customerCpf, "")),
       description: String(firstDefined(source.description, source.notes, source.observation, source.observations, "")),
       tag: normalizeTag(firstDefined(source.tag, source.attendance_tag, source.type, source.kind)),
       serviceValue: normalizeMoney(firstDefined(source.service_value, source.serviceValue, source.value, source.attendance_value, 0)),
@@ -488,6 +509,7 @@
       professionalName: String(form.elements.professional_name?.value || ""),
       customerName: String(form.elements.customer_name?.value || ""),
       phone: String(form.elements.phone?.value || ""),
+      cpf: String(form.elements.cpf?.value || ""),
       description: String(form.elements.description?.value || ""),
       serviceValue: String(form.elements.service_value?.value || ""),
       tag: String(form.querySelector('input[name="tag"]:checked')?.value || "budget"),
@@ -544,7 +566,7 @@
     const hasProfessionals = professionals.length > 0;
     return `<article class="attendance-panel attendance-form-panel">
       <header class="attendance-panel-header">
-        <div><p class="attendance-eyebrow">Novo registro</p><h2>Registrar atendimento</h2><span>O sistema procura o telefone em Leads e Prospecções ao salvar.</span></div>
+        <div><p class="attendance-eyebrow">Novo registro</p><h2>Registrar atendimento</h2><span>O sistema cruza telefone ou CPF com Leads e Prospecções ao salvar.</span></div>
         <span class="attendance-header-badge"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Vínculo automático</span>
       </header>
       <form class="attendance-form" data-attendance-form data-professionals-ready="${hasProfessionals ? "true" : "false"}" novalidate aria-busy="${state.saving ? "true" : "false"}">
@@ -562,9 +584,14 @@
             <span class="attendance-input-wrap"><i class="fa-solid fa-user" aria-hidden="true"></i><input name="customer_name" autocomplete="name" placeholder="Nome do cliente" value="${escapeHtml(draft.customerName || "")}" required /></span>
           </label>
           <label class="attendance-field">
-            <span>Telefone <b>*</b></span>
-            <span class="attendance-input-wrap"><i class="fa-solid fa-phone" aria-hidden="true"></i><input name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${escapeHtml(draft.phone || "")}" required /></span>
-            <small>Usado para encontrar Lead e Prospecção.</small>
+            <span>Telefone</span>
+            <span class="attendance-input-wrap"><i class="fa-solid fa-phone" aria-hidden="true"></i><input name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${escapeHtml(draft.phone || "")}" /></span>
+            <small>Informe telefone ou CPF para localizar o cliente.</small>
+          </label>
+          <label class="attendance-field">
+            <span>CPF</span>
+            <span class="attendance-input-wrap"><i class="fa-solid fa-id-card" aria-hidden="true"></i><input name="cpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" value="${escapeHtml(draft.cpf || "")}" /></span>
+            <small>O CPF também cruza Leads e Prospecções.</small>
           </label>
           <label class="attendance-field attendance-field--wide">
             <span>Descrição do atendimento <b>*</b></span>
@@ -700,6 +727,7 @@
       return normalizeText([
         record.customerName,
         record.phone,
+        record.cpf,
         record.professionalName,
         record.description,
         record.serviceOrder,
@@ -764,7 +792,7 @@
     return `<article class="attendance-record${compact ? " is-compact" : ""}">
       <div class="attendance-record-accent attendance-record-accent--${tag.tone}" aria-hidden="true"></div>
       <header>
-        <div class="attendance-record-person"><span>${escapeHtml(initials(record.customerName))}</span><div><strong>${escapeHtml(record.customerName)}</strong><small>${escapeHtml(record.phone || "Telefone não informado")}</small></div></div>
+        <div class="attendance-record-person"><span>${escapeHtml(initials(record.customerName))}</span><div><strong>${escapeHtml(record.customerName)}</strong><small>${escapeHtml([record.phone, record.cpf].filter(Boolean).join(" · ") || "Documento não informado")}</small></div></div>
         <span class="attendance-record-tag attendance-record-tag--${tag.tone}"><i class="fa-solid ${tag.icon}" aria-hidden="true"></i>${tag.label}</span>
       </header>
       <div class="attendance-record-context"><small>Contexto do atendimento</small><p class="attendance-record-description">${escapeHtml(record.description || "Nenhuma descrição informada.")}</p></div>
@@ -935,6 +963,7 @@
       return normalizeText([
         record.customerName,
         record.phone,
+        record.cpf,
         record.description,
         record.professionalName,
         record.serviceOrder,
@@ -967,7 +996,7 @@
       both: records.filter((record) => record.linkedLead?.linked && record.linkedProspection?.linked).length,
       unmatched: records.length - linked,
       ambiguous: records.filter((record) => record.ambiguous).length,
-      uniqueCustomers: new Set(records.map((record) => onlyDigits(record.phone)).filter(Boolean)).size,
+      uniqueCustomers: new Set(records.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
     };
   }
 
@@ -1353,6 +1382,7 @@
     ) || "";
     const customerName = String(values.customer_name || "").trim();
     const phone = onlyDigits(values.phone).replace(/^55(?=\d{10,11}$)/, "");
+    const cpf = formatCpf(values.cpf);
     const description = String(values.description || "").trim();
     const tag = normalizeTag(values.tag);
     const serviceValue = normalizeMoney(values.service_value);
@@ -1361,13 +1391,15 @@
 
     if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
     if (!customerName) throw new Error("Informe o nome do cliente.");
-    if (![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
+    if (!phone && !cpf) throw new Error("Informe o telefone ou o CPF do cliente.");
+    if (phone && ![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
+    if (cpf && !isValidCpf(cpf)) throw new Error("Informe um CPF válido.");
     if (!description) throw new Error("Descreva o atendimento realizado.");
     if (serviceValue < 0) throw new Error("O valor do atendimento não pode ser negativo.");
     if (tag === "purchase" && purchaseValue <= 0) throw new Error("Informe o valor da compra.");
     if (tag === "purchase" && !serviceOrder) throw new Error("Informe a ordem de serviço da compra.");
 
-    return { professionalName, customerName, phone, description, tag, serviceValue, purchaseValue, serviceOrder };
+    return { professionalName, customerName, phone, cpf, description, tag, serviceValue, purchaseValue, serviceOrder };
   }
 
   function normalizeSaveFeedback(raw, submitted) {
@@ -1616,6 +1648,7 @@
       submitted.professionalName,
       submitted.customerName,
       submitted.phone,
+      submitted.cpf,
       submitted.description,
       submitted.tag,
       submitted.serviceValue,
@@ -1641,6 +1674,7 @@
         p_professional_name: submitted.professionalName,
         p_customer_name: submitted.customerName,
         p_phone: submitted.phone,
+        p_cpf: submitted.cpf || null,
         p_description: submitted.description,
         p_tag: submitted.tag,
         p_service_value: submitted.serviceValue,
@@ -1702,6 +1736,10 @@
     const target = event.target;
     if (target.matches('input[name="phone"]')) {
       target.value = formatPhone(target.value);
+      return;
+    }
+    if (target.matches('input[name="cpf"]')) {
+      target.value = formatCpf(target.value);
       return;
     }
     if (target.matches('[data-attendance-filter="search"]')) {
@@ -1928,6 +1966,7 @@
             p_professional_name: "text",
             p_customer_name: "text",
             p_phone: "text (digits)",
+            p_cpf: "text | null",
             p_description: "text",
             p_tag: "budget | purchase | other",
             p_service_value: "numeric",
