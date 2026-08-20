@@ -42,6 +42,11 @@
   let dashboardPeriod = "today";
   let listSearch = "";
   let listStatus = "all";
+  let listProbability = "all";
+  let listProfessional = "all";
+  let listTag = "all";
+  let listContact = "all";
+  let listSort = "recent";
   let filtersOpen = false;
   let listMode = "records";
   let attendanceListState = null;
@@ -843,6 +848,11 @@
     editingId = "";
     listSearch = "";
     listStatus = "all";
+    listProbability = "all";
+    listProfessional = "all";
+    listTag = "all";
+    listContact = "all";
+    listSort = "recent";
     filtersOpen = false;
     listMode = "records";
     attendanceListRequest += 1;
@@ -1255,8 +1265,50 @@
     </section>`;
   }
 
+  function prospectionListFilterCount() {
+    return Number(dashboardPeriod !== "today")
+      + Number(listStatus !== "all")
+      + Number(listProbability !== "all")
+      + Number(listProfessional !== "all")
+      + Number(listTag !== "all")
+      + Number(listContact !== "all")
+      + Number(listSort !== "recent");
+  }
+
+  function prospectionFilterFieldMarkup({ label, icon, attribute, value, options }) {
+    return `<label class="prospection-filter-field"><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${escapeHtml(label)}</span><select ${attribute}>${options.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}"${value === optionValue ? " selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}</select></label>`;
+  }
+
+  function prospectionAdvancedFiltersMarkup(storeId, filterCount) {
+    const professionalNames = Array.from(new Set([
+      ...professionalsFor(storeId, true).map((professional) => professional.name),
+      ...prospectsFor(storeId, "all").map((row) => row.professionalName).filter(Boolean),
+    ])).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const tagNames = Array.from(new Set([
+      ...tagsFor(storeId).map((tag) => tag.label),
+      ...prospectsFor(storeId, "all").flatMap((row) => row.tagValues),
+    ])).filter(Boolean).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return `<div class="filters-panel prospection-advanced-filters"${filtersOpen ? "" : " hidden"}>
+      <header class="prospection-filter-header">
+        <span><i class="fa-solid fa-sliders" aria-hidden="true"></i></span>
+        <div><strong>Refinar busca</strong><small>Combine os filtros para encontrar exatamente quem precisa de atenção.</small></div>
+        <button type="button" data-prospection-action="clear-list-filters"${filterCount ? "" : " disabled"}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar</button>
+      </header>
+      <div class="prospection-filter-grid">
+        ${prospectionFilterFieldMarkup({ label: "Período", icon: "fa-calendar-days", attribute: "data-prospection-period", value: dashboardPeriod, options: [["today", "Hoje"], ["week", "Esta semana"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]] })}
+        ${prospectionFilterFieldMarkup({ label: "Situação", icon: "fa-route", attribute: "data-prospection-status", value: listStatus, options: [["all", "Todas as situações"], ["open", "Ainda não voltaram"], ["returned", "Voltaram à loja"], ["returned_no_purchase", "Voltaram sem comprar"], ["purchased", "Compraram"], ["not_purchased", "Ainda não compraram"]] })}
+        ${prospectionFilterFieldMarkup({ label: "Probabilidade", icon: "fa-gauge-high", attribute: "data-prospection-probability", value: listProbability, options: [["all", "Todas as probabilidades"], ...Object.entries(PROBABILITIES).map(([key, item]) => [key, item.label])] })}
+        ${prospectionFilterFieldMarkup({ label: "Profissional", icon: "fa-user-tie", attribute: "data-prospection-professional", value: listProfessional, options: [["all", "Toda a equipe"], ["unassigned", "Sem profissional"], ...professionalNames.map((name) => [name, name])] })}
+        ${prospectionFilterFieldMarkup({ label: "Categoria ou etiqueta", icon: "fa-tags", attribute: "data-prospection-tag", value: listTag, options: [["all", "Todas as etiquetas"], ["untagged", "Sem etiqueta"], ...tagNames.map((name) => [name, name])] })}
+        ${prospectionFilterFieldMarkup({ label: "Dados de contato", icon: "fa-address-card", attribute: "data-prospection-contact", value: listContact, options: [["all", "Qualquer cadastro"], ["phone", "Com telefone"], ["cpf", "Com CPF"], ["both", "Com telefone e CPF"], ["no_phone", "Sem telefone"], ["no_identity", "Sem telefone nem CPF"]] })}
+        ${prospectionFilterFieldMarkup({ label: "Ordenar resultados", icon: "fa-arrow-down-wide-short", attribute: "data-prospection-sort", value: listSort, options: [["recent", "Mais recentes primeiro"], ["oldest", "Mais antigos primeiro"], ["probability", "Maior probabilidade"], ["recent_return", "Retornos mais recentes"], ["recent_purchase", "Compras mais recentes"]] })}
+      </div>
+      <footer class="prospection-filter-footer"><span><i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filterCount ? `${filterCount} filtro${filterCount === 1 ? "" : "s"} aplicado${filterCount === 1 ? "" : "s"}` : "Mostrando o recorte padrão de hoje"}</span><button type="button" data-prospection-action="close-list-filters">Ver resultados</button></footer>
+    </div>`;
+  }
+
   function prospectListPanelMarkup(storeId) {
-    const filterCount = Number(dashboardPeriod !== "today") + Number(listStatus !== "all");
+    const filterCount = prospectionListFilterCount();
     const periodTitle = dashboardPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
     const attendanceState = ensureAttendanceListState(storeId);
     const isAttendanceMode = listMode === "attendances";
@@ -1269,14 +1321,11 @@
             <button type="button" aria-pressed="${String(isAttendanceMode)}" class="${isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="attendances"><i class="fa-solid fa-user-clock" aria-hidden="true"></i><span>Para prospectar</span></button>
           </div>
         </div>
-        ${isAttendanceMode ? attendanceFiltersMarkup(attendanceState) : `<div class="search-row">
-          <label class="search-label">Buscar nas prospecções<input data-prospection-search type="search" value="${escapeHtml(listSearch)}" placeholder="Nome, telefone, CPF ou anotação" /></label>
+        ${isAttendanceMode ? attendanceFiltersMarkup(attendanceState) : `<div class="search-row prospection-smart-search-row">
+          <label class="search-label prospection-smart-search"><span>Buscar nas prospecções</span><span class="prospection-search-control"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input data-prospection-search type="search" value="${escapeHtml(listSearch)}" placeholder="Nome, telefone, CPF, anotação, profissional ou etiqueta" /></span></label>
           <div class="filter-menu">
-            <button class="filter-button" type="button" data-prospection-action="toggle-filters" aria-expanded="${String(filtersOpen)}"><i class="fa-solid fa-filter" aria-hidden="true"></i>Filtros${filterCount ? `<span class="filter-count">${filterCount}</span>` : ""}</button>
-            <div class="filters-panel"${filtersOpen ? "" : " hidden"}>
-              <label>Período<select data-prospection-period>${periodOptions()}</select></label>
-              <label>Situação<select data-prospection-status><option value="all"${listStatus === "all" ? " selected" : ""}>Todos</option><option value="open"${listStatus === "open" ? " selected" : ""}>Não voltaram</option><option value="returned"${listStatus === "returned" ? " selected" : ""}>Voltaram</option><option value="purchased"${listStatus === "purchased" ? " selected" : ""}>Compraram</option></select></label>
-            </div>
+            <button class="filter-button" type="button" data-prospection-action="toggle-filters" aria-expanded="${String(filtersOpen)}"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros avançados</span>${filterCount ? `<span class="filter-count">${filterCount}</span>` : ""}</button>
+            ${prospectionAdvancedFiltersMarkup(storeId, filterCount)}
           </div>
         </div>`}
       </div>
@@ -1346,15 +1395,43 @@
   function filteredStoreRows(storeId) {
     const query = normalize(listSearch);
     const queryPhone = normalizePhoneKey(listSearch);
-    return prospectsFor(storeId).filter((row) => {
+    const probabilityRank = { green: 0, blue: 1, yellow: 2, red: 3 };
+    const rows = prospectsFor(storeId).filter((row) => {
       const matchesQuery = !query
         || normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, ...row.tagValues].join(" ")).includes(query)
         || Boolean(queryPhone && normalizePhoneKey(row.phone) === queryPhone);
       const matchesStatus = listStatus === "all"
         || (listStatus === "open" && !row.returnedAt)
         || (listStatus === "returned" && row.returnedAt)
-        || (listStatus === "purchased" && row.purchasedAt);
-      return matchesQuery && matchesStatus;
+        || (listStatus === "returned_no_purchase" && row.returnedAt && !row.purchasedAt)
+        || (listStatus === "purchased" && row.purchasedAt)
+        || (listStatus === "not_purchased" && !row.purchasedAt);
+      const matchesProbability = listProbability === "all" || row.probability === listProbability;
+      const matchesProfessional = listProfessional === "all"
+        || (listProfessional === "unassigned" && !row.professionalName)
+        || normalize(row.professionalName) === normalize(listProfessional);
+      const matchesTag = listTag === "all"
+        || (listTag === "untagged" && !row.tagValues.length)
+        || row.tagValues.some((tag) => normalize(tag) === normalize(listTag));
+      const hasPhone = Boolean(normalizePhoneKey(row.phone));
+      const hasCpf = onlyDigits(row.cpf).length === 11;
+      const matchesContact = listContact === "all"
+        || (listContact === "phone" && hasPhone)
+        || (listContact === "cpf" && hasCpf)
+        || (listContact === "both" && hasPhone && hasCpf)
+        || (listContact === "no_phone" && !hasPhone)
+        || (listContact === "no_identity" && !hasPhone && !hasCpf);
+      return matchesQuery && matchesStatus && matchesProbability && matchesProfessional && matchesTag && matchesContact;
+    });
+    return rows.sort((a, b) => {
+      if (listSort === "oldest") return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      if (listSort === "probability") {
+        return (probabilityRank[a.probability] ?? 9) - (probabilityRank[b.probability] ?? 9)
+          || new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      }
+      if (listSort === "recent_return") return new Date(b.returnedAt || 0) - new Date(a.returnedAt || 0);
+      if (listSort === "recent_purchase") return new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
   }
 
@@ -1561,6 +1638,11 @@
     }
     listSearch = attendance.phone || attendance.phoneNormalized || attendance.cpf;
     listStatus = "all";
+    listProbability = "all";
+    listProfessional = "all";
+    listTag = "all";
+    listContact = "all";
+    listSort = "recent";
     dashboardPeriod = "all";
     listMode = "records";
     filtersOpen = false;
@@ -3393,14 +3475,44 @@
     }
     if (event.target.matches("[data-prospection-period]")) {
       dashboardPeriod = event.target.value;
-      filtersOpen = false;
-      closeDialogs();
-      render();
+      if (event.target.closest("#prospectionListPanel")) {
+        filtersOpen = true;
+        renderProspectListPanel({ focusSelector: "[data-prospection-period]", scrollTop: 0 });
+      } else {
+        filtersOpen = false;
+        closeDialogs();
+        render();
+      }
     }
     if (event.target.matches("[data-prospection-status]")) {
       listStatus = event.target.value;
-      filtersOpen = false;
-      render();
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-status]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-probability]")) {
+      listProbability = event.target.value;
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-probability]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-professional]")) {
+      listProfessional = event.target.value;
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-professional]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-tag]")) {
+      listTag = event.target.value;
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-tag]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-contact]")) {
+      listContact = event.target.value;
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-contact]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-sort]")) {
+      listSort = event.target.value;
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: "[data-prospection-sort]", scrollTop: 0 });
     }
   });
 
@@ -3439,7 +3551,7 @@
         else if (event.target.matches("[data-prospection-configuration-dialog]")) requestConfigurationTransition(() => forceCloseDialogs());
         else closeDialogs();
       }
-      else if (filtersOpen && !event.target.closest(".filter-menu")) { filtersOpen = false; render(); }
+      else if (filtersOpen && !event.target.closest(".filter-menu")) { filtersOpen = false; renderProspectListPanel(); }
       return;
     }
     const action = button.dataset.prospectionAction;
@@ -3454,7 +3566,19 @@
     else if (action === "open-leads") await bridge.openLeadsForStore?.(button.dataset.storeId || "");
     else if (action === "manage-access") bridge.openStoreAccess?.(button.dataset.storeId || "");
     else if (action === "export-archive") exportArchivedProspections();
-    else if (action === "toggle-filters") { filtersOpen = !filtersOpen; render(); }
+    else if (action === "toggle-filters") { filtersOpen = !filtersOpen; renderProspectListPanel({ focusSelector: '[data-prospection-action="toggle-filters"]' }); }
+    else if (action === "close-list-filters") { filtersOpen = false; renderProspectListPanel({ focusSelector: '[data-prospection-action="toggle-filters"]' }); }
+    else if (action === "clear-list-filters") {
+      dashboardPeriod = "today";
+      listStatus = "all";
+      listProbability = "all";
+      listProfessional = "all";
+      listTag = "all";
+      listContact = "all";
+      listSort = "recent";
+      filtersOpen = true;
+      renderProspectListPanel({ focusSelector: '[data-prospection-action="clear-list-filters"]', scrollTop: 0 });
+    }
     else if (action === "set-list-mode") setListMode(button.dataset.listMode || "records");
     else if (action === "retry-attendances") await loadAttendanceOpportunities();
     else if (action === "load-more-attendances") await loadAttendanceOpportunities({ append: true });
@@ -3473,6 +3597,13 @@
         listMode = "records";
         listSearch = "";
         listStatus = "all";
+        listProbability = "all";
+        listProfessional = "all";
+        listTag = "all";
+        listContact = "all";
+        listSort = "recent";
+        dashboardPeriod = "today";
+        filtersOpen = false;
         attendanceListRequest += 1;
         attendanceListState = createAttendanceListState(storeId);
         render();

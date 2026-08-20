@@ -240,6 +240,7 @@
         body: JSON.stringify({
           action: "support",
           store_id: runtime.storeId || null,
+          screen: runtime.activeModule || null,
           messages: state.messages.slice(-MAX_MESSAGES),
         }),
         signal: controller.signal,
@@ -293,6 +294,7 @@
         anonKey: typeof SUPABASE_ANON_KEY === "string" ? SUPABASE_ANON_KEY : "",
         sessionToken: profile?.sessionToken,
         storeId: profile?.storeId,
+        activeModule: "leads",
       });
     } catch {
       return sanitizeRuntimeContext(null);
@@ -306,6 +308,9 @@
       anonKey: safeString(source.anonKey, 2400),
       sessionToken: safeString(source.sessionToken, 1200),
       storeId: safeString(source.storeId, 80),
+      activeModule: ["leads", "prospections", "attendances"].includes(source.activeModule)
+        ? source.activeModule
+        : "",
       availableActions: Array.isArray(source.availableActions)
         ? source.availableActions.filter(isKnownActionId)
         : null,

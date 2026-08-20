@@ -3946,6 +3946,321 @@ body.is-dark-mode .created-date-block {
   }
 }
 
+/* Busca operacional premium: filtros combináveis e legíveis em qualquer tema. */
+body.is-prospections-operation .prospection-smart-search-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+body.is-prospections-operation .prospection-smart-search {
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+body.is-prospections-operation .prospection-search-control {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+body.is-prospections-operation .prospection-search-control > i {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 14px;
+  color: var(--primary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+body.is-prospections-operation #prospectionView .prospection-search-control input,
+body.is-prospections-operation .prospection-search-control input {
+  width: 100%;
+  min-height: 44px;
+  padding-left: 42px !important;
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--line));
+  border-radius: 10px;
+  box-shadow: 0 7px 18px rgba(23, 51, 98, 0.06);
+}
+
+body.is-prospections-operation .filter-menu {
+  position: relative;
+}
+
+body.is-prospections-operation .filter-button {
+  min-width: 178px;
+  min-height: 44px;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+}
+
+body.is-prospections-operation .filter-button > i {
+  font-size: 0.92rem;
+}
+
+body.is-prospections-operation .prospection-advanced-filters {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: min(790px, calc(100vw - 72px));
+  max-height: min(72vh, 610px);
+  gap: 14px;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid #c4d2e7;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 28px 76px rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+
+body.is-prospections-operation .prospection-advanced-filters[hidden] {
+  display: none;
+}
+
+body.is-prospections-operation .prospection-filter-header {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #dbe4f0;
+}
+
+body.is-prospections-operation .prospection-filter-header > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #2563eb, #1d4ed8);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.24);
+}
+
+body.is-prospections-operation .prospection-filter-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+body.is-prospections-operation .prospection-filter-header strong {
+  color: #162238;
+  font-size: 0.87rem;
+}
+
+body.is-prospections-operation .prospection-filter-header small {
+  color: #65748c;
+  font-size: 0.65rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+body.is-prospections-operation .prospection-filter-header button,
+body.is-prospections-operation .prospection-filter-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #cbd7e8;
+  border-radius: 9px;
+  background: #f6f8fc;
+  color: #45546b;
+  font-size: 0.65rem;
+  font-weight: 850;
+}
+
+body.is-prospections-operation .prospection-filter-header button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+body.is-prospections-operation .prospection-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 11px;
+}
+
+body.is-prospections-operation .prospection-filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+body.is-prospections-operation .prospection-filter-field > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #526078;
+  font-size: 0.63rem;
+  font-weight: 850;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+body.is-prospections-operation .prospection-filter-field > span i {
+  width: 14px;
+  color: #2563eb;
+  text-align: center;
+}
+
+body.is-prospections-operation .prospection-filter-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 34px 0 11px;
+  border: 1px solid #bccae0;
+  border-radius: 9px;
+  background-color: #fff;
+  color: #1b2940;
+  font-size: 0.69rem;
+  font-weight: 750;
+}
+
+body.is-prospections-operation .prospection-filter-field select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+body.is-prospections-operation .prospection-filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 13px;
+  border-top: 1px solid #dbe4f0;
+}
+
+body.is-prospections-operation .prospection-filter-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #5d6b80;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+body.is-prospections-operation .prospection-filter-footer > span i {
+  color: #16855f;
+}
+
+body.is-prospections-operation .prospection-filter-footer button {
+  min-width: 112px;
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+body.is-dark.is-prospections-operation .prospection-advanced-filters,
+body.is-dark-mode.is-prospections-operation .prospection-advanced-filters {
+  border-color: #33435d;
+  background: rgba(15, 25, 42, 0.98);
+  box-shadow: 0 32px 86px rgba(0, 0, 0, 0.46);
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-header,
+body.is-dark.is-prospections-operation .prospection-filter-footer,
+body.is-dark-mode.is-prospections-operation .prospection-filter-header,
+body.is-dark-mode.is-prospections-operation .prospection-filter-footer {
+  border-color: #2e3d55;
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-header strong,
+body.is-dark-mode.is-prospections-operation .prospection-filter-header strong {
+  color: #f5f8ff;
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-header small,
+body.is-dark.is-prospections-operation .prospection-filter-field > span,
+body.is-dark.is-prospections-operation .prospection-filter-footer > span,
+body.is-dark-mode.is-prospections-operation .prospection-filter-header small,
+body.is-dark-mode.is-prospections-operation .prospection-filter-field > span,
+body.is-dark-mode.is-prospections-operation .prospection-filter-footer > span {
+  color: #aebbd0;
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-field select,
+body.is-dark-mode.is-prospections-operation .prospection-filter-field select {
+  border-color: #40516c;
+  background-color: #17243a;
+  color: #eef4ff;
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-field select option,
+body.is-dark-mode.is-prospections-operation .prospection-filter-field select option {
+  background: #17243a;
+  color: #eef4ff;
+}
+
+body.is-dark.is-prospections-operation .prospection-filter-header button,
+body.is-dark-mode.is-prospections-operation .prospection-filter-header button {
+  border-color: #40516c;
+  background: #17243a;
+  color: #cbd7e8;
+}
+
+@media (max-width: 1040px) {
+  body.is-prospections-operation .prospection-advanced-filters {
+    width: min(650px, calc(100vw - 48px));
+  }
+
+  body.is-prospections-operation .prospection-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  body.is-prospections-operation .prospection-smart-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  body.is-prospections-operation .filter-menu,
+  body.is-prospections-operation .filter-button {
+    width: 100%;
+  }
+
+  body.is-prospections-operation .prospection-advanced-filters {
+    position: fixed;
+    inset: auto 8px 8px;
+    width: auto;
+    max-height: min(78dvh, 650px);
+    border-radius: 18px;
+  }
+
+  body.is-prospections-operation .prospection-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 440px) {
+  body.is-prospections-operation .prospection-filter-header {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  body.is-prospections-operation .prospection-filter-header > span {
+    width: 38px;
+    height: 38px;
+  }
+
+  body.is-prospections-operation .prospection-filter-header > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  body.is-prospections-operation .prospection-filter-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 @media (max-width: 720px) {
   body {
     min-width: 0;

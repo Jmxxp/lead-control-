@@ -631,81 +631,6 @@
     </article>`;
   }
 
-  function periodRecords() {
-    const now = new Date();
-    const period = state.filters.period;
-    if (period === "all") return state.records.slice();
-    let start = new Date(now);
-    if (period === "today") start.setHours(0, 0, 0, 0);
-    else start.setDate(start.getDate() - (period === "7d" ? 7 : 30));
-    return state.records.filter((record) => {
-      if (!record.createdAt) return false;
-      const date = new Date(record.createdAt);
-      return !Number.isNaN(date.getTime()) && date >= start && date <= now;
-    });
-  }
-
-  function metricData() {
-    const periodAliases = {
-      today: ["today", "day", "hoje"],
-      "7d": ["7d", "week", "last_7_days", "last7days", "semana"],
-      "30d": ["30d", "month", "last_30_days", "last30days", "mes"],
-      all: ["all", "total", "overall", "todo_periodo"],
-    };
-    const metricContainers = [state.serverMetrics?.periods, state.serverMetrics?.by_period, state.serverMetrics?.byPeriod, state.serverMetrics];
-    let serverPeriod = null;
-    for (const container of metricContainers) {
-      if (!container || typeof container !== "object") continue;
-      const alias = periodAliases[state.filters.period].find((key) => container[key] && typeof container[key] === "object");
-      if (alias) {
-        serverPeriod = container[alias];
-        break;
-      }
-    }
-    if (serverPeriod) {
-      const total = Number(firstDefined(serverPeriod.total, serverPeriod.attendances, serverPeriod.attendance_count, serverPeriod.attendanceCount, 0)) || 0;
-      const purchases = Number(firstDefined(serverPeriod.purchases, serverPeriod.purchase_count, serverPeriod.purchaseCount, 0)) || 0;
-      const budgets = Number(firstDefined(serverPeriod.budgets, serverPeriod.budget_count, serverPeriod.budgetCount, 0)) || 0;
-      return {
-        total,
-        budgets,
-        purchases,
-        conversion: Number(firstDefined(serverPeriod.conversion, serverPeriod.conversion_rate, serverPeriod.conversionRate, total ? Math.round((purchases / total) * 100) : 0)) || 0,
-        revenue: Number(firstDefined(serverPeriod.revenue, serverPeriod.purchase_revenue, serverPeriod.purchaseRevenue, serverPeriod.sales_value, 0)) || 0,
-        serviceValue: Number(firstDefined(serverPeriod.service_value, serverPeriod.serviceValue, serverPeriod.attendance_value, serverPeriod.attendanceValue, 0)) || 0,
-      };
-    }
-
-    const records = periodRecords();
-    const purchases = records.filter((record) => record.tag === "purchase");
-    const budgets = records.filter((record) => record.tag === "budget");
-    const revenue = purchases.reduce((total, record) => total + Number(record.purchaseValue || 0), 0);
-    const serviceValue = records.reduce((total, record) => total + Number(record.serviceValue || 0), 0);
-    return {
-      total: records.length,
-      budgets: budgets.length,
-      purchases: purchases.length,
-      conversion: records.length ? Math.round((purchases.length / records.length) * 100) : 0,
-      revenue,
-      serviceValue,
-    };
-  }
-
-  function renderMetrics() {
-    const metrics = metricData();
-    const cards = [
-      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "forest" },
-      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "emerald" },
-      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
-      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "mint" },
-      { label: "Faturamento informado", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "teal" },
-      { label: "Valor dos atendimentos", value: formatCurrency(metrics.serviceValue), icon: "fa-wallet", tone: "sage" },
-    ];
-    return `<section class="attendance-metrics" data-attendance-metrics>
-      ${cards.map((card) => `<article class="attendance-metric attendance-metric--${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}
-    </section>`;
-  }
-
   function filteredRecords() {
     const query = normalizeText(state.filters.search);
     const range = embeddedAttendanceRange(state.filters.period);
@@ -824,13 +749,11 @@
     const filterCount = attendanceFilterCount();
     const resultCount = filteredRecords().length;
     return `<section class="attendance-overview">
-      <div class="attendance-overview-heading"><div><p class="attendance-eyebrow">Visão da operação</p><h2>Resumo do cliente</h2><span>Métricas e registros sempre limitados à empresa selecionada.</span></div><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Loja isolada</span></div>
-      ${renderMetrics()}
       <article class="attendance-panel attendance-list-panel">
         <header class="attendance-list-header">
-          <div class="attendance-list-heading"><p class="attendance-eyebrow">Histórico organizado</p><h2>Atendimentos registrados</h2><span data-attendance-result-count>${resultCount} registro${resultCount === 1 ? "" : "s"} exibido${resultCount === 1 ? "" : "s"}</span></div>
+          <div class="attendance-list-heading"><p class="attendance-eyebrow">Consulta rápida</p><h2>Buscar atendimentos</h2><span data-attendance-result-count>${resultCount} registro${resultCount === 1 ? "" : "s"} exibido${resultCount === 1 ? "" : "s"}</span></div>
           <div class="attendance-list-tools">
-            <label class="attendance-search"><span class="attendance-sr-only">Buscar nos atendimentos</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-filter="search" value="${escapeHtml(state.filters.search)}" placeholder="Nome, telefone, descrição ou OS" aria-label="Buscar atendimentos" /></label>
+            <label class="attendance-search"><span class="attendance-sr-only">Buscar nos atendimentos</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-filter="search" value="${escapeHtml(state.filters.search)}" placeholder="Nome, telefone, CPF, descrição ou OS" aria-label="Buscar atendimentos" /></label>
             <button class="attendance-filter-button${state.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-action="toggle-filters" aria-expanded="${String(state.filtersOpen)}" aria-controls="attendanceFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros</span><b data-attendance-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button>
           </div>
         </header>
@@ -860,7 +783,6 @@
     if (!state.root || state.loading || state.loadError || !state.selectedStoreId) return;
     const list = state.root.querySelector("[data-attendance-record-list]");
     const count = state.root.querySelector("[data-attendance-result-count]");
-    const metrics = state.root.querySelector("[data-attendance-metrics]");
     const status = state.root.querySelector(".attendance-list-status");
     const pagination = state.root.querySelector("[data-attendance-list-pagination]");
     const filterButton = state.root.querySelector('[data-attendance-action="toggle-filters"]');
@@ -870,7 +792,6 @@
       const total = filteredRecords().length;
       count.textContent = `${total} registro${total === 1 ? "" : "s"} exibido${total === 1 ? "" : "s"}`;
     }
-    if (metrics) metrics.outerHTML = renderMetrics();
     if (status) {
       const total = filteredRecords().length;
       status.innerHTML = `<span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${total}</b> exibidos</span><small>${escapeHtml(operationalListCoverage())} · mais recentes primeiro</small>`;

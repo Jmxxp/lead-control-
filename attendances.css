@@ -21,6 +21,12 @@
   --att-sage: #60796d;
   --att-danger: #c74461;
   --att-warning: #9b620f;
+  --att-budget: #2563eb;
+  --att-budget-soft: #e9f0ff;
+  --att-purchase: #087a55;
+  --att-purchase-soft: #ddf7e9;
+  --att-other: #b56808;
+  --att-other-soft: #fff3df;
   --att-input-bg: #ffffff;
   --att-input-ink: #102d22;
   --att-input-muted: #61776d;
@@ -57,6 +63,12 @@ body.is-dark .attendance-embedded-analysis,
   --att-sage: #a9c7b8;
   --att-danger: #ff7892;
   --att-warning: #f0bb58;
+  --att-budget: #7aa7ff;
+  --att-budget-soft: rgba(59, 130, 246, 0.18);
+  --att-purchase: #59dba5;
+  --att-purchase-soft: rgba(16, 163, 111, 0.18);
+  --att-other: #f2b95f;
+  --att-other-soft: rgba(217, 119, 6, 0.18);
   --att-shadow: 0 28px 68px rgba(0, 0, 0, 0.28);
   --att-shadow-soft: 0 16px 34px rgba(0, 0, 0, 0.18);
 }
@@ -423,7 +435,7 @@ body.is-dark .attendance-shell,
 .attendance-layout {
   display: grid;
   grid-template-columns: minmax(360px, 0.78fr) minmax(560px, 1.22fr);
-  align-items: start;
+  align-items: stretch;
   gap: 14px;
   min-width: 0;
 }
@@ -438,6 +450,7 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-form-panel {
+  height: 100%;
   min-height: 720px;
   padding: 18px;
   border-color: color-mix(in srgb, var(--att-forest) 18%, var(--att-line));
@@ -555,6 +568,24 @@ body.is-dark .attendance-shell,
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
+.attendance-tag-option--emerald > span {
+  border-color: color-mix(in srgb, var(--att-budget) 34%, var(--att-line));
+  background: var(--att-budget-soft);
+  color: var(--att-budget);
+}
+
+.attendance-tag-option--forest > span {
+  border-color: color-mix(in srgb, var(--att-purchase) 34%, var(--att-line));
+  background: var(--att-purchase-soft);
+  color: var(--att-purchase);
+}
+
+.attendance-tag-option--sage > span {
+  border-color: color-mix(in srgb, var(--att-other) 34%, var(--att-line));
+  background: var(--att-other-soft);
+  color: var(--att-other);
+}
+
 .attendance-tag-option > span > strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -572,21 +603,24 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-tag-option--emerald input:checked + span {
-  border-color: var(--att-emerald);
-  background: var(--att-mint-soft);
-  color: var(--att-emerald);
+  border-color: var(--att-budget);
+  background: color-mix(in srgb, var(--att-budget) 18%, var(--att-panel));
+  color: var(--att-budget);
+  box-shadow: inset 0 0 0 1px var(--att-budget), 0 8px 18px color-mix(in srgb, var(--att-budget) 18%, transparent);
 }
 
 .attendance-tag-option--forest input:checked + span {
-  border-color: var(--att-forest-deep);
-  background: color-mix(in srgb, var(--att-forest-deep) 12%, var(--att-panel));
-  color: var(--att-forest);
+  border-color: var(--att-purchase);
+  background: color-mix(in srgb, var(--att-purchase) 17%, var(--att-panel));
+  color: var(--att-purchase);
+  box-shadow: inset 0 0 0 1px var(--att-purchase), 0 8px 18px color-mix(in srgb, var(--att-purchase) 18%, transparent);
 }
 
 .attendance-tag-option--sage input:checked + span {
-  border-color: color-mix(in srgb, var(--att-sage) 55%, var(--att-line));
-  background: var(--att-panel-muted);
-  color: var(--att-ink);
+  border-color: var(--att-other);
+  background: color-mix(in srgb, var(--att-other) 17%, var(--att-panel));
+  color: var(--att-other);
+  box-shadow: inset 0 0 0 1px var(--att-other), 0 8px 18px color-mix(in srgb, var(--att-other) 16%, transparent);
 }
 
 .attendance-tag-option input:checked + span .attendance-tag-check {
@@ -841,7 +875,7 @@ body.is-dark .attendance-shell,
 
 .attendance-overview {
   display: grid;
-  gap: 12px;
+  height: 100%;
   min-width: 0;
 }
 
@@ -1006,6 +1040,10 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 }
 
 .attendance-list-panel {
+  display: flex;
+  height: 100%;
+  min-height: 720px;
+  flex-direction: column;
   border-color: color-mix(in srgb, var(--att-emerald) 24%, var(--att-line));
 }
 
@@ -1192,8 +1230,9 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 }
 
 .attendance-record-list {
+  flex: 1 1 auto;
   min-height: 370px;
-  max-height: clamp(490px, 60vh, 730px);
+  max-height: none;
   padding: 11px;
   overflow: auto;
   overscroll-behavior: contain;
@@ -1228,15 +1267,15 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 }
 
 .attendance-record-accent--emerald {
-  background: var(--att-emerald-bright);
+  background: var(--att-budget);
 }
 
 .attendance-record-accent--forest {
-  background: var(--att-forest-deep);
+  background: var(--att-purchase);
 }
 
 .attendance-record-accent--sage {
-  background: var(--att-sage);
+  background: var(--att-other);
 }
 
 .attendance-record > header,
@@ -1322,22 +1361,23 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 
 .attendance-record-tag--emerald,
 .attendance-link-badge--lead {
-  border-color: color-mix(in srgb, var(--att-emerald) 35%, var(--att-line));
-  background: var(--att-mint-soft);
-  color: var(--att-emerald);
+  border-color: color-mix(in srgb, var(--att-budget) 38%, var(--att-line));
+  background: var(--att-budget-soft);
+  color: var(--att-budget);
 }
 
 .attendance-record-tag--forest,
 .attendance-record-bonus.is-positive {
-  border-color: color-mix(in srgb, var(--att-forest-deep) 38%, var(--att-line));
-  background: color-mix(in srgb, var(--att-forest-deep) 10%, var(--att-panel));
-  color: var(--att-forest);
+  border-color: color-mix(in srgb, var(--att-purchase) 38%, var(--att-line));
+  background: var(--att-purchase-soft);
+  color: var(--att-purchase);
 }
 
 .attendance-record-tag--sage,
 .attendance-link-badge--standalone {
-  background: var(--att-panel-muted);
-  color: var(--att-sage);
+  border-color: color-mix(in srgb, var(--att-other) 36%, var(--att-line));
+  background: var(--att-other-soft);
+  color: var(--att-other);
 }
 
 .attendance-link-badge--prospection,
@@ -2047,6 +2087,11 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 
   .attendance-form-panel {
     min-height: auto;
+  }
+
+  .attendance-list-panel {
+    height: auto;
+    min-height: 620px;
   }
 
   .attendance-record-list {

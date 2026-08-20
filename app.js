@@ -1340,6 +1340,7 @@ function handleSupportContextRequest(event) {
     anonKey: SUPABASE_ANON_KEY,
     sessionToken: currentProfile?.sessionToken || "",
     storeId: activeStoreContext?.id || currentProfile?.storeId || "",
+    activeModule: activeSystemModule,
     availableActions: getSupportAvailableActions(),
   });
 }

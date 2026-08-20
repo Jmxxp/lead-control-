@@ -8,7 +8,7 @@ O Assistente de Suporte é aberto pelo botão `?`, visível no topo de todos os 
 - cadastro, visualização, edição, filtros e exportação de Leads;
 - categorias, opções e sequência dos campos de Leads;
 - operação, análise e bonificações de Prospecções, quando disponíveis;
-- cadastro, resumo, lista e filtros de Atendimentos, quando disponíveis;
+- cadastro, consulta do histórico e filtros de Atendimentos, quando disponíveis;
 - alternância de tema e saída da sessão.
 
 O assistente não responde sobre contas administrativas, agências, planos, licenças, termos, backups, integrações removidas, arquitetura, código, banco de dados, APIs, credenciais ou temas externos ao sistema.
@@ -31,6 +31,7 @@ Requisição para `POST /functions/v1/ai-analysis`:
 {
   "action": "support",
   "store_id": "uuid-da-loja-ativa-ou-null",
+  "screen": "leads",
   "messages": [
     { "role": "user", "content": "Como cadastrar um lead?" }
   ]
@@ -40,7 +41,7 @@ Requisição para `POST /functions/v1/ai-analysis`:
 Regras:
 
 - o header `x-app-session` leva a sessão própria da aplicação;
-- somente as chaves `action`, `store_id` e `messages` são aceitas;
+- somente as chaves `action`, `store_id`, `screen` e `messages` são aceitas;
 - são aceitas no máximo seis mensagens, apenas com `role` e `content` textuais;
 - nenhum objeto de loja, lead, prospecção, atendimento, métrica ou configuração é aceito;
 - o navegador nunca recebe a chave do provedor de IA.
@@ -79,6 +80,7 @@ event.detail.provide({
   anonKey: SUPABASE_ANON_KEY,
   sessionToken: currentProfile?.sessionToken || "",
   storeId: activeStoreContext?.id || currentProfile?.storeId || "",
+  activeModule: activeSystemModule,
   availableActions: ["open_leads", "open_lead_configuration"],
 });
 ```
@@ -124,16 +126,17 @@ window.SupportAssistant?.refreshCapabilities?.();
 - a Edge conclui a linha reservada pelo `usage_id` via RPC exclusiva de `service_role`, sem criar uma segunda cobrança;
 - pedidos proibidos ou fora de escopo são bloqueados antes da chamada ao provedor;
 - um tópico sem capacidade ativa também é recusado deterministicamente antes da chamada ao provedor;
-- continuações curtas recebem somente um tópico operacional derivado no servidor; o histórico bruto não é enviado ao modelo;
-- e-mail, CPF, CNPJ, telefone e UUID detectáveis bloqueiam a pergunta; a UI também orienta a não inserir dados pessoais;
-- o modelo recebe apenas manual estático, capacidades booleanas, IDs allowlisted e a pergunta aprovada;
+- a tela atual e as últimas perguntas aprovadas mantêm a conversa natural; respostas com papel `assistant` vindas do navegador não são reenviadas ao modelo;
+- e-mail, CPF, CNPJ, telefone e UUID detectáveis bloqueiam a pergunta antes do provedor;
+- o provedor, modelo e chave são lidos do mesmo registro central `ai_settings` usado pela IA da agência; não existe configuração paralela para o suporte;
+- o modelo recebe apenas manual estático, capacidades booleanas, IDs allowlisted, tela atual e mensagens aprovadas;
 - a resposta passa por validação de escopo e tamanho antes de voltar ao navegador;
 - o Markdown é construído com nós DOM e `textContent`; HTML, links e comandos não são executados;
 - o histórico é somente em memória e é apagado, inclusive visualmente, ao sair ou trocar de sessão.
 
 ## Implantação
 
-Estado verificado em 18 de agosto de 2026: as migrations foram aplicadas, `ai-analysis` versão 2 foi implantada e o endpoint respondeu corretamente a CORS e sessões ausente/inválida. Para novas implantações, preserve esta ordem:
+Estado verificado em 19 de agosto de 2026: as migrations foram aplicadas e o endpoint respondeu corretamente a CORS e sessões ausente/inválida. Para novas implantações, preserve esta ordem:
 
 1. revisar e aplicar `20260818182307_support_assistant_authorization.sql`;
 2. aplicar `20260818193000_redact_ai_settings_key.sql`;
