@@ -5,6 +5,7 @@
     workspace: "lc_get_attendance_workspace",
     save: "lc_upsert_attendance_v2",
     list: "lc_list_attendances_v3",
+    analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
     morningSave: "lc_save_good_morning_seller_settings",
     morningAdvance: "lc_advance_good_morning_seller_turn",
@@ -20,6 +21,7 @@
     root: null,
     bridge: {},
     active: false,
+    view: "operations",
     loading: false,
     saving: false,
     generation: 0,
@@ -61,7 +63,7 @@
   };
   const embeddedAnalysisStates = new WeakMap();
   const EMBEDDED_ANALYSIS_PAGE_SIZE = 200;
-  const EMBEDDED_ANALYSIS_MAX_RECORDS = 2000;
+  const EMBEDDED_EXPORT_MAX_RECORDS = 50000;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -284,6 +286,7 @@
     return {
       id: String(firstDefined(source.id, source.attendance_id, source.attendanceId, `${createdAt || "attendance"}-${index}`)),
       storeId: String(firstDefined(source.store_id, source.storeId, state.selectedStoreId, "")),
+      professionalId: String(firstDefined(source.professional_id, source.professionalId, "")),
       professionalName: String(firstDefined(source.professional_name, source.professionalName, source.performed_by, source.performedBy, "Não informado")),
       customerName: String(firstDefined(source.customer_name, source.customerName, source.client_name, source.clientName, source.name, "Cliente não informado")),
       phone: formatPhone(firstDefined(source.phone, source.customer_phone, source.customerPhone, source.telephone, "")),
@@ -450,16 +453,24 @@
         ? `<div class="attendance-locked-store"><i class="fa-solid fa-lock" aria-hidden="true"></i><span>Ambiente exclusivo desta empresa</span></div>`
         : "";
 
+    const viewSwitcher = store
+      ? `<nav class="attendance-view-switcher" aria-label="Área de Atendimentos">
+          <button type="button" data-attendance-action="view-operations" class="${state.view === "operations" ? "is-active" : ""}" aria-current="${state.view === "operations" ? "page" : "false"}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Registros</span></button>
+          <button type="button" data-attendance-action="view-analysis" class="${state.view === "analysis" ? "is-active" : ""}" aria-current="${state.view === "analysis" ? "page" : "false"}"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span>Análise</span></button>
+        </nav>`
+      : "";
+
     return `<header class="attendance-module-header">
       <div class="attendance-heading">
         ${renderAvatar(store || { name: "Atendimentos", avatarUrl: safeImageUrl(state.bridge?.profile?.avatarUrl) }, "attendance-heading-avatar")}
         <div>
           <p class="attendance-eyebrow">Operação comercial</p>
           <h1>${store ? escapeHtml(store.name) : "Atendimentos"}</h1>
-          <p>${store ? "Registre o atendimento e preserve a origem comercial do cliente." : "Selecione uma empresa para trabalhar com dados totalmente isolados."}</p>
+          <p>${store ? state.view === "analysis" ? "Acompanhe conversão, resultados e desempenho individual da equipe." : "Registre o atendimento e preserve a origem comercial do cliente." : "Selecione uma empresa para trabalhar com dados totalmente isolados."}</p>
         </div>
       </div>
       <div class="attendance-header-actions">
+        ${viewSwitcher}
         ${selector}
         <button class="attendance-icon-button" type="button" data-attendance-action="refresh" aria-label="Atualizar atendimentos" title="Atualizar">
           <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
@@ -603,14 +614,37 @@
     return [...professionals.slice(currentIndex), ...professionals.slice(0, currentIndex)];
   }
 
+  function morningPeriodFactor(key) {
+    if (key === "month") return 1;
+    const today = new Date(`${state.morning?.today || ""}T12:00:00`);
+    if (Number.isNaN(today.getTime())) return 0;
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    if (!daysInMonth) return 0;
+    if (key === "today") return 1 / daysInMonth;
+    const weekStart = new Date(`${state.morning?.weekStart || ""}T12:00:00`);
+    const weekEnd = new Date(`${state.morning?.weekEnd || ""}T12:00:00`);
+    if (Number.isNaN(weekStart.getTime()) || Number.isNaN(weekEnd.getTime())) return 0;
+    const daysInWeek = Math.max(Math.round((weekEnd - weekStart) / 86_400_000) + 1, 0);
+    return daysInWeek / daysInMonth;
+  }
+
+  function renderMorningIndividualGoals(key) {
+    const factor = morningPeriodFactor(key);
+    const professionals = morningQueue();
+    if (!professionals.length) return "";
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(professional.goalAmount * factor))}</strong></p>`).join("")}</div></div>`;
+  }
+
   function renderMorningGoalCard(key, label, icon, helper) {
     const goal = state.morning?.goals?.[key] || { target: 0, actual: 0 };
     const progress = goalProgress(goal.actual, goal.target);
     return `<article class="attendance-morning-goal is-${key}">
       <header><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><b>${progress}%</b></header>
+      <span class="attendance-morning-general-label">Meta geral da equipe</span>
       <strong>${escapeHtml(formatCurrency(goal.target))}</strong>
       <small>${escapeHtml(formatCurrency(goal.actual))} realizado${helper ? ` · ${escapeHtml(helper)}` : ""}</small>
       <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${progress}%"></b></i>
+      ${renderMorningIndividualGoals(key)}
     </article>`;
   }
 
@@ -971,10 +1005,23 @@
 
   function renderWorkspace() {
     if (!state.root) return;
+    const mountedAnalysis = state.root.querySelector("[data-attendance-own-analysis]");
+    if (mountedAnalysis) destroyEmbeddedAnalysis(mountedAnalysis);
     state.root.innerHTML = `<div class="attendance-shell">${renderStoreHeader()}<main class="attendance-module-main">
-      ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : `${renderGoodMorningSeller()}<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
+      ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : state.view === "analysis" ? `<div class="attendance-own-analysis" data-attendance-own-analysis></div>` : `${renderGoodMorningSeller()}<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
     </main></div>`;
     syncPurchaseFields();
+    if (state.view === "analysis" && state.selectedStoreId && !state.loading && !state.loadError) {
+      const analysisRoot = state.root.querySelector("[data-attendance-own-analysis]");
+      if (analysisRoot) {
+        queueMicrotask(() => {
+          if (!analysisRoot.isConnected || state.view !== "analysis") return;
+          renderEmbeddedAnalysis({ root: analysisRoot, bridge: state.bridge, storeId: state.selectedStoreId }).catch((error) => {
+            renderEmbeddedAttendanceState({ root: analysisRoot, destroyed: false }, "error", readableError(error));
+          });
+        });
+      }
+    }
   }
 
   function renderFilteredRegions() {
@@ -1054,44 +1101,54 @@
     return `${values.year}-${values.month}-${values.day}`;
   }
 
-  function embeddedAttendanceRange(period) {
+  function embeddedAttendanceRange(analysisState) {
+    const period = String(analysisState?.period || analysisState || "30d");
     if (period === "all") return { startDate: null, endDate: null, label: "Todo o período" };
     const todayInput = embeddedDateInput(new Date());
     const today = new Date(`${todayInput}T12:00:00Z`);
     const start = new Date(today);
     if (period === "today") return { startDate: embeddedDateInput(today), endDate: embeddedDateInput(today), label: "Hoje" };
-    start.setDate(start.getDate() - (period === "7d" ? 6 : 29));
+    if (period === "yesterday") {
+      start.setUTCDate(start.getUTCDate() - 1);
+      return { startDate: embeddedDateInput(start), endDate: embeddedDateInput(start), label: "Ontem" };
+    }
+    if (period === "currentMonth") {
+      start.setUTCDate(1);
+      return { startDate: embeddedDateInput(start), endDate: embeddedDateInput(today), label: "Mês atual" };
+    }
+    if (period === "previousMonth") {
+      const previousEnd = new Date(today);
+      previousEnd.setUTCDate(0);
+      const previousStart = new Date(previousEnd);
+      previousStart.setUTCDate(1);
+      return { startDate: embeddedDateInput(previousStart), endDate: embeddedDateInput(previousEnd), label: "Mês anterior" };
+    }
+    if (period === "custom") {
+      const startDate = String(analysisState?.customStart || "");
+      const endDate = String(analysisState?.customEnd || "");
+      return {
+        startDate: startDate || null,
+        endDate: endDate || null,
+        label: startDate && endDate ? `${formatShortDate(startDate)} a ${formatShortDate(endDate)}` : "Período personalizado",
+      };
+    }
+    const days = period === "7d" ? 7 : period === "15d" ? 15 : 30;
+    start.setUTCDate(start.getUTCDate() - (days - 1));
     return {
       startDate: embeddedDateInput(start),
       endDate: embeddedDateInput(today),
-      label: period === "7d" ? "Últimos 7 dias" : "Últimos 30 dias",
+      label: `Últimos ${days} dias`,
     };
   }
 
-  function embeddedFilteredRecords(analysisState) {
-    const filters = analysisState.filters || {};
-    const query = normalizeText(filters.search);
-    return analysisState.records.filter((record) => {
-      if (filters.tag && filters.tag !== "all" && record.tag !== filters.tag) return false;
-      if (filters.professional && filters.professional !== "all" && normalizeText(record.professionalName) !== normalizeText(filters.professional)) return false;
-      const linked = record.linkedLead?.linked || record.linkedProspection?.linked;
-      if (filters.link === "linked" && !linked) return false;
-      if (filters.link === "standalone" && (linked || record.ambiguous)) return false;
-      if (filters.link === "review" && !record.ambiguous) return false;
-      if (!query) return true;
-      return normalizeText([
-        record.customerName,
-        record.phone,
-        record.cpf,
-        record.description,
-        record.professionalName,
-        record.serviceOrder,
-        TAGS[record.tag]?.label,
-      ].join(" ")).includes(query);
-    }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  function formatShortDate(value) {
+    if (!value) return "";
+    const date = new Date(`${value}T12:00:00Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(date);
   }
 
-  function embeddedAttendanceMetricData(records) {
+  function embeddedAttendanceMetricData(records = []) {
     const purchases = records.filter((record) => record.tag === "purchase");
     const budgets = records.filter((record) => record.tag === "budget");
     const linkedLead = records.filter((record) => record.linkedLead?.linked).length;
@@ -1104,7 +1161,8 @@
       budgets: budgets.length,
       purchases: purchases.length,
       other: records.length - budgets.length - purchases.length,
-      conversion: records.length ? Math.round((purchases.length / records.length) * 100) : 0,
+      conversion: records.length ? Math.round((purchases.length / records.length) * 1000) / 10 : 0,
+      attendanceConversion: records.length ? Math.round((purchases.length / records.length) * 1000) / 10 : 0,
       revenue,
       ticket: purchases.length ? revenue / purchases.length : 0,
       serviceValue,
@@ -1116,16 +1174,66 @@
       unmatched: records.length - linked,
       ambiguous: records.filter((record) => record.ambiguous).length,
       uniqueCustomers: new Set(records.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
+      uniqueBuyers: new Set(purchases.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
     };
+  }
+
+  function normalizeEmbeddedAnalysis(raw, records = []) {
+    const fallback = embeddedAttendanceMetricData(records);
+    const payload = unwrapPayload(raw);
+    const source = payload.metrics && typeof payload.metrics === "object" ? payload.metrics : {};
+    const number = (...keys) => normalizeMoney(firstDefined(...keys.map((key) => source[key]), 0));
+    const metrics = {
+      total: number("total"),
+      budgets: number("budgets"),
+      purchases: number("purchases"),
+      other: number("other"),
+      uniqueCustomers: number("unique_customers", "uniqueCustomers") || fallback.uniqueCustomers,
+      uniqueBuyers: number("unique_buyers", "uniqueBuyers"),
+      conversion: number("conversion"),
+      attendanceConversion: number("attendance_conversion", "attendanceConversion"),
+      revenue: number("revenue"),
+      ticket: number("ticket"),
+      serviceValue: number("service_value", "serviceValue"),
+      averageServiceValue: number("average_service_value", "averageServiceValue"),
+      linked: number("linked"),
+      linkedLead: number("linked_lead", "linkedLead"),
+      linkedProspection: number("linked_prospection", "linkedProspection"),
+      both: number("both"),
+      unmatched: number("unmatched"),
+      ambiguous: number("ambiguous"),
+    };
+    const professionalRows = Array.isArray(payload.professionals) ? payload.professionals : [];
+    const professionals = professionalRows.map((item) => ({
+      id: String(firstDefined(item.professional_id, item.professionalId, "")),
+      name: String(firstDefined(item.name, item.professional_name, item.professionalName, "Não informado")),
+      total: normalizeMoney(item.total),
+      budgets: normalizeMoney(item.budgets),
+      purchases: normalizeMoney(item.purchases),
+      other: normalizeMoney(item.other),
+      uniqueCustomers: normalizeMoney(firstDefined(item.unique_customers, item.uniqueCustomers, 0)),
+      uniqueBuyers: normalizeMoney(firstDefined(item.unique_buyers, item.uniqueBuyers, 0)),
+      conversion: normalizeMoney(item.conversion),
+      attendanceConversion: normalizeMoney(firstDefined(item.attendance_conversion, item.attendanceConversion, 0)),
+      revenue: normalizeMoney(item.revenue),
+      ticket: normalizeMoney(item.ticket),
+      serviceValue: normalizeMoney(firstDefined(item.service_value, item.serviceValue, 0)),
+    }));
+    return { metrics, professionals };
+  }
+
+  function formatAnalysisPercent(value) {
+    return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(Number(value || 0))}%`;
   }
 
   function embeddedAttendanceMetricCards(metrics) {
     const cards = [
-      { label: "Atendimentos", value: metrics.total, icon: "fa-clipboard-check", tone: "forest" },
-      { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
-      { label: "Conversão", value: `${metrics.conversion}%`, icon: "fa-arrow-trend-up", tone: "mint" },
+      { label: "Clientes atendidos", value: metrics.total, icon: "fa-users", tone: "forest" },
+      { label: "Compraram", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
+      { label: "Taxa de conversão", value: formatAnalysisPercent(metrics.attendanceConversion), icon: "fa-arrow-trend-up", tone: "mint" },
+      { label: "Orçamentos", value: metrics.budgets, icon: "fa-file-invoice-dollar", tone: "sage" },
+      { label: "Outros", value: metrics.other, icon: "fa-ellipsis", tone: "teal" },
       { label: "Faturamento", value: formatCurrency(metrics.revenue), icon: "fa-chart-line", tone: "emerald" },
-      { label: "Ticket médio", value: formatCurrency(metrics.ticket), icon: "fa-receipt", tone: "teal" },
     ];
     return `<section class="attendance-analysis-kpis" data-attendance-analysis-kpis aria-label="Indicadores da análise">${cards.map((card) => `<article class="attendance-analysis-kpi is-${card.tone}"><span><i class="fa-solid ${card.icon}" aria-hidden="true"></i></span><div><small>${card.label}</small><strong>${escapeHtml(card.value)}</strong></div></article>`).join("")}</section>`;
   }
@@ -1137,7 +1245,7 @@
       { label: "Compras", value: metrics.purchases, icon: "fa-bag-shopping", tone: "lime" },
       { label: "Outros", value: metrics.other, icon: "fa-ellipsis", tone: "sage" },
     ];
-    return `<article class="attendance-analysis-card" data-attendance-analysis-outcomes><header><div><p class="attendance-eyebrow">Resultado</p><h3>Funil dos atendimentos</h3></div><span>${metrics.conversion}% em compra</span></header><div class="attendance-analysis-funnel">${stages.map((stage) => { const width = stage.label === "Atendimentos" ? 100 : metrics.total ? Math.round((stage.value / metrics.total) * 100) : 0; return `<div class="attendance-funnel-row is-${stage.tone}"><span><i class="fa-solid ${stage.icon}" aria-hidden="true"></i>${stage.label}</span><div><i style="width:${Math.max(width, stage.value ? 5 : 0)}%"></i></div><strong>${stage.value}<small>${stage.label === "Atendimentos" ? "base" : `${width}%`}</small></strong></div>`; }).join("")}</div></article>`;
+    return `<article class="attendance-analysis-card" data-attendance-analysis-outcomes><header><div><p class="attendance-eyebrow">Resultado</p><h3>Destino dos atendimentos</h3></div><span>${formatAnalysisPercent(metrics.attendanceConversion)} em compra</span></header><div class="attendance-analysis-funnel">${stages.map((stage) => { const width = stage.label === "Atendimentos" ? 100 : metrics.total ? Math.round((stage.value / metrics.total) * 100) : 0; return `<div class="attendance-funnel-row is-${stage.tone}"><span><i class="fa-solid ${stage.icon}" aria-hidden="true"></i>${stage.label}</span><div><i style="width:${Math.max(width, stage.value ? 5 : 0)}%"></i></div><strong>${stage.value}<small>${stage.label === "Atendimentos" ? "base" : `${width}%`}</small></strong></div>`; }).join("")}</div></article>`;
   }
 
   function embeddedAttendanceFinanceMarkup(metrics) {
@@ -1150,32 +1258,14 @@
     return `<article class="attendance-analysis-card attendance-analysis-finance" data-attendance-analysis-finance><header><div><p class="attendance-eyebrow">Financeiro</p><h3>Receita e valor gerado</h3></div><span>Valores informados</span></header><div class="attendance-finance-grid">${rows.map(([label, value, icon], index) => `<div class="${index === 0 ? "is-featured" : ""}"><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></article>`;
   }
 
-  function embeddedAttendanceProfessionalRows(records) {
-    const grouped = new Map();
-    records.forEach((record) => {
-      const key = normalizeText(record.professionalName || "Não informado");
-      if (!grouped.has(key)) grouped.set(key, { name: record.professionalName || "Não informado", total: 0, budgets: 0, purchases: 0, revenue: 0, serviceValue: 0 });
-      const item = grouped.get(key);
-      item.total += 1;
-      if (record.tag === "budget") item.budgets += 1;
-      if (record.tag === "purchase") {
-        item.purchases += 1;
-        item.revenue += record.purchaseValue;
-      }
-      item.serviceValue += record.serviceValue;
-    });
-    return [...grouped.values()].sort((a, b) => b.purchases - a.purchases || b.revenue - a.revenue || b.total - a.total);
-  }
-
-  function renderEmbeddedAttendanceProfessionals(records) {
-    const rows = embeddedAttendanceProfessionalRows(records).slice(0, 6);
+  function renderEmbeddedAttendanceProfessionals(rows) {
     if (!rows.length) return `<div class="attendance-analysis-empty"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><strong>Sem profissionais neste recorte</strong><span>Ajuste os filtros para ampliar a leitura.</span></div>`;
     const maxTotal = Math.max(...rows.map((item) => item.total), 1);
-    return rows.map((item, index) => `<div class="attendance-professional-row"><b>${index + 1}</b><span class="attendance-professional-avatar">${escapeHtml(initials(item.name))}</span><div class="attendance-professional-copy"><strong>${escapeHtml(item.name)}</strong><span>${item.total} atendimento${item.total === 1 ? "" : "s"} · ${item.purchases} compra${item.purchases === 1 ? "" : "s"}</span><i><b style="width:${Math.max(Math.round((item.total / maxTotal) * 100), 5)}%"></b></i></div><div class="attendance-professional-result"><strong>${item.total ? Math.round((item.purchases / item.total) * 100) : 0}%</strong><span>${escapeHtml(formatCurrency(item.revenue))}</span></div></div>`).join("");
+    return rows.map((item, index) => `<div class="attendance-professional-row"><b>${index + 1}</b><span class="attendance-professional-avatar">${escapeHtml(initials(item.name))}</span><div class="attendance-professional-copy"><strong>${escapeHtml(item.name)}</strong><span>${item.total} atendimento${item.total === 1 ? "" : "s"} · ${item.purchases} compra${item.purchases === 1 ? "" : "s"} · ${item.budgets} orçamento${item.budgets === 1 ? "" : "s"} · ${item.other} outro${item.other === 1 ? "" : "s"}</span><i><b style="width:${Math.max(Math.round((item.total / maxTotal) * 100), 5)}%"></b></i></div><div class="attendance-professional-result"><strong>${formatAnalysisPercent(item.attendanceConversion)}</strong><small>conversão</small><span>${escapeHtml(formatCurrency(item.revenue))}</span></div></div>`).join("");
   }
 
-  function embeddedAttendanceProfessionalPanel(records) {
-    return `<article class="attendance-analysis-card" data-attendance-analysis-professionals><header><div><p class="attendance-eyebrow">Equipe</p><h3>Desempenho por profissional</h3></div><span>Top 6 do recorte</span></header><div class="attendance-professional-list">${renderEmbeddedAttendanceProfessionals(records)}</div></article>`;
+  function embeddedAttendanceProfessionalPanel(rows) {
+    return `<article class="attendance-analysis-card" data-attendance-analysis-professionals><header><div><p class="attendance-eyebrow">Equipe</p><h3>Conversão individual por vendedor</h3></div><span>${rows.length} vendedor${rows.length === 1 ? "" : "es"}</span></header><div class="attendance-professional-list">${renderEmbeddedAttendanceProfessionals(rows)}</div></article>`;
   }
 
   function embeddedAttendanceDimensionsMarkup(metrics) {
@@ -1191,15 +1281,22 @@
   }
 
   function embeddedAttendanceFilterCount(analysisState) {
-    return Number(analysisState.filters.tag !== "all") + Number(analysisState.filters.professional !== "all") + Number(analysisState.filters.link !== "all");
+    return Number(analysisState.period !== "30d") + Number(analysisState.filters.tag !== "all") + Number(analysisState.filters.professional !== "all") + Number(analysisState.filters.link !== "all");
   }
 
   function embeddedAttendanceFilterPanel(analysisState) {
-    const professionals = [...new Set(analysisState.records.map((record) => record.professionalName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const professionals = [...new Set([
+      ...analysisState.professionalNames,
+      ...analysisState.availableProfessionals.map((professional) => professional.name),
+      ...analysisState.records.map((record) => record.professionalName),
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     return `<div id="attendanceAnalysisFilters" class="attendance-filter-panel attendance-analysis-filter-panel" ${analysisState.filtersOpen ? "" : "hidden"}>
-      <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-analysis-filter="tag"><option value="all">Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${analysisState.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
+      <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Dias analisados</span><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${analysisState.period === "today" ? "selected" : ""}>Hoje</option><option value="yesterday" ${analysisState.period === "yesterday" ? "selected" : ""}>Ontem</option><option value="7d" ${analysisState.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="15d" ${analysisState.period === "15d" ? "selected" : ""}>Últimos 15 dias</option><option value="30d" ${analysisState.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="currentMonth" ${analysisState.period === "currentMonth" ? "selected" : ""}>Mês atual</option><option value="previousMonth" ${analysisState.period === "previousMonth" ? "selected" : ""}>Mês anterior</option><option value="custom" ${analysisState.period === "custom" ? "selected" : ""}>Escolher datas</option><option value="all" ${analysisState.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+      <label class="attendance-analysis-date-input ${analysisState.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>Data inicial</span><input type="date" data-attendance-analysis-date="start" value="${escapeHtml(analysisState.customStart)}" ${analysisState.period === "custom" ? "" : "disabled"} /></label>
+      <label class="attendance-analysis-date-input ${analysisState.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Data final</span><input type="date" data-attendance-analysis-date="end" value="${escapeHtml(analysisState.customEnd)}" ${analysisState.period === "custom" ? "" : "disabled"} /></label>
+      <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo de atendimento</span><select data-attendance-analysis-filter="tag"><option value="all">Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${analysisState.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
       <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-analysis-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${analysisState.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
-      <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-analysis-filter="link"><option value="all">Todos os vínculos</option><option value="linked" ${analysisState.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${analysisState.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${analysisState.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
+      <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Origem vinculada</span><select data-attendance-analysis-filter="link"><option value="all">Todos os vínculos</option><option value="linked" ${analysisState.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="lead" ${analysisState.filters.link === "lead" ? "selected" : ""}>Somente Lead</option><option value="prospection" ${analysisState.filters.link === "prospection" ? "selected" : ""}>Somente Prospecção</option><option value="both" ${analysisState.filters.link === "both" ? "selected" : ""}>Lead e Prospecção</option><option value="standalone" ${analysisState.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${analysisState.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
       <button class="attendance-clear-filters" type="button" data-attendance-analysis-clear><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar filtros</button>
     </div>`;
   }
@@ -1210,56 +1307,20 @@
     return recent.map((record) => renderRecord(record, { compact: true })).join("");
   }
 
-  function refreshEmbeddedAttendanceRegions(analysisState) {
-    if (analysisState.destroyed || !analysisState.root.isConnected) return;
-    const records = embeddedFilteredRecords(analysisState);
-    const metrics = embeddedAttendanceMetricData(records);
-    const replacements = [
-      ["[data-attendance-analysis-kpis]", embeddedAttendanceMetricCards(metrics)],
-      ["[data-attendance-analysis-outcomes]", embeddedAttendanceOutcomeMarkup(metrics)],
-      ["[data-attendance-analysis-finance]", embeddedAttendanceFinanceMarkup(metrics)],
-      ["[data-attendance-analysis-professionals]", embeddedAttendanceProfessionalPanel(records)],
-      ["[data-attendance-analysis-dimensions]", embeddedAttendanceDimensionsMarkup(metrics)],
-    ];
-    replacements.forEach(([selector, markup]) => {
-      const current = analysisState.root.querySelector(selector);
-      if (current) current.outerHTML = markup;
-    });
-    const list = analysisState.root.querySelector("[data-attendance-analysis-list]");
-    if (list) list.innerHTML = embeddedAttendanceRecordList(analysisState, records);
-    const count = analysisState.root.querySelector("[data-attendance-analysis-count]");
-    if (count) count.textContent = `${records.length} resultado${records.length === 1 ? "" : "s"} · exibindo até 20`;
-    const summary = analysisState.root.querySelector("[data-attendance-analysis-summary]");
-    if (summary) summary.innerHTML = `<span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${Math.min(records.length, 20)}</b> exibidos</span><small>${records.length} no recorte · ${analysisState.records.length} de ${analysisState.detailTotal} carregados</small>`;
-    const filterCount = embeddedAttendanceFilterCount(analysisState);
-    const button = analysisState.root.querySelector("[data-attendance-analysis-toggle]");
-    const badge = analysisState.root.querySelector("[data-attendance-analysis-filter-count]");
-    if (button) {
-      button.classList.toggle("is-active", analysisState.filtersOpen || filterCount > 0);
-      button.setAttribute("aria-expanded", String(analysisState.filtersOpen));
-    }
-    if (badge) {
-      badge.hidden = filterCount === 0;
-      badge.textContent = String(filterCount);
-    }
-  }
-
   function renderEmbeddedAttendanceContent(analysisState) {
     if (analysisState.destroyed || !analysisState.root.isConnected) return;
-    const records = embeddedFilteredRecords(analysisState);
-    const metrics = embeddedAttendanceMetricData(records);
-    const range = embeddedAttendanceRange(analysisState.period);
+    const records = analysisState.records;
+    const metrics = analysisState.metrics || embeddedAttendanceMetricData(records);
+    const range = embeddedAttendanceRange(analysisState);
     const filterCount = embeddedAttendanceFilterCount(analysisState);
-    const sourceLabel = analysisState.truncated
-      ? `Amostra protegida de ${analysisState.records.length} entre ${analysisState.detailTotal} registros`
-      : `${analysisState.records.length} registro${analysisState.records.length === 1 ? "" : "s"} carregado${analysisState.records.length === 1 ? "" : "s"}`;
+    const sourceLabel = `${analysisState.detailTotal} atendimento${analysisState.detailTotal === 1 ? "" : "s"} no recorte`;
     analysisState.root.removeAttribute("aria-busy");
     analysisState.root.innerHTML = `<section class="attendance-analysis">
-      <header class="attendance-analysis-header"><div class="attendance-analysis-title"><span class="attendance-analysis-title-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Análise de Atendimentos</p><h2>${escapeHtml(analysisState.store.name)}</h2><span>${escapeHtml(range.label)} · ${escapeHtml(sourceLabel)}</span></div></div><div class="attendance-analysis-header-actions"><label class="attendance-store-picker"><span>Período</span><span class="attendance-select-wrap"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${analysisState.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${analysisState.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${analysisState.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${analysisState.period === "all" ? "selected" : ""}>Todo o período</option></select></span></label><button class="attendance-icon-button" type="button" data-attendance-embedded-refresh aria-label="Atualizar análise" title="Atualizar"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Loja isolada</span></div></header>
+      <header class="attendance-analysis-header"><div class="attendance-analysis-title"><span class="attendance-analysis-title-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Análise de Atendimentos</p><h2>${escapeHtml(analysisState.store.name)}</h2><span>${escapeHtml(range.label)} · ${escapeHtml(sourceLabel)}</span></div></div><div class="attendance-analysis-header-actions"><button class="attendance-export-button" type="button" data-attendance-analysis-export ${analysisState.exporting ? "disabled" : ""}><i class="fa-solid ${analysisState.exporting ? "fa-circle-notch fa-spin" : "fa-file-arrow-down"}" aria-hidden="true"></i><span>${analysisState.exporting ? "Preparando" : "Exportar relatório"}</span></button><button class="attendance-icon-button" type="button" data-attendance-embedded-refresh aria-label="Atualizar análise" title="Atualizar"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button><span class="attendance-scope-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>Dados desta loja</span></div></header>
       ${embeddedAttendanceMetricCards(metrics)}
       <div class="attendance-analysis-grid attendance-analysis-grid--summary">${embeddedAttendanceOutcomeMarkup(metrics)}${embeddedAttendanceFinanceMarkup(metrics)}</div>
-      <div class="attendance-analysis-grid attendance-analysis-grid--detail">${embeddedAttendanceProfessionalPanel(records)}${embeddedAttendanceDimensionsMarkup(metrics)}</div>
-      <article class="attendance-panel attendance-list-panel attendance-analysis-list-panel"><header class="attendance-list-header"><div class="attendance-list-heading"><p class="attendance-eyebrow">Detalhamento</p><h2>Atendimentos do período</h2><span data-attendance-analysis-count>${records.length} resultado${records.length === 1 ? "" : "s"} · exibindo até 20</span></div><div class="attendance-list-tools"><label class="attendance-search"><span class="attendance-sr-only">Buscar na análise</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-analysis-search value="${escapeHtml(analysisState.filters.search)}" placeholder="Nome, telefone, descrição ou OS" aria-label="Buscar na análise de atendimentos" /></label><button class="attendance-filter-button${analysisState.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-analysis-toggle aria-expanded="${String(analysisState.filtersOpen)}" aria-controls="attendanceAnalysisFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros</span><b data-attendance-analysis-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button></div></header>${embeddedAttendanceFilterPanel(analysisState)}<div class="attendance-list-status" data-attendance-analysis-summary><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${Math.min(records.length, 20)}</b> exibidos</span><small>${records.length} no recorte · ${analysisState.records.length} de ${analysisState.detailTotal} carregados</small></div><div class="attendance-record-list" data-attendance-analysis-list>${embeddedAttendanceRecordList(analysisState, records)}</div></article>
+      <div class="attendance-analysis-grid attendance-analysis-grid--detail">${embeddedAttendanceProfessionalPanel(analysisState.professionals)}${embeddedAttendanceDimensionsMarkup(metrics)}</div>
+      <article class="attendance-panel attendance-list-panel attendance-analysis-list-panel"><header class="attendance-list-header"><div class="attendance-list-heading"><p class="attendance-eyebrow">Detalhamento</p><h2>Atendimentos do período</h2><span data-attendance-analysis-count>${analysisState.detailTotal} resultado${analysisState.detailTotal === 1 ? "" : "s"} · exibindo até 20</span></div><div class="attendance-list-tools"><label class="attendance-search"><span class="attendance-sr-only">Buscar na análise</span><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-attendance-analysis-search value="${escapeHtml(analysisState.filters.search)}" placeholder="Nome, telefone, CPF, descrição ou OS" aria-label="Buscar na análise de atendimentos" /></label><button class="attendance-filter-button${analysisState.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-analysis-toggle aria-expanded="${String(analysisState.filtersOpen)}" aria-controls="attendanceAnalysisFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros completos</span><b data-attendance-analysis-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button></div></header>${embeddedAttendanceFilterPanel(analysisState)}<div class="attendance-list-status" data-attendance-analysis-summary><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${Math.min(records.length, 20)}</b> exibidos</span><small>${analysisState.detailTotal} no recorte · mais recentes primeiro</small></div><div class="attendance-record-list" data-attendance-analysis-list>${embeddedAttendanceRecordList(analysisState, records)}</div></article>
     </section>`;
   }
 
@@ -1273,23 +1334,33 @@
     state.root.innerHTML = `<section class="attendance-context-empty attendance-context-empty--error" role="alert"><span class="attendance-context-empty-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><p class="attendance-eyebrow">Análise indisponível</p><h2>Não foi possível carregar Atendimentos</h2><p>${escapeHtml(message)}</p><button class="attendance-secondary-button" type="button" data-attendance-embedded-retry><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>Tentar novamente</button></section>`;
   }
 
-  async function fetchEmbeddedAttendanceRecords(state, requestGeneration) {
-    const range = embeddedAttendanceRange(state.period);
+  function embeddedAnalysisRequestArgs(state) {
+    const range = embeddedAttendanceRange(state);
+    if (range.startDate && range.endDate && range.startDate > range.endDate) {
+      throw new Error("A data inicial não pode ser posterior à data final.");
+    }
+    return {
+      p_store_id: state.storeId,
+      p_search: String(state.filters.search || "").trim() || null,
+      p_tag: state.filters.tag === "all" ? null : state.filters.tag,
+      p_professional_id: null,
+      p_professional_name: state.filters.professional === "all" ? null : state.filters.professional,
+      p_link_status: state.filters.link === "all" ? null : state.filters.link === "linked" ? "matched" : state.filters.link,
+      p_start_date: range.startDate,
+      p_end_date: range.endDate,
+    };
+  }
+
+  async function fetchEmbeddedAttendanceRecords(state, requestGeneration, { maxRecords = EMBEDDED_ANALYSIS_PAGE_SIZE } = {}) {
+    const requestArgs = embeddedAnalysisRequestArgs(state);
     const records = [];
     let offset = 0;
     let total = 0;
     let hasMore = true;
-    while (hasMore && records.length < EMBEDDED_ANALYSIS_MAX_RECORDS) {
+    while (hasMore && records.length < maxRecords) {
       const raw = await state.bridge.rpc(DEFAULT_RPC.list, {
-        p_store_id: state.storeId,
-        p_search: null,
-        p_tag: null,
-        p_professional_id: null,
-        p_professional_name: null,
-        p_link_status: null,
-        p_start_date: range.startDate,
-        p_end_date: range.endDate,
-        p_limit: EMBEDDED_ANALYSIS_PAGE_SIZE,
+        ...requestArgs,
+        p_limit: Math.min(EMBEDDED_ANALYSIS_PAGE_SIZE, maxRecords - records.length),
         p_offset: offset,
       });
       if (state.destroyed || requestGeneration !== state.generation) return null;
@@ -1311,33 +1382,160 @@
       offset += pageRows.length;
     }
     return {
-      records: records.slice(0, EMBEDDED_ANALYSIS_MAX_RECORDS),
+      records: records.slice(0, maxRecords),
       total,
-      truncated: hasMore || total > EMBEDDED_ANALYSIS_MAX_RECORDS,
+      truncated: hasMore || total > maxRecords,
     };
   }
 
   async function loadEmbeddedAttendanceAnalysis(state) {
+    if (state.searchTimer) {
+      global.clearTimeout(state.searchTimer);
+      state.searchTimer = 0;
+    }
     const requestGeneration = ++state.generation;
     state.root.setAttribute("aria-busy", "true");
-    state.root.innerHTML = `<section class="attendance-workspace-loading" role="status" aria-live="polite"><span class="attendance-spinner" aria-hidden="true"></span><div><strong>Carregando análise de Atendimentos</strong><span>Buscando somente os dados de ${escapeHtml(state.store.name)}.</span></div></section>`;
+    if (!state.hasLoaded) {
+      state.root.innerHTML = `<section class="attendance-workspace-loading" role="status" aria-live="polite"><span class="attendance-spinner" aria-hidden="true"></span><div><strong>Carregando análise de Atendimentos</strong><span>Calculando conversões e resultados de ${escapeHtml(state.store.name)}.</span></div></section>`;
+    } else {
+      state.root.querySelector(".attendance-analysis")?.classList.add("is-refreshing");
+    }
     try {
-      const workspaceRaw = await state.bridge.rpc(DEFAULT_RPC.workspace, { p_store_id: state.storeId });
-      if (state.destroyed || requestGeneration !== state.generation) return;
-      const workspacePayload = unwrapPayload(workspaceRaw);
-      const returnedStoreId = String(firstDefined(workspacePayload.store?.id, workspacePayload.store_id, workspacePayload.storeId, state.storeId));
-      if (returnedStoreId !== state.storeId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
-      const workspace = normalizeWorkspace(workspaceRaw);
-      state.serverMetrics = workspace.metrics;
-      const page = await fetchEmbeddedAttendanceRecords(state, requestGeneration);
+      if (!state.accessVerified) {
+        const workspaceRaw = await state.bridge.rpc(DEFAULT_RPC.workspace, { p_store_id: state.storeId });
+        if (state.destroyed || requestGeneration !== state.generation) return;
+        const workspacePayload = unwrapPayload(workspaceRaw);
+        const returnedStoreId = String(firstDefined(workspacePayload.store?.id, workspacePayload.store_id, workspacePayload.storeId, state.storeId));
+        if (returnedStoreId !== state.storeId) throw new Error("A consulta retornou dados de outro cliente e foi bloqueada por segurança.");
+        const workspace = normalizeWorkspace(workspaceRaw);
+        state.availableProfessionals = workspace.professionals;
+        state.professionalNames = workspace.professionals.map((professional) => professional.name);
+        state.accessVerified = true;
+      }
+      const [page, analysisRaw] = await Promise.all([
+        fetchEmbeddedAttendanceRecords(state, requestGeneration),
+        state.bridge.rpc(DEFAULT_RPC.analysis, embeddedAnalysisRequestArgs(state)),
+      ]);
       if (!page || state.destroyed || requestGeneration !== state.generation) return;
+      const analysisPayload = unwrapPayload(analysisRaw);
+      const analysisStoreId = String(firstDefined(analysisPayload.store_id, analysisPayload.storeId, state.storeId));
+      if (analysisStoreId !== state.storeId) throw new Error("A análise retornou dados de outro cliente e foi bloqueada por segurança.");
+      const analysis = normalizeEmbeddedAnalysis(analysisRaw, page.records);
       state.records = page.records;
       state.detailTotal = page.total;
       state.truncated = page.truncated;
+      state.metrics = analysis.metrics;
+      state.professionals = analysis.professionals;
+      state.professionalNames = [...new Set([
+        ...state.professionalNames,
+        ...analysis.professionals.map((professional) => professional.name),
+      ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+      state.hasLoaded = true;
       renderEmbeddedAttendanceContent(state);
     } catch (error) {
       if (state.destroyed || requestGeneration !== state.generation) return;
       renderEmbeddedAttendanceState(state, isEntitlementError(error) ? "locked" : "error", readableError(error));
+    }
+  }
+
+  function embeddedCsvCell(value) {
+    let text = String(value ?? "");
+    if (/^[=+\-@]/.test(text.trim())) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  function embeddedReportDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    }).format(date);
+  }
+
+  function embeddedReportFilterLabel(state) {
+    const filters = [];
+    if (state.filters.tag !== "all") filters.push(`Tipo: ${TAGS[state.filters.tag]?.label || state.filters.tag}`);
+    if (state.filters.professional !== "all") filters.push(`Vendedor: ${state.filters.professional}`);
+    if (state.filters.link !== "all") filters.push(`Vínculo: ${state.filters.link}`);
+    if (state.filters.search.trim()) filters.push(`Busca: ${state.filters.search.trim()}`);
+    return filters.join(" | ") || "Sem filtros adicionais";
+  }
+
+  function buildEmbeddedAttendanceCsv(state, records) {
+    const metrics = state.metrics || embeddedAttendanceMetricData(records);
+    const range = embeddedAttendanceRange(state);
+    const rows = [
+      ["RELATÓRIO DE ATENDIMENTOS"],
+      ["Loja", state.store.name],
+      ["Período", range.label],
+      ["Filtros", embeddedReportFilterLabel(state)],
+      ["Gerado em", embeddedReportDateTime(new Date())],
+      [],
+      ["RESUMO"],
+      ["Clientes atendidos", metrics.total],
+      ["Compraram", metrics.purchases],
+      ["Taxa de conversão", formatAnalysisPercent(metrics.attendanceConversion)],
+      ["Clientes únicos", metrics.uniqueCustomers],
+      ["Orçamentos", metrics.budgets],
+      ["Outros", metrics.other],
+      ["Faturamento", formatCurrency(metrics.revenue)],
+      ["Ticket médio", formatCurrency(metrics.ticket)],
+      [],
+      ["DESEMPENHO POR VENDEDOR"],
+      ["Vendedor", "Atendimentos", "Compras", "Conversão", "Orçamentos", "Outros", "Clientes únicos", "Faturamento", "Ticket médio"],
+      ...state.professionals.map((item) => [item.name, item.total, item.purchases, formatAnalysisPercent(item.attendanceConversion), item.budgets, item.other, item.uniqueCustomers, formatCurrency(item.revenue), formatCurrency(item.ticket)]),
+      [],
+      ["DETALHAMENTO"],
+      ["Data", "Cliente", "Telefone", "CPF", "Vendedor", "Tipo", "Valor do atendimento", "Valor da compra", "OS", "Vínculo", "Descrição"],
+      ...records.map((record) => [
+        embeddedReportDateTime(record.createdAt),
+        record.customerName,
+        record.phone,
+        record.cpf,
+        record.professionalName,
+        TAGS[record.tag]?.label || "Outro",
+        formatCurrency(record.serviceValue),
+        record.tag === "purchase" ? formatCurrency(record.purchaseValue) : "",
+        record.serviceOrder,
+        record.linkedLead?.linked && record.linkedProspection?.linked ? "Lead e Prospecção" : record.linkedLead?.linked ? "Lead" : record.linkedProspection?.linked ? "Prospecção" : record.ambiguous ? "Revisar" : "Avulso",
+        record.description,
+      ]),
+    ];
+    return `\uFEFF${rows.map((row) => row.map(embeddedCsvCell).join(";")).join("\r\n")}`;
+  }
+
+  async function exportEmbeddedAttendanceReport(state) {
+    if (state.exporting) return;
+    state.exporting = true;
+    const button = state.root.querySelector("[data-attendance-analysis-export]");
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i><span>Preparando</span>';
+    }
+    try {
+      const page = await fetchEmbeddedAttendanceRecords(state, state.generation, { maxRecords: EMBEDDED_EXPORT_MAX_RECORDS });
+      if (!page) return;
+      const csv = buildEmbeddedAttendanceCsv(state, page.records);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeStore = normalizeText(state.store.name).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "loja";
+      link.href = url;
+      link.download = `relatorio-atendimentos-${safeStore}-${embeddedDateInput(new Date())}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      global.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      state.bridge?.notify?.(page.truncated ? `Relatório exportado com os ${EMBEDDED_EXPORT_MAX_RECORDS} registros mais recentes.` : "Relatório de Atendimentos exportado.", page.truncated ? "warning" : "success");
+    } catch (error) {
+      state.bridge?.notify?.(readableError(error), "error");
+    } finally {
+      state.exporting = false;
+      const currentButton = state.root.querySelector("[data-attendance-analysis-export]");
+      if (currentButton) {
+        currentButton.disabled = false;
+        currentButton.innerHTML = '<i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i><span>Exportar relatório</span>';
+      }
     }
   }
 
@@ -1350,18 +1548,28 @@
     }
 
     const access = embeddedAttendanceStore(embeddedBridge, storeId);
+    const defaultRange = embeddedAttendanceRange({ period: "30d" });
     const embeddedState = {
       root: mount,
       bridge: embeddedBridge,
       storeId: String(storeId || ""),
       store: access.store,
       period: "30d",
+      customStart: defaultRange.startDate,
+      customEnd: defaultRange.endDate,
       records: [],
-      serverMetrics: {},
+      metrics: null,
+      professionals: [],
+      availableProfessionals: [],
+      professionalNames: [],
       detailTotal: 0,
       truncated: false,
       filtersOpen: false,
       filters: { search: "", tag: "all", professional: "all", link: "all" },
+      accessVerified: false,
+      hasLoaded: false,
+      exporting: false,
+      searchTimer: 0,
       generation: 0,
       destroyed: false,
       onClick: null,
@@ -1387,6 +1595,10 @@
         loadEmbeddedAttendanceAnalysis(embeddedState);
         return;
       }
+      if (event.target.closest("[data-attendance-analysis-export]")) {
+        await exportEmbeddedAttendanceReport(embeddedState);
+        return;
+      }
       const toggle = event.target.closest("[data-attendance-analysis-toggle]");
       if (toggle) {
         embeddedState.filtersOpen = !embeddedState.filtersOpen;
@@ -1398,25 +1610,44 @@
       }
       if (event.target.closest("[data-attendance-analysis-clear]")) {
         embeddedState.filters = { search: "", tag: "all", professional: "all", link: "all" };
+        embeddedState.period = "30d";
+        const range = embeddedAttendanceRange(embeddedState);
+        embeddedState.customStart = range.startDate;
+        embeddedState.customEnd = range.endDate;
         embeddedState.filtersOpen = true;
-        renderEmbeddedAttendanceContent(embeddedState);
+        await loadEmbeddedAttendanceAnalysis(embeddedState);
       }
     };
     embeddedState.onInput = (event) => {
       const input = event.target.closest("[data-attendance-analysis-search]");
       if (!input || !mount.contains(input)) return;
       embeddedState.filters.search = input.value;
-      refreshEmbeddedAttendanceRegions(embeddedState);
+      if (embeddedState.searchTimer) global.clearTimeout(embeddedState.searchTimer);
+      embeddedState.searchTimer = global.setTimeout(() => {
+        embeddedState.searchTimer = 0;
+        loadEmbeddedAttendanceAnalysis(embeddedState);
+      }, 420);
     };
     embeddedState.onChange = (event) => {
       const selector = event.target.closest("[data-attendance-embedded-period]");
       if (selector && mount.contains(selector)) {
         const period = selector.value;
-        if (!["today", "7d", "30d", "all"].includes(period)) return;
+        if (!["today", "yesterday", "7d", "15d", "30d", "currentMonth", "previousMonth", "custom", "all"].includes(period)) return;
         embeddedState.period = period;
-        embeddedState.filters = { search: "", tag: "all", professional: "all", link: "all" };
-        embeddedState.filtersOpen = false;
+        embeddedState.filtersOpen = true;
+        if (period === "custom") {
+          renderEmbeddedAttendanceContent(embeddedState);
+          mount.querySelector('[data-attendance-analysis-date="start"]')?.focus();
+        }
         loadEmbeddedAttendanceAnalysis(embeddedState);
+        return;
+      }
+      const dateInput = event.target.closest("[data-attendance-analysis-date]");
+      if (dateInput && mount.contains(dateInput)) {
+        if (dateInput.dataset.attendanceAnalysisDate === "start") embeddedState.customStart = dateInput.value;
+        if (dateInput.dataset.attendanceAnalysisDate === "end") embeddedState.customEnd = dateInput.value;
+        embeddedState.period = "custom";
+        if (embeddedState.customStart && embeddedState.customEnd) loadEmbeddedAttendanceAnalysis(embeddedState);
         return;
       }
       const filter = event.target.closest("[data-attendance-analysis-filter]");
@@ -1424,7 +1655,7 @@
       const key = filter.dataset.attendanceAnalysisFilter;
       if (!key || !(key in embeddedState.filters)) return;
       embeddedState.filters[key] = filter.value;
-      refreshEmbeddedAttendanceRegions(embeddedState);
+      loadEmbeddedAttendanceAnalysis(embeddedState);
     };
     mount.addEventListener("click", embeddedState.onClick);
     mount.addEventListener("input", embeddedState.onInput);
@@ -1445,6 +1676,7 @@
     if (embeddedState) {
       embeddedState.destroyed = true;
       embeddedState.generation += 1;
+      if (embeddedState.searchTimer) global.clearTimeout(embeddedState.searchTimer);
       if (embeddedState.onClick) mount.removeEventListener("click", embeddedState.onClick);
       if (embeddedState.onInput) mount.removeEventListener("input", embeddedState.onInput);
       if (embeddedState.onChange) mount.removeEventListener("change", embeddedState.onChange);
@@ -1998,6 +2230,7 @@
 
   function onInput(event) {
     const target = event.target;
+    if (target.closest("[data-attendance-own-analysis]")) return;
     if (target.matches('input[name="phone"]')) {
       target.value = formatPhone(target.value);
       return;
@@ -2019,6 +2252,7 @@
 
   async function onChange(event) {
     const target = event.target;
+    if (target.closest("[data-attendance-own-analysis]")) return;
     if (target.matches("[data-attendance-store]")) {
       const nextId = String(target.value || "");
       if (nextId && !state.stores.some((store) => store.id === nextId)) return;
@@ -2084,6 +2318,7 @@
   }
 
   async function onClick(event) {
+    if (event.target.closest("[data-attendance-own-analysis]")) return;
     if (event.target.matches("[data-morning-backdrop]")) {
       state.morningConfigOpen = false;
       state.morningDraft = null;
@@ -2106,6 +2341,14 @@
     const button = event.target.closest("[data-attendance-action]");
     if (!button) return;
     const action = button.dataset.attendanceAction;
+    if (action === "view-analysis" || action === "view-operations") {
+      const nextView = action === "view-analysis" ? "analysis" : "operations";
+      if (state.view === nextView) return;
+      captureDraft();
+      state.view = nextView;
+      renderWorkspace();
+      return;
+    }
     if (action === "retry-morning") {
       await loadMorningWorkspace();
       return;
@@ -2165,6 +2408,7 @@
   }
 
   function onSubmit(event) {
+    if (event.target.closest("[data-attendance-own-analysis]")) return;
     const morningForm = event.target.closest("[data-morning-config-form]");
     if (morningForm) {
       event.preventDefault();
@@ -2200,6 +2444,7 @@
   async function activate(nextBridge = {}) {
     state.bridge = { ...state.bridge, ...nextBridge };
     state.active = true;
+    state.view = "operations";
     state.contextGeneration += 1;
     state.feedback = null;
     syncContext({ preserveSelection: false });
@@ -2211,6 +2456,8 @@
 
   function deactivate() {
     captureDraft();
+    const ownAnalysis = state.root?.querySelector("[data-attendance-own-analysis]");
+    if (ownAnalysis) destroyEmbeddedAnalysis(ownAnalysis);
     state.active = false;
     state.loading = false;
     state.generation += 1;
@@ -2224,6 +2471,7 @@
     state.active = false;
     state.loading = false;
     state.saving = false;
+    state.view = "operations";
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
@@ -2337,6 +2585,20 @@
             p_offset: "integer",
           },
           returns: { items: "array", total: "integer", has_more: "boolean" },
+        },
+        analysis: {
+          name: DEFAULT_RPC.analysis,
+          args: {
+            p_store_id: "uuid",
+            p_search: "text | null",
+            p_tag: "budget | purchase | other | null",
+            p_professional_id: "uuid | null",
+            p_professional_name: "text | null",
+            p_link_status: "matched | standalone | review | lead | prospection | both | null",
+            p_start_date: "date | null",
+            p_end_date: "date | null",
+          },
+          returns: { metrics: "object", professionals: "array" },
         },
         morningWorkspace: {
           name: DEFAULT_RPC.morningWorkspace,
