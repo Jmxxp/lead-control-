@@ -1,5 +1,6 @@
 import {
   classifySupportQuestion,
+  isGoodMorningSellerQuestion,
   isSupportTopicAvailable,
   readSupportConversation,
 } from "./index.ts";
@@ -16,6 +17,8 @@ Deno.test("permite fluxos naturais do cliente", () => {
     "Como mudo o tema para escuro?",
     "Onde ficam os filtros de atendimentos?",
     "Como consulto minhas bonificações?",
+    "Como configuro a meta do Bom Dia Vendedor?",
+    "Como passo para o próximo vendedor da fila?",
   ];
   for (const question of allowed) {
     assert(
@@ -172,5 +175,28 @@ Deno.test("capacidade indisponível bloqueia o tópico antes do provedor", () =>
   assert(
     isSupportTopicAvailable(null, capabilities),
     "Navegação geral não depende de um módulo específico",
+  );
+});
+
+Deno.test("Bom Dia Vendedor permanece no tópico operacional de Atendimentos", () => {
+  const conversation = readSupportConversation([{
+    role: "user",
+    content: "Como divido a meta entre os vendedores?",
+  }]);
+  assert(
+    conversation?.topic === "attendances",
+    "Metas de vendedores devem ser tratadas dentro de Atendimentos",
+  );
+  assert(
+    isGoodMorningSellerQuestion("Como divido a meta entre os vendedores?"),
+    "A capacidade adicional precisa ser exigida antes de consultar o provedor",
+  );
+  assert(
+    !isGoodMorningSellerQuestion("Como encontro um atendimento pelo CPF?"),
+    "Atendimentos comuns não podem depender da licença adicional",
+  );
+  assert(
+    !isGoodMorningSellerQuestion("Como escolho o vendedor no atendimento?"),
+    "A seleção comum de profissional não pode depender do Bom Dia Vendedor",
   );
 });

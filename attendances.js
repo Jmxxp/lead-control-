@@ -5,6 +5,9 @@
     workspace: "lc_get_attendance_workspace",
     save: "lc_upsert_attendance_v2",
     list: "lc_list_attendances_v3",
+    morningWorkspace: "lc_get_good_morning_seller_workspace",
+    morningSave: "lc_save_good_morning_seller_settings",
+    morningAdvance: "lc_advance_good_morning_seller_turn",
   });
 
   const TAGS = Object.freeze({
@@ -35,6 +38,12 @@
     listSource: "workspace",
     listSearchTimer: 0,
     professionals: [],
+    morning: null,
+    morningLoading: false,
+    morningSaving: false,
+    morningError: "",
+    morningConfigOpen: false,
+    morningDraft: null,
     serverMetrics: {},
     feedback: null,
     loadError: "",
@@ -145,6 +154,12 @@
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
     state.professionals = [];
+    state.morning = null;
+    state.morningLoading = false;
+    state.morningSaving = false;
+    state.morningError = "";
+    state.morningConfigOpen = false;
+    state.morningDraft = null;
     state.serverMetrics = {};
     state.feedback = null;
     state.loadError = "";
@@ -334,6 +349,7 @@
       name: String(firstDefined(store.name, store.store_name, store.storeName, store.username, "Cliente")),
       technicianId: String(firstDefined(store.technicianId, store.technician_id, store.agencyId, store.agency_id, "")),
       avatarUrl: safeImageUrl(firstDefined(store.avatarUrl, store.avatar_url, store.logoUrl, store.logo_url, "")),
+      goodMorningSellerEnabled: firstDefined(store.goodMorningSellerEnabled, store.good_morning_seller_enabled) === true,
     };
   }
 
@@ -500,6 +516,188 @@
       if (record.professionalName && record.professionalName !== "Não informado") unique.set(normalizeText(record.professionalName), record.professionalName);
     });
     return [...unique.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
+
+  function normalizeMorningWorkspace(raw) {
+    const payload = unwrapPayload(raw);
+    const goals = payload.goals && typeof payload.goals === "object" ? payload.goals : {};
+    const normalizeGoal = (value) => ({
+      target: normalizeMoney(value?.target),
+      actual: normalizeMoney(value?.actual),
+    });
+    const professionals = Array.isArray(payload.professionals) ? payload.professionals : [];
+    return {
+      licensed: payload.licensed === true,
+      configured: payload.configured === true,
+      goalMonth: String(firstDefined(payload.goal_month, payload.goalMonth, "")),
+      savedGoalMonth: String(firstDefined(payload.saved_goal_month, payload.savedGoalMonth, "")),
+      allocationMode: String(firstDefined(payload.allocation_mode, payload.allocationMode, "equal")) === "custom" ? "custom" : "equal",
+      monthlyGoal: normalizeMoney(firstDefined(payload.monthly_goal, payload.monthlyGoal, 0)),
+      lastMonthlyGoal: normalizeMoney(firstDefined(payload.last_monthly_goal, payload.lastMonthlyGoal, payload.monthly_goal, 0)),
+      today: String(firstDefined(payload.today, "")),
+      weekStart: String(firstDefined(payload.week_start, payload.weekStart, "")),
+      weekEnd: String(firstDefined(payload.week_end, payload.weekEnd, "")),
+      goals: {
+        today: normalizeGoal(goals.today),
+        week: normalizeGoal(goals.week),
+        month: normalizeGoal(goals.month),
+      },
+      currentProfessionalId: String(firstDefined(payload.current_professional_id, payload.currentProfessionalId, "")),
+      professionals: professionals.map((professional, index) => ({
+        id: String(firstDefined(professional.id, professional.professional_id, "")),
+        name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
+        active: firstDefined(professional.is_active, professional.active, true) !== false,
+        goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, 0)),
+        queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
+        current: firstDefined(professional.is_current, professional.current, false) === true,
+        actualMonth: normalizeMoney(firstDefined(professional.actual_month, professional.actualMonth, 0)),
+        actualWeek: normalizeMoney(firstDefined(professional.actual_week, professional.actualWeek, 0)),
+        actualToday: normalizeMoney(firstDefined(professional.actual_today, professional.actualToday, 0)),
+      })).filter((professional) => professional.id && professional.active)
+        .sort((a, b) => a.queuePosition - b.queuePosition || a.name.localeCompare(b.name, "pt-BR")),
+    };
+  }
+
+  function goalProgress(actual, target) {
+    if (target <= 0) return 0;
+    return Math.min(Math.max(Math.round((actual / target) * 100), 0), 100);
+  }
+
+  function formatShortDate(value) {
+    if (!value) return "";
+    const date = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date).replace(" de ", " ");
+  }
+
+  function calculateEqualSellerGoals(goal, count) {
+    if (!count) return [];
+    const cents = Math.max(Math.round(Number(goal || 0) * 100), 0);
+    const base = Math.floor(cents / count);
+    const remainder = cents % count;
+    return Array.from({ length: count }, (_, index) => (base + (index < remainder ? 1 : 0)) / 100);
+  }
+
+  function createMorningDraft() {
+    const morning = state.morning;
+    if (!morning) return null;
+    const professionals = morning.professionals.map((professional) => ({
+      id: professional.id,
+      name: professional.name,
+      goalAmount: professional.goalAmount,
+    }));
+    const monthlyGoal = morning.configured ? morning.monthlyGoal : morning.lastMonthlyGoal;
+    const mode = morning.allocationMode || "equal";
+    if (mode === "equal") {
+      const equalGoals = calculateEqualSellerGoals(monthlyGoal, professionals.length);
+      professionals.forEach((professional, index) => { professional.goalAmount = equalGoals[index] || 0; });
+    }
+    return { monthlyGoal, mode, professionals };
+  }
+
+  function morningQueue() {
+    const professionals = state.morning?.professionals || [];
+    if (!professionals.length) return [];
+    const currentIndex = professionals.findIndex((professional) => professional.current || professional.id === state.morning.currentProfessionalId);
+    if (currentIndex <= 0) return professionals;
+    return [...professionals.slice(currentIndex), ...professionals.slice(0, currentIndex)];
+  }
+
+  function renderMorningGoalCard(key, label, icon, helper) {
+    const goal = state.morning?.goals?.[key] || { target: 0, actual: 0 };
+    const progress = goalProgress(goal.actual, goal.target);
+    return `<article class="attendance-morning-goal is-${key}">
+      <header><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><b>${progress}%</b></header>
+      <strong>${escapeHtml(formatCurrency(goal.target))}</strong>
+      <small>${escapeHtml(formatCurrency(goal.actual))} realizado${helper ? ` · ${escapeHtml(helper)}` : ""}</small>
+      <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${progress}%"></b></i>
+    </article>`;
+  }
+
+  function renderMorningConfigured() {
+    const queue = morningQueue();
+    const current = queue[0];
+    const weeklyPeriod = [formatShortDate(state.morning.weekStart), formatShortDate(state.morning.weekEnd)].filter(Boolean).join("–");
+    return `<section class="attendance-morning-board" aria-labelledby="goodMorningSellerTitle">
+      <header class="attendance-morning-heading">
+        <div class="attendance-morning-brand"><span><i class="fa-solid fa-sun" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="goodMorningSellerTitle">Ritmo comercial de hoje</h2><small>Metas proporcionais aos dias do mês · compras registradas em Atendimentos</small></div></div>
+        <button class="attendance-secondary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Configurar metas</button>
+      </header>
+      <div class="attendance-morning-content">
+        <article class="attendance-turn-card">
+          <div class="attendance-turn-label"><span><i class="fa-solid fa-bolt" aria-hidden="true"></i>Vendedor da vez</span><small>Fila compartilhada com toda a equipe</small></div>
+          ${current ? `<div class="attendance-turn-current"><span>${escapeHtml(initials(current.name))}</span><div><strong>${escapeHtml(current.name)}</strong><small>Meta mensal ${escapeHtml(formatCurrency(current.goalAmount))} · ${escapeHtml(formatCurrency(current.actualMonth))} realizado</small></div></div>` : `<div class="attendance-turn-current is-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Fila ainda não configurada</strong><small>Abra as configurações para incluir a equipe.</small></div></div>`}
+          <div class="attendance-turn-queue" aria-label="Ordem da vez">${queue.map((professional, index) => `<span class="${index === 0 ? "is-current" : ""}"><b>${index + 1}</b>${escapeHtml(professional.name)}</span>`).join("")}</div>
+          <button class="attendance-turn-next" type="button" data-attendance-action="advance-morning-turn" ${state.morningSaving || queue.length < 2 ? "disabled" : ""}><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>${state.morningSaving ? "Atualizando fila" : "Passar para o próximo"}</button>
+        </article>
+        <div class="attendance-morning-goals">
+          ${renderMorningGoalCard("today", "Meta de hoje", "fa-calendar-day", "dia")}
+          ${renderMorningGoalCard("week", "Meta da semana", "fa-calendar-week", weeklyPeriod)}
+          ${renderMorningGoalCard("month", "Meta do mês", "fa-bullseye", "equipe")}
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function renderMorningSetup() {
+    const isNewMonth = Boolean(state.morning?.savedGoalMonth && state.morning.savedGoalMonth !== state.morning.goalMonth);
+    return `<section class="attendance-morning-board attendance-morning-board--setup">
+      <div class="attendance-morning-setup-icon"><i class="fa-solid fa-sun" aria-hidden="true"></i></div>
+      <div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2>${isNewMonth ? "Comece o novo mês com a meta atualizada" : "Transforme a meta em ritmo diário"}</h2><p>Defina a meta mensal, escolha a divisão por vendedor e organize a fila da vez. O sistema calcula automaticamente os objetivos de hoje e desta semana.</p></div>
+      <button class="attendance-primary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>${isNewMonth ? "Atualizar meta do mês" : "Configurar Bom Dia Vendedor"}</button>
+    </section>`;
+  }
+
+  function renderMorningLocked() {
+    return `<section class="attendance-morning-board attendance-morning-board--locked">
+      <span><i class="fa-solid fa-lock" aria-hidden="true"></i></span>
+      <div><p class="attendance-eyebrow">Licença adicional</p><h2>Bom Dia Vendedor</h2><p>Metas, divisão por vendedor e fila da vez ficam disponíveis quando o Admin libera esta licença para o cliente.</p></div>
+      <em><i class="fa-solid fa-sun" aria-hidden="true"></i>Recurso bloqueado</em>
+    </section>`;
+  }
+
+  function morningDraftTotal() {
+    return (state.morningDraft?.professionals || []).reduce((sum, professional) => sum + normalizeMoney(professional.goalAmount), 0);
+  }
+
+  function renderMorningConfig() {
+    const draft = state.morningDraft;
+    if (!state.morningConfigOpen || !draft) return "";
+    const total = morningDraftTotal();
+    const difference = Math.round((normalizeMoney(draft.monthlyGoal) - total) * 100) / 100;
+    const balanced = Math.abs(difference) < 0.01;
+    return `<div class="attendance-morning-modal" role="presentation" data-morning-backdrop>
+      <section class="attendance-morning-dialog" role="dialog" aria-modal="true" aria-labelledby="morningConfigTitle" data-morning-dialog>
+        <header><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="morningConfigTitle">Meta e fila da equipe</h2><span>As metas são atualizadas para o mês atual.</span></div><button type="button" data-attendance-action="close-morning-config" aria-label="Fechar configurações"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+        <form data-morning-config-form aria-busy="${state.morningSaving ? "true" : "false"}">
+          <div class="attendance-morning-config-top">
+            <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" required /></span></label>
+            <fieldset><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
+          </div>
+          <div class="attendance-morning-config-heading"><div><strong>Vendedores e ordem da vez</strong><small>Use as setas para organizar quem aparece primeiro na fila.</small></div><span data-morning-allocation-status class="${balanced ? "is-balanced" : "is-warning"}">${balanced ? "Distribuição completa" : `${difference > 0 ? "Faltam" : "Excedeu"} ${escapeHtml(formatCurrency(Math.abs(difference)))}`}</span></div>
+          <div class="attendance-morning-seller-list">${draft.professionals.map((professional, index) => `<article data-morning-professional="${escapeHtml(professional.id)}"><b>${index + 1}</b><span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span><div><strong>${escapeHtml(professional.name)}</strong><small>${index === 0 ? "Primeiro da fila" : `${index + 1}º na fila`}</small></div><label><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapeHtml(professional.id)}" inputmode="decimal" value="${escapeHtml(String(professional.goalAmount || 0))}" ${draft.mode === "equal" ? "disabled" : ""} /></span></label><div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para cima" ${index === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para baixo" ${index === draft.professionals.length - 1 ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div></article>`).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe nas configurações de Prospecções para dividir a meta e montar a fila.</small></div></div>`}</div>
+          ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
+          <footer><div><span>Total distribuído</span><strong data-morning-distributed-total>${escapeHtml(formatCurrency(total))}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Cancelar</button><button class="attendance-primary-button" type="submit" ${state.morningSaving || !draft.professionals.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button></footer>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  function renderGoodMorningSeller() {
+    const store = selectedStore();
+    if (!store) return "";
+    let content = "";
+    if (!store.goodMorningSellerEnabled) content = renderMorningLocked();
+    else if (state.morningLoading) content = `<section class="attendance-morning-board attendance-morning-board--loading" role="status"><span class="attendance-spinner" aria-hidden="true"></span><div><strong>Preparando o Bom Dia Vendedor</strong><small>Calculando metas e carregando a fila da equipe.</small></div></section>`;
+    else if (state.morningError && !state.morning) content = `<section class="attendance-morning-board attendance-morning-board--error"><span><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><div><strong>Bom Dia Vendedor indisponível</strong><small>${escapeHtml(state.morningError)}</small></div><button class="attendance-secondary-button" type="button" data-attendance-action="retry-morning"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Tentar novamente</button></section>`;
+    else if (state.morning?.configured) content = renderMorningConfigured();
+    else content = renderMorningSetup();
+    return `<div class="attendance-morning-root" data-good-morning-seller>${content}${renderMorningConfig()}</div>`;
+  }
+
+  function refreshMorningRegion() {
+    const region = state.root?.querySelector("[data-good-morning-seller]");
+    if (region) region.outerHTML = renderGoodMorningSeller();
   }
 
   function captureDraft() {
@@ -774,7 +972,7 @@
   function renderWorkspace() {
     if (!state.root) return;
     state.root.innerHTML = `<div class="attendance-shell">${renderStoreHeader()}<main class="attendance-module-main">
-      ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : `<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
+      ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : `${renderGoodMorningSeller()}<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
     </main></div>`;
     syncPurchaseFields();
   }
@@ -1494,6 +1692,37 @@
     }, 260);
   }
 
+  async function loadMorningWorkspace({ quiet = false } = {}) {
+    const store = selectedStore();
+    if (!state.active || !store?.id || !store.goodMorningSellerEnabled) {
+      state.morning = null;
+      state.morningLoading = false;
+      state.morningError = "";
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
+      if (!quiet) refreshMorningRegion();
+      return;
+    }
+
+    const storeId = store.id;
+    const requestGeneration = state.contextGeneration;
+    state.morningLoading = !quiet || !state.morning;
+    state.morningError = "";
+    if (!quiet) refreshMorningRegion();
+    try {
+      const raw = await rpc("morningWorkspace", { p_store_id: storeId });
+      if (!state.active || requestGeneration !== state.contextGeneration || storeId !== state.selectedStoreId) return;
+      state.morning = normalizeMorningWorkspace(raw);
+      state.morningLoading = false;
+      state.morningError = "";
+    } catch (error) {
+      if (!state.active || requestGeneration !== state.contextGeneration || storeId !== state.selectedStoreId) return;
+      state.morningLoading = false;
+      state.morningError = readableError(error);
+    }
+    refreshMorningRegion();
+  }
+
   async function loadWorkspace({ quiet = false } = {}) {
     if (!state.active) return;
     if (!state.selectedStoreId) {
@@ -1507,6 +1736,12 @@
       state.listError = "";
       state.listSource = "workspace";
       state.professionals = [];
+      state.morning = null;
+      state.morningLoading = false;
+      state.morningSaving = false;
+      state.morningError = "";
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
       state.serverMetrics = {};
       state.loading = false;
       state.loadError = "";
@@ -1517,6 +1752,7 @@
     const storeId = state.selectedStoreId;
     const requestGeneration = ++state.generation;
     state.loading = !quiet;
+    state.morningLoading = Boolean(selectedStore()?.goodMorningSellerEnabled && !state.morning);
     state.loadError = "";
     if (!quiet) renderWorkspace();
     try {
@@ -1537,7 +1773,7 @@
       state.loading = false;
       state.loadError = "";
       renderWorkspace();
-      await loadOperationalList();
+      await Promise.all([loadOperationalList(), loadMorningWorkspace()]);
     } catch (error) {
       if (!state.active || requestGeneration !== state.generation) return;
       if (handleEntitlementLoss(error, storeId)) return;
@@ -1653,6 +1889,113 @@
     if (remainsCurrent) await loadWorkspace({ quiet: true });
   }
 
+  function captureMorningDraftInputs() {
+    if (!state.morningDraft) return;
+    const form = state.root?.querySelector("[data-morning-config-form]");
+    if (!form) return;
+    state.morningDraft.monthlyGoal = normalizeMoney(form.elements.monthly_goal?.value);
+    state.morningDraft.mode = form.querySelector('input[name="allocation_mode"]:checked')?.value === "custom" ? "custom" : "equal";
+    state.morningDraft.professionals.forEach((professional) => {
+      const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
+      if (input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
+    });
+    if (state.morningDraft.mode === "equal") {
+      const goals = calculateEqualSellerGoals(state.morningDraft.monthlyGoal, state.morningDraft.professionals.length);
+      state.morningDraft.professionals.forEach((professional, index) => { professional.goalAmount = goals[index] || 0; });
+    }
+  }
+
+  function syncMorningConfigPreview() {
+    const form = state.root?.querySelector("[data-morning-config-form]");
+    if (!form || !state.morningDraft) return;
+    captureMorningDraftInputs();
+    state.morningDraft.professionals.forEach((professional) => {
+      const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
+      if (input && state.morningDraft.mode === "equal") input.value = String(professional.goalAmount.toFixed(2));
+    });
+    const total = morningDraftTotal();
+    const difference = Math.round((normalizeMoney(state.morningDraft.monthlyGoal) - total) * 100) / 100;
+    const balanced = Math.abs(difference) < 0.01;
+    const totalElement = form.querySelector("[data-morning-distributed-total]");
+    const status = form.querySelector("[data-morning-allocation-status]");
+    const submit = form.querySelector('button[type="submit"]');
+    if (totalElement) totalElement.textContent = formatCurrency(total);
+    if (status) {
+      status.classList.toggle("is-balanced", balanced);
+      status.classList.toggle("is-warning", !balanced);
+      status.textContent = balanced
+        ? "Distribuição completa"
+        : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
+    }
+    if (submit) submit.disabled = state.morningSaving || !state.morningDraft.professionals.length || !balanced;
+  }
+
+  async function saveMorningSettings(form) {
+    if (state.morningSaving || !state.morningDraft || !state.selectedStoreId) return;
+    captureMorningDraftInputs();
+    const monthlyGoal = normalizeMoney(state.morningDraft.monthlyGoal);
+    const total = morningDraftTotal();
+    if (monthlyGoal <= 0) {
+      state.morningError = "Informe uma meta mensal maior que zero.";
+      refreshMorningRegion();
+      return;
+    }
+    if (!state.morningDraft.professionals.length) {
+      state.morningError = "Cadastre ao menos um vendedor ativo em Prospecções.";
+      refreshMorningRegion();
+      return;
+    }
+    if (Math.abs(monthlyGoal - total) >= 0.01) {
+      state.morningError = "A soma das metas individuais precisa ser igual à meta mensal.";
+      refreshMorningRegion();
+      return;
+    }
+
+    state.morningSaving = true;
+    state.morningError = "";
+    refreshMorningRegion();
+    try {
+      const raw = await rpc("morningSave", {
+        p_store_id: state.selectedStoreId,
+        p_monthly_goal: monthlyGoal,
+        p_allocation_mode: state.morningDraft.mode,
+        p_allocations: state.morningDraft.professionals.map((professional, index) => ({
+          professional_id: professional.id,
+          goal_amount: normalizeMoney(professional.goalAmount).toFixed(2),
+          queue_position: index + 1,
+        })),
+      });
+      state.morning = normalizeMorningWorkspace(raw);
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
+      notify("Meta e fila do Bom Dia Vendedor atualizadas.", "success");
+    } catch (error) {
+      state.morningError = readableError(error);
+    } finally {
+      state.morningSaving = false;
+      refreshMorningRegion();
+    }
+  }
+
+  async function advanceMorningTurn() {
+    if (state.morningSaving || !state.selectedStoreId) return;
+    state.morningSaving = true;
+    state.morningError = "";
+    refreshMorningRegion();
+    try {
+      const raw = await rpc("morningAdvance", { p_store_id: state.selectedStoreId });
+      state.morning = normalizeMorningWorkspace(raw);
+      const current = morningQueue()[0];
+      notify(current ? `${current.name} está na vez agora.` : "Fila atualizada.", "success");
+    } catch (error) {
+      state.morningError = readableError(error);
+      notify(state.morningError, "error");
+    } finally {
+      state.morningSaving = false;
+      refreshMorningRegion();
+    }
+  }
+
   function onInput(event) {
     const target = event.target;
     if (target.matches('input[name="phone"]')) {
@@ -1667,6 +2010,10 @@
       state.filters.search = target.value;
       renderFilteredRegions();
       scheduleOperationalListLoad();
+      return;
+    }
+    if (target.matches('[data-morning-config-form] input[name="monthly_goal"], [data-morning-seller-goal]')) {
+      syncMorningConfigPreview();
     }
   }
 
@@ -1692,6 +2039,12 @@
       state.listError = "";
       state.listSource = "workspace";
       state.professionals = [];
+      state.morning = null;
+      state.morningLoading = Boolean(selectedStore()?.goodMorningSellerEnabled);
+      state.morningSaving = false;
+      state.morningError = "";
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
       state.idempotencyKey = "";
       state.idempotencyFingerprint = "";
       state.filtersOpen = false;
@@ -1712,6 +2065,16 @@
       syncPurchaseFields();
       return;
     }
+    if (target.matches('[data-morning-config-form] input[name="allocation_mode"]')) {
+      captureMorningDraftInputs();
+      state.morningDraft.mode = target.value === "custom" ? "custom" : "equal";
+      if (state.morningDraft.mode === "equal") {
+        const goals = calculateEqualSellerGoals(state.morningDraft.monthlyGoal, state.morningDraft.professionals.length);
+        state.morningDraft.professionals.forEach((professional, index) => { professional.goalAmount = goals[index] || 0; });
+      }
+      refreshMorningRegion();
+      return;
+    }
     if (target.matches("[data-attendance-filter]")) {
       const key = target.dataset.attendanceFilter;
       if (key && key in state.filters) state.filters[key] = target.value;
@@ -1721,6 +2084,13 @@
   }
 
   async function onClick(event) {
+    if (event.target.matches("[data-morning-backdrop]")) {
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
+      state.morningError = "";
+      refreshMorningRegion();
+      return;
+    }
     const copyButton = event.target.closest("[data-attendance-copy-phone]");
     if (copyButton) {
       const phone = String(copyButton.dataset.attendanceCopyPhone || "");
@@ -1736,6 +2106,41 @@
     const button = event.target.closest("[data-attendance-action]");
     if (!button) return;
     const action = button.dataset.attendanceAction;
+    if (action === "retry-morning") {
+      await loadMorningWorkspace();
+      return;
+    }
+    if (action === "open-morning-config") {
+      captureDraft();
+      state.morningError = "";
+      state.morningDraft = createMorningDraft();
+      state.morningConfigOpen = true;
+      refreshMorningRegion();
+      state.root?.querySelector('[data-morning-config-form] input[name="monthly_goal"]')?.focus();
+      return;
+    }
+    if (action === "close-morning-config") {
+      state.morningConfigOpen = false;
+      state.morningDraft = null;
+      state.morningError = "";
+      refreshMorningRegion();
+      return;
+    }
+    if (action === "move-morning-seller-up" || action === "move-morning-seller-down") {
+      captureMorningDraftInputs();
+      const professionalId = String(button.dataset.professionalId || "");
+      const index = state.morningDraft?.professionals.findIndex((professional) => professional.id === professionalId) ?? -1;
+      const nextIndex = action === "move-morning-seller-up" ? index - 1 : index + 1;
+      if (index >= 0 && nextIndex >= 0 && nextIndex < state.morningDraft.professionals.length) {
+        [state.morningDraft.professionals[index], state.morningDraft.professionals[nextIndex]] = [state.morningDraft.professionals[nextIndex], state.morningDraft.professionals[index]];
+        refreshMorningRegion();
+      }
+      return;
+    }
+    if (action === "advance-morning-turn") {
+      await advanceMorningTurn();
+      return;
+    }
     if (action === "refresh") await loadWorkspace();
     if (action === "load-more") await loadOperationalList({ append: true });
     if (action === "retry-list") await loadOperationalList();
@@ -1760,6 +2165,12 @@
   }
 
   function onSubmit(event) {
+    const morningForm = event.target.closest("[data-morning-config-form]");
+    if (morningForm) {
+      event.preventDefault();
+      saveMorningSettings(morningForm);
+      return;
+    }
     const form = event.target.closest("[data-attendance-form]");
     if (!form) return;
     event.preventDefault();
@@ -1829,6 +2240,12 @@
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
     state.professionals = [];
+    state.morning = null;
+    state.morningLoading = false;
+    state.morningSaving = false;
+    state.morningError = "";
+    state.morningConfigOpen = false;
+    state.morningDraft = null;
     state.serverMetrics = {};
     state.feedback = null;
     state.loadError = "";
@@ -1921,11 +2338,39 @@
           },
           returns: { items: "array", total: "integer", has_more: "boolean" },
         },
+        morningWorkspace: {
+          name: DEFAULT_RPC.morningWorkspace,
+          args: { p_store_id: "uuid" },
+          returns: {
+            licensed: "boolean",
+            configured: "boolean",
+            goals: "object",
+            professionals: "array",
+            queue: "array",
+          },
+        },
+        morningSave: {
+          name: DEFAULT_RPC.morningSave,
+          args: {
+            p_store_id: "uuid",
+            p_monthly_goal: "numeric",
+            p_allocation_mode: "equal | custom",
+            p_allocations: "jsonb array",
+          },
+          returns: "same workspace contract",
+        },
+        morningAdvance: {
+          name: DEFAULT_RPC.morningAdvance,
+          args: { p_store_id: "uuid" },
+          returns: "same workspace contract with the next professional highlighted",
+        },
       },
       rules: [
         "A tela nunca consulta mais de um p_store_id por vez.",
         "Lead e Prospecção podem estar vinculados simultaneamente.",
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
+        "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
+        "A fila só avança por uma ação explícita do usuário.",
       ],
     };
   }

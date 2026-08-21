@@ -122,6 +122,11 @@ ATENDIMENTOS
 - A lista aceita busca por nome, telefone, CPF, descrição ou OS. Abra Filtros para combinar tipo, profissional, vínculo e período; Limpar filtros restaura o recorte inicial.
 - Os cards mostram contexto, profissional, data, origem vinculada, valores e, quando houver telefone, ações para ligar ou copiar.
 - Confira o retorno exibido depois de salvar para saber quais vínculos foram encontrados.
+- Quando a capacidade good_morning_seller estiver disponível, o quadro Bom Dia Vendedor aparece no topo de Atendimentos. Ele mostra o vendedor da vez, a fila da equipe e o ritmo das metas do dia, da semana e do mês.
+- Em Configurar, informe a meta mensal e escolha a divisão igual ou personalizada entre os vendedores. Na divisão personalizada, a soma das metas individuais deve ser igual à meta da equipe.
+- A meta diária e a meta semanal são proporcionais aos dias do mês. O realizado considera as compras registradas em Atendimentos durante cada período.
+- Use Passar para o próximo para avançar a fila depois de atender o vendedor destacado. A troca é intencional e não acontece apenas por salvar um atendimento.
+- Se good_morning_seller estiver indisponível nas capacidades recebidas, diga apenas que essa função não está disponível neste acesso. Não explique licença nem como liberá-la.
 
 REGRAS DE RESPOSTA
 - Responda em português do Brasil como uma pessoa experiente e atenciosa, com linguagem natural, clara e acolhedora.
@@ -150,6 +155,11 @@ const SUPPORT_ALLOWED_INPUT = [
   /\bindicador(es)?\b/,
   /\bresumo\b/,
   /\bmetrica(s)?\b/,
+  /\bmeta(s)?\b/,
+  /\bbom dia vendedor\b/,
+  /\bvendedor(a|es)?\b/,
+  /\bfila\b/,
+  /\b(?:vez|proximo)\b/,
   /\btema\b/,
   /\bmodo (claro|escuro)\b/,
   /\b(?:lua|sol)\b/,
@@ -252,6 +262,7 @@ const SUPPORT_FLOW_ANCHOR_INPUT = [
   /\blead(s)?\b/,
   /\bprospec(cao|coes|tar)?\b/,
   /\batendimento(s)?\b/,
+  /\b(?:bom dia vendedor|meta(s)?|vendedor(a|es)?|fila)\b/,
   /\b(?:categoria(s)?|subcategoria(s)?|opcao|opcoes|sequencia)\b/,
   /\b(?:filtro(s|ar)?|export(ar|acao|o)?|excel)\b/,
   /\b(?:analis(e|ar|ando)?|indicador(es)?|resumo|metrica(s)?)\b/,
@@ -521,7 +532,12 @@ async function handleSupportRequest(
   }
 
   const allowedActionIds = sanitizeAllowedActionIds(config.allowed_actions);
-  if (!isSupportTopicAvailable(topic, config.capabilities)) {
+  const goodMorningSellerUnavailable = isGoodMorningSellerQuestion(question) &&
+    config.capabilities?.good_morning_seller !== true;
+  if (
+    !isSupportTopicAvailable(topic, config.capabilities) ||
+    goodMorningSellerUnavailable
+  ) {
     await completeSupportUsage(
       config,
       [{ role: "user", content: question }],
@@ -530,8 +546,9 @@ async function handleSupportRequest(
       "blocked",
     );
     return jsonResponse({
-      answer_markdown:
-        "Esta tela não está disponível neste acesso. Posso ajudar com outro fluxo visível no seletor superior.",
+      answer_markdown: goodMorningSellerUnavailable
+        ? "Esta função não está disponível neste acesso. Posso ajudar com outro recurso visível em Atendimentos."
+        : "Esta tela não está disponível neste acesso. Posso ajudar com outro fluxo visível no seletor superior.",
       actions: [],
       scope: "client_flows_only",
     });
@@ -614,6 +631,7 @@ function buildSupportSystemPrompt(
           "leads",
           "prospections",
           "attendances",
+          "good_morning_seller",
           "client_configuration",
           "categories",
           "options",
@@ -861,7 +879,10 @@ function inferPriorApprovedTopic(messages: ChatMessage[]): SupportTopic | null {
 
 function inferSupportTopic(value: string): SupportTopic | null {
   const normalized = normalizePolicyText(value);
-  if (/\batendimento(s)?\b/.test(normalized)) return "attendances";
+  if (
+    /\b(?:atendimento(s)?|bom dia vendedor|meta(s)?|vendedor(a|es)?|fila)\b/
+      .test(normalized)
+  ) return "attendances";
   if (/\bprospec(cao|coes|tar)?\b/.test(normalized)) return "prospections";
   if (
     /\b(?:categoria(s)?|subcategoria(s)?|opcao|opcoes|sequencia|reordenar)\b/
@@ -894,6 +915,12 @@ export function isSupportTopicAvailable(
   if (!topic) return true;
   const capability = topic === "categories" ? "categories" : topic;
   return capabilities?.[capability] === true;
+}
+
+export function isGoodMorningSellerQuestion(value: string) {
+  const normalized = normalizePolicyText(value);
+  return /\b(?:bom dia vendedor|meta(s)?|fila|vez|proximo vendedor)\b/
+    .test(normalized);
 }
 
 function sanitizeSupportQuestionForProvider(value: string) {

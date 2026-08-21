@@ -736,6 +736,13 @@ input.avatar-file-input {
 .feature-capacity-summary > span.is-full { border-color: color-mix(in srgb, #d48616 38%, var(--line)); }
 .feature-capacity-summary > span.is-full i { color: #d48616; }
 
+#goodMorningSellerCapacityBadge {
+  border-color: color-mix(in srgb, #f59e0b 34%, var(--line));
+  background: color-mix(in srgb, #f59e0b 9%, var(--surface));
+}
+
+#goodMorningSellerCapacityBadge i { color: #d97706; }
+
 .company-workspace-nav {
   display: flex;
   justify-content: flex-end;
@@ -4755,6 +4762,13 @@ body.is-dark .operation-record-chip-row span {
   color: var(--muted);
 }
 
+.feature-plan-badge.is-good-morning.is-enabled {
+  border-color: color-mix(in srgb, #f59e0b 42%, var(--line));
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  color: #b76505;
+  box-shadow: 0 8px 20px color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
 .analytics-prospec-badge {
   display: inline-flex;
   align-items: center;
@@ -4771,6 +4785,14 @@ body.is-dark .operation-record-chip-row span {
 
 .technician-usage-row.is-prospection-plan {
   margin-top: 9px;
+}
+
+.technician-usage-row.is-good-morning-plan {
+  margin-top: 9px;
+}
+
+.technician-usage-row.is-good-morning-plan i {
+  color: #d97706;
 }
 
 .technician-usage-row .plan-adjustment {
@@ -4791,6 +4813,10 @@ body.is-dark .operation-record-chip-row span {
   background: linear-gradient(90deg, #2f80ed, #16855f);
 }
 
+.technician-usage-track.is-good-morning-plan i {
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
 .feature-access-card {
   display: flex;
   align-items: center;
@@ -4800,6 +4826,16 @@ body.is-dark .operation-record-chip-row span {
   border: 1px solid color-mix(in srgb, var(--green) 30%, var(--line));
   border-radius: 12px;
   background: linear-gradient(135deg, color-mix(in srgb, var(--green) 8%, var(--surface)), var(--surface));
+}
+
+.feature-access-card--sunrise {
+  border-color: color-mix(in srgb, #f59e0b 34%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, #f59e0b 10%, var(--surface)), var(--surface));
+}
+
+.feature-access-card--sunrise .feature-access-icon {
+  color: #b76505;
+  background: color-mix(in srgb, #f59e0b 16%, var(--surface));
 }
 
 .feature-access-toggle input:disabled + span {
