@@ -993,7 +993,7 @@
           <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-filter="tag"><option value="all" ${state.filters.tag === "all" ? "selected" : ""}>Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${state.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
           <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${state.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
           <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-filter="link"><option value="all" ${state.filters.link === "all" ? "selected" : ""}>Todos os vínculos</option><option value="linked" ${state.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${state.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${state.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
-          <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="7d" ${state.filters.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.filters.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+          <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="currentWeek" ${state.filters.period === "currentWeek" ? "selected" : ""}>Esta semana</option><option value="lastWeek" ${state.filters.period === "lastWeek" ? "selected" : ""}>Semana passada</option><option value="7d" ${state.filters.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.filters.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
           <button class="attendance-clear-filters" type="button" data-attendance-action="clear-filters"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar filtros</button>
         </div>
         <div class="attendance-list-status"><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${resultCount}</b> exibidos</span><small>${escapeHtml(operationalListCoverage())} · mais recentes primeiro</small></div>
@@ -1111,6 +1111,19 @@
     if (period === "yesterday") {
       start.setUTCDate(start.getUTCDate() - 1);
       return { startDate: embeddedDateInput(start), endDate: embeddedDateInput(start), label: "Ontem" };
+    }
+    if (period === "currentWeek" || period === "lastWeek") {
+      const weekday = today.getUTCDay() || 7;
+      const currentWeekStart = new Date(today);
+      currentWeekStart.setUTCDate(today.getUTCDate() - weekday + 1);
+      if (period === "currentWeek") {
+        return { startDate: embeddedDateInput(currentWeekStart), endDate: embeddedDateInput(today), label: "Esta semana" };
+      }
+      const previousWeekStart = new Date(currentWeekStart);
+      previousWeekStart.setUTCDate(currentWeekStart.getUTCDate() - 7);
+      const previousWeekEnd = new Date(currentWeekStart);
+      previousWeekEnd.setUTCDate(currentWeekStart.getUTCDate() - 1);
+      return { startDate: embeddedDateInput(previousWeekStart), endDate: embeddedDateInput(previousWeekEnd), label: "Semana passada" };
     }
     if (period === "currentMonth") {
       start.setUTCDate(1);
@@ -1291,7 +1304,7 @@
       ...analysisState.records.map((record) => record.professionalName),
     ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     return `<div id="attendanceAnalysisFilters" class="attendance-filter-panel attendance-analysis-filter-panel" ${analysisState.filtersOpen ? "" : "hidden"}>
-      <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Dias analisados</span><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${analysisState.period === "today" ? "selected" : ""}>Hoje</option><option value="yesterday" ${analysisState.period === "yesterday" ? "selected" : ""}>Ontem</option><option value="7d" ${analysisState.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="15d" ${analysisState.period === "15d" ? "selected" : ""}>Últimos 15 dias</option><option value="30d" ${analysisState.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="currentMonth" ${analysisState.period === "currentMonth" ? "selected" : ""}>Mês atual</option><option value="previousMonth" ${analysisState.period === "previousMonth" ? "selected" : ""}>Mês anterior</option><option value="custom" ${analysisState.period === "custom" ? "selected" : ""}>Escolher datas</option><option value="all" ${analysisState.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+      <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Dias analisados</span><select data-attendance-embedded-period aria-label="Período da análise"><option value="today" ${analysisState.period === "today" ? "selected" : ""}>Hoje</option><option value="yesterday" ${analysisState.period === "yesterday" ? "selected" : ""}>Ontem</option><option value="currentWeek" ${analysisState.period === "currentWeek" ? "selected" : ""}>Esta semana</option><option value="lastWeek" ${analysisState.period === "lastWeek" ? "selected" : ""}>Semana passada</option><option value="7d" ${analysisState.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="15d" ${analysisState.period === "15d" ? "selected" : ""}>Últimos 15 dias</option><option value="30d" ${analysisState.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="currentMonth" ${analysisState.period === "currentMonth" ? "selected" : ""}>Mês atual</option><option value="previousMonth" ${analysisState.period === "previousMonth" ? "selected" : ""}>Mês anterior</option><option value="custom" ${analysisState.period === "custom" ? "selected" : ""}>Escolher datas</option><option value="all" ${analysisState.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
       <label class="attendance-analysis-date-input ${analysisState.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>Data inicial</span><input type="date" data-attendance-analysis-date="start" value="${escapeHtml(analysisState.customStart)}" ${analysisState.period === "custom" ? "" : "disabled"} /></label>
       <label class="attendance-analysis-date-input ${analysisState.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Data final</span><input type="date" data-attendance-analysis-date="end" value="${escapeHtml(analysisState.customEnd)}" ${analysisState.period === "custom" ? "" : "disabled"} /></label>
       <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo de atendimento</span><select data-attendance-analysis-filter="tag"><option value="all">Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${analysisState.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
@@ -1632,7 +1645,7 @@
       const selector = event.target.closest("[data-attendance-embedded-period]");
       if (selector && mount.contains(selector)) {
         const period = selector.value;
-        if (!["today", "yesterday", "7d", "15d", "30d", "currentMonth", "previousMonth", "custom", "all"].includes(period)) return;
+        if (!["today", "yesterday", "currentWeek", "lastWeek", "7d", "15d", "30d", "currentMonth", "previousMonth", "custom", "all"].includes(period)) return;
         embeddedState.period = period;
         embeddedState.filtersOpen = true;
         if (period === "custom") {

@@ -348,6 +348,10 @@
       const start = startOfWeek(now);
       return { start, end: addDays(start, 7), label: "Esta semana" };
     }
+    if (period === "lastWeek") {
+      const end = startOfWeek(now);
+      return { start: addDays(end, -7), end, label: "Semana passada" };
+    }
     if (period === "year") return { start: new Date(now.getFullYear(), 0, 1), end: new Date(now.getFullYear() + 1, 0, 1), label: "Este ano" };
     if (period === "all") return { start: null, end: null, label: "Todo o período" };
     const start = startOfMonth(now);
@@ -536,7 +540,8 @@
   function periodOptions(selected = dashboardPeriod) {
     return [
       ["today", "Hoje"],
-      ["week", "Semana"],
+      ["week", "Esta semana"],
+      ["lastWeek", "Semana passada"],
       ["month", "Mês"],
       ["year", "Ano"],
       ["all", "Todo período"],
@@ -1128,6 +1133,7 @@
     let count = 14;
     let start = addDays(startOfDay(now), -(count - 1));
     if (dashboardPeriod === "week") { count = 7; start = startOfWeek(now); }
+    if (dashboardPeriod === "lastWeek") { count = 7; start = addDays(startOfWeek(now), -7); }
     if (dashboardPeriod === "today") { count = 12; start = new Date(startOfDay(now)); }
     if (dashboardPeriod === "month") { count = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); start = startOfMonth(now); }
     if (dashboardPeriod === "year") { count = 12; start = new Date(now.getFullYear(), 0, 1); }
@@ -1295,7 +1301,7 @@
         <button type="button" data-prospection-action="clear-list-filters"${filterCount ? "" : " disabled"}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar</button>
       </header>
       <div class="prospection-filter-grid">
-        ${prospectionFilterFieldMarkup({ label: "Período", icon: "fa-calendar-days", attribute: "data-prospection-period", value: dashboardPeriod, options: [["today", "Hoje"], ["week", "Esta semana"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]] })}
+        ${prospectionFilterFieldMarkup({ label: "Período", icon: "fa-calendar-days", attribute: "data-prospection-period", value: dashboardPeriod, options: [["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]] })}
         ${prospectionFilterFieldMarkup({ label: "Situação", icon: "fa-route", attribute: "data-prospection-status", value: listStatus, options: [["all", "Todas as situações"], ["open", "Ainda não voltaram"], ["returned", "Voltaram à loja"], ["returned_no_purchase", "Voltaram sem comprar"], ["purchased", "Compraram"], ["not_purchased", "Ainda não compraram"]] })}
         ${prospectionFilterFieldMarkup({ label: "Probabilidade", icon: "fa-gauge-high", attribute: "data-prospection-probability", value: listProbability, options: [["all", "Todas as probabilidades"], ...Object.entries(PROBABILITIES).map(([key, item]) => [key, item.label])] })}
         ${prospectionFilterFieldMarkup({ label: "Profissional", icon: "fa-user-tie", attribute: "data-prospection-professional", value: listProfessional, options: [["all", "Toda a equipe"], ["unassigned", "Sem profissional"], ...professionalNames.map((name) => [name, name])] })}
@@ -2169,6 +2175,7 @@
   function analysisRecordPeriodWindow(context, period) {
     if (period === "all") return { start: null, end: null };
     if (period === "current") return analysisPeriodWindow(context.period, context);
+    if (period === "lastWeek") return periodWindow("lastWeek");
     return analysisPeriodWindow({ today: "daily", week: "weekly", month: "monthly", year: "yearly" }[period] || "monthly", context);
   }
 
@@ -2209,7 +2216,7 @@
   function analysisRecordsDialogMarkup(context, filters) {
     const result = analysisRecordListMarkup(context, filters);
     const titleId = context.embedded ? "embedded-prospection-analysis-records-title" : "prospection-analysis-records-title";
-    const periodOptions = [["current", "Período da análise"], ["today", "Hoje"], ["week", "Esta semana"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]];
+    const periodOptions = [["current", "Período da análise"], ["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]];
     const probabilityOptions = `<option value="all"${filters.probability === "all" ? " selected" : ""}>Todos</option>${Object.entries(PROBABILITIES).map(([value, item]) => `<option value="${value}"${filters.probability === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}`;
     return `<div class="prospection-dialog-backdrop prospection-analysis-records-backdrop" data-prospection-analysis-records-dialog><section class="prospection-dialog is-wide prospection-analysis-records-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><header class="prospection-dialog-header"><div><p class="eyebrow">Detalhamento</p><h2 id="${titleId}">Prospecções</h2></div><button class="prospection-dialog-close" type="button" ${analysisActionAttributes(context, "close-analysis-records")} aria-label="Fechar lista"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><div class="prospection-dialog-body">
       <form class="prospection-analysis-record-filters" data-analysis-record-filters>

@@ -390,6 +390,7 @@ const conclusionFilter = $("#conclusionFilter");
 const visitedFilter = $("#visitedFilter");
 const scheduledFilter = $("#scheduledFilter");
 const boughtFilter = $("#boughtFilter");
+const leadPeriodFilter = $("#leadPeriodFilter");
 const startDateFilter = $("#startDateFilter");
 const endDateFilter = $("#endDateFilter");
 const clearFiltersButton = $("#clearFilters");
@@ -752,9 +753,14 @@ function bindEvents() {
     visitedFilter,
     scheduledFilter,
     boughtFilter,
-    startDateFilter,
-    endDateFilter,
   ].forEach((element) => element.addEventListener("input", renderLeadList));
+  leadPeriodFilter.addEventListener("change", applyLeadPeriodFilter);
+  [startDateFilter, endDateFilter].forEach((element) => {
+    element.addEventListener("input", () => {
+      leadPeriodFilter.value = startDateFilter.value || endDateFilter.value ? "custom" : "all";
+      renderLeadList();
+    });
+  });
   customLeadFilters.addEventListener("input", renderLeadList);
 
   toggleFiltersButton.addEventListener("click", toggleFilters);
@@ -8094,12 +8100,51 @@ function setAnalyticsQuickRange(range) {
   if (mode !== "range") return;
   const today = new Date();
   const start = new Date(today);
-  if (range === "week") start.setDate(today.getDate() - 6);
+  if (range === "week" || range === "lastWeek") {
+    const calendarWeek = getCalendarWeekDateRange(range === "lastWeek" ? -1 : 0);
+    analyticsStartDate.value = calendarWeek.start;
+    analyticsEndDate.value = range === "lastWeek" ? calendarWeek.end : toLocalDateInput(today);
+    renderAdminAnalytics();
+    return;
+  }
   if (range === "month") start.setMonth(today.getMonth() - 1);
   if (range === "year") start.setFullYear(today.getFullYear() - 1);
-  analyticsStartDate.value = toDateInput(start);
-  analyticsEndDate.value = toDateInput(today);
+  analyticsStartDate.value = toLocalDateInput(start);
+  analyticsEndDate.value = toLocalDateInput(today);
   renderAdminAnalytics();
+}
+
+function getLeadPeriodDateRange(period) {
+  const today = new Date();
+  const todayValue = toLocalDateInput(today);
+  if (period === "all") return { start: "", end: "" };
+  if (period === "today") return { start: todayValue, end: todayValue };
+  if (period === "currentWeek") return { ...getCalendarWeekDateRange(0), end: todayValue };
+  if (period === "lastWeek") return getCalendarWeekDateRange(-1);
+  if (period === "currentMonth") {
+    return { start: toLocalDateInput(new Date(today.getFullYear(), today.getMonth(), 1)), end: todayValue };
+  }
+  if (period === "previousMonth") {
+    return {
+      start: toLocalDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1)),
+      end: toLocalDateInput(new Date(today.getFullYear(), today.getMonth(), 0)),
+    };
+  }
+  const days = period === "7d" ? 7 : 30;
+  const start = new Date(today);
+  start.setDate(today.getDate() - (days - 1));
+  return { start: toLocalDateInput(start), end: todayValue };
+}
+
+function applyLeadPeriodFilter() {
+  if (leadPeriodFilter.value === "custom") {
+    startDateFilter.focus();
+    return;
+  }
+  const range = getLeadPeriodDateRange(leadPeriodFilter.value);
+  startDateFilter.value = range.start;
+  endDateFilter.value = range.end;
+  renderLeadList();
 }
 
 function toggleFilters() {
@@ -8113,6 +8158,7 @@ function clearFilters() {
   [searchInput, channelFilter, campaignFilter, conversationStartFilter, conclusionFilter, visitedFilter, scheduledFilter, boughtFilter, startDateFilter, endDateFilter].forEach((element) => {
     element.value = "";
   });
+  leadPeriodFilter.value = "all";
   customLeadFilters.querySelectorAll("[data-custom-filter]").forEach((element) => {
     element.value = "";
   });
@@ -8697,10 +8743,6 @@ function formatPhone(value) {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
-function toDateInput(date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function toLocalDateInput(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -8708,12 +8750,12 @@ function toLocalDateInput(date) {
   return `${year}-${month}-${day}`;
 }
 
-function getCurrentWeekDateRange() {
-  const today = new Date();
-  const start = new Date(today);
-  const day = today.getDay();
+function getCalendarWeekDateRange(offsetWeeks = 0) {
+  const reference = new Date();
+  const start = new Date(reference);
+  const day = reference.getDay();
   const distanceToMonday = day === 0 ? -6 : 1 - day;
-  start.setDate(today.getDate() + distanceToMonday);
+  start.setDate(reference.getDate() + distanceToMonday + offsetWeeks * 7);
 
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
@@ -8722,6 +8764,10 @@ function getCurrentWeekDateRange() {
     start: toLocalDateInput(start),
     end: toLocalDateInput(end),
   };
+}
+
+function getCurrentWeekDateRange() {
+  return getCalendarWeekDateRange(0);
 }
 
 function formatDateTime(value) {

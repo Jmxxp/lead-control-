@@ -37,9 +37,9 @@
     <link rel="stylesheet" href="support-assistant.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260821-good-morning-1" defer></script>
-    <script src="prospections.js?v=20260819-human-search-2" defer></script>
-    <script src="attendances.js?v=20260821-attendance-analysis-1" defer></script>
+    <script src="app.js?v=20260825-period-filters-1" defer></script>
+    <script src="prospections.js?v=20260825-period-filters-1" defer></script>
+    <script src="attendances.js?v=20260825-period-filters-1" defer></script>
     <script src="support-assistant.js?v=20260819-human-search-2" defer></script>
   </head>
   <body>
@@ -525,7 +525,8 @@
                 <div class="field quick-range-field" hidden>
                   <span><i class="fa-solid fa-bolt" aria-hidden="true"></i>Atalhos</span>
                   <div class="quick-range-buttons">
-                    <button class="mini-button" type="button" data-analytics-range="week">Semana</button>
+                    <button class="mini-button" type="button" data-analytics-range="week">Esta semana</button>
+                    <button class="mini-button" type="button" data-analytics-range="lastWeek">Semana passada</button>
                     <button class="mini-button" type="button" data-analytics-range="month">Mês</button>
                     <button class="mini-button" type="button" data-analytics-range="year">Ano</button>
                   </div>
@@ -1130,6 +1131,21 @@
               </label>
 
               <div id="customLeadFilters" class="custom-lead-filters"></div>
+
+              <label class="field">
+                <span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span>
+                <select id="leadPeriodFilter">
+                  <option value="all">Todo o período</option>
+                  <option value="today">Hoje</option>
+                  <option value="currentWeek">Esta semana</option>
+                  <option value="lastWeek">Semana passada</option>
+                  <option value="7d">Últimos 7 dias</option>
+                  <option value="30d">Últimos 30 dias</option>
+                  <option value="currentMonth">Este mês</option>
+                  <option value="previousMonth">Mês passado</option>
+                  <option value="custom">Escolher datas</option>
+                </select>
+              </label>
 
               <label class="field">
                 <span><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>Contato inicial</span>
