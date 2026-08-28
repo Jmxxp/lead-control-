@@ -744,8 +744,8 @@ input.avatar-file-input {
 #goodMorningSellerCapacityBadge i { color: #d97706; }
 
 .company-workspace-nav {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
   padding: 8px;
@@ -756,7 +756,8 @@ input.avatar-file-input {
 }
 
 .company-workspace-nav .company-nav-button {
-  flex: 0 1 260px;
+  width: 100%;
+  min-width: 0;
 }
 
 .unified-analysis-switcher {
@@ -915,13 +916,13 @@ body.is-dark .unified-analysis-tab[data-unified-analysis="attendances"].is-activ
 
 @media (max-width: 1100px) {
   .company-workspace-nav {
-    flex-wrap: wrap;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 721px) {
   .company-workspace-nav.has-three-sections {
-    justify-content: flex-end;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -3276,20 +3277,65 @@ body.is-dark .bar-track {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
 }
 
-#storeForm {
+.account-creation-bar {
+  grid-column: 1 / -1;
   order: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 94%, var(--green) 6%);
+  box-shadow: 0 12px 34px rgba(23, 38, 32, 0.07);
 }
 
-.technician-panel {
-  order: 3;
-  align-self: start;
+.account-creation-copy {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.account-creation-copy > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-creation-copy h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.account-creation-copy span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.account-creation-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.compact-action-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  box-shadow: none;
 }
 
 .technician-list-panel {
-  order: 4;
+  grid-column: 1 / -1;
+  order: 2;
 }
 
 .technician-list-panel .panel-heading {
@@ -3301,8 +3347,8 @@ body.is-dark .bar-track {
 }
 
 .store-list-panel {
-  grid-column: auto;
-  order: 2;
+  grid-column: 1 / -1;
+  order: 3;
   align-self: start;
   min-height: 0;
 }
@@ -3315,16 +3361,57 @@ body.is-dark .bar-track {
   margin-top: 0;
 }
 
-.client-wallet-heading {
-  align-items: center;
+.technician-list-panel,
+.store-list-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 650px;
+  overflow: hidden;
 }
 
-.client-wallet-search {
+.management-list-heading {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.management-list-heading > div:first-child {
+  flex: 0 0 auto;
+}
+
+.management-list-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 7px 2px 2px;
+  scrollbar-gutter: stable;
+}
+
+.management-list-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.management-list-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 38%, transparent);
+  background-clip: padding-box;
+}
+
+.management-filter-bar {
+  display: flex;
+  flex: 1 1 560px;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.management-search-control,
+.management-filter-select {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  width: min(100%, 380px);
-  min-height: 46px;
+  min-width: 0;
+  min-height: 42px;
   padding: 0 7px 0 15px;
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -3333,36 +3420,55 @@ body.is-dark .bar-track {
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
-body.is-keyboard-navigation .client-wallet-search:focus-within {
+.management-search-control {
+  flex: 1 1 280px;
+  max-width: 380px;
+}
+
+.management-filter-select {
+  flex: 0 1 220px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding-right: 10px;
+}
+
+body.is-keyboard-navigation .management-search-control:focus-within,
+body.is-keyboard-navigation .management-filter-select:focus-within {
   border-color: rgba(22, 133, 95, 0.55);
   background: var(--surface);
   box-shadow: 0 0 0 4px rgba(22, 133, 95, 0.1);
 }
 
-.client-wallet-search > i {
+.management-search-control > i,
+.management-filter-select > i {
   color: var(--green);
   font-size: 0.86rem;
 }
 
-.client-wallet-search input {
+.management-search-control input,
+.management-filter-select select {
   width: 100%;
   min-width: 0;
-  height: 44px;
+  height: 40px;
   padding: 0 11px;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 750;
+  box-shadow: none;
 }
 
-.client-wallet-search input::-webkit-search-cancel-button {
+.management-filter-select select {
+  padding-right: 22px;
+}
+
+.management-search-control input::-webkit-search-cancel-button {
   display: none;
 }
 
-.client-wallet-search button {
+.management-search-control button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -3373,7 +3479,7 @@ body.is-keyboard-navigation .client-wallet-search:focus-within {
   color: var(--muted);
 }
 
-.client-wallet-search button:hover {
+.management-search-control button:hover {
   background: rgba(22, 133, 95, 0.1);
   color: var(--green);
 }
@@ -4656,6 +4762,25 @@ body.is-dark .operation-record-chip-row span {
 
 .management-meta i {
   color: var(--green);
+}
+
+.management-meta.is-unassigned {
+  color: color-mix(in srgb, var(--rose) 72%, var(--muted));
+}
+
+.management-meta.is-unassigned i {
+  color: var(--rose);
+}
+
+.access-manager-button {
+  border-color: color-mix(in srgb, #2f80ed 34%, var(--line));
+  background: color-mix(in srgb, var(--surface) 91%, #2f80ed 9%);
+  color: color-mix(in srgb, #2f80ed 82%, var(--ink));
+}
+
+.mini-button.subtle-danger {
+  border-color: color-mix(in srgb, var(--rose) 22%, var(--line));
+  background: transparent;
 }
 
 .management-profile {
@@ -6525,6 +6650,146 @@ body.is-keyboard-navigation .ai-chat-form textarea:focus {
   width: min(520px, 100%);
 }
 
+.account-creation-backdrop {
+  z-index: 34;
+  backdrop-filter: blur(12px);
+}
+
+.account-creation-dialog {
+  position: relative;
+  width: min(620px, 100%);
+  padding: 0;
+  overflow: visible;
+}
+
+.account-creation-close {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+}
+
+.account-creation-dialog .account-creation-form {
+  width: 100%;
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  border: 0;
+  background: var(--surface);
+  box-shadow: none;
+  padding: 24px;
+}
+
+.account-creation-dialog .account-creation-form > .panel-heading {
+  padding-right: 52px;
+}
+
+.account-creation-dialog .account-creation-form > :not(.panel-heading) {
+  grid-column: 1 / -1;
+}
+
+.store-access-dialog {
+  width: min(680px, 100%);
+}
+
+.store-access-form {
+  display: grid;
+  gap: 14px;
+}
+
+.store-access-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--green) 24%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--green) 8%);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.store-access-note i {
+  color: var(--green);
+}
+
+.store-access-list {
+  display: grid;
+  gap: 9px;
+  max-height: min(52vh, 480px);
+  overflow: auto;
+  padding: 2px 5px 2px 2px;
+}
+
+.store-access-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.store-access-option:hover {
+  border-color: color-mix(in srgb, var(--green) 32%, var(--line));
+  transform: translateY(-1px);
+}
+
+.store-access-option.is-selected {
+  border-color: color-mix(in srgb, var(--green) 48%, var(--line));
+  background: color-mix(in srgb, var(--surface) 89%, var(--green) 11%);
+}
+
+.store-access-option.is-unavailable {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.store-access-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+}
+
+.store-access-option .management-avatar {
+  width: 42px;
+  height: 42px;
+  box-shadow: none;
+}
+
+.store-access-option > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.store-access-option strong,
+.store-access-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.store-access-option small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.store-access-option em {
+  color: var(--green);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
 #settingsModal .account-dialog {
   width: min(760px, 100%);
 }
@@ -7714,7 +7979,7 @@ body.is-dark .backup-status-badge.is-error {
   color: #ffffff !important;
 }
 
-/* A carteira divide a primeira linha com o cadastro e cresce somente pelo conteudo. */
+/* As listas de gestao preservam a altura do painel e rolam internamente. */
 .admin-workspace .store-list-panel {
   min-height: 0;
 }
@@ -7736,6 +8001,44 @@ body .analytics-client-select-field .analytics-client-search input:focus {
   outline: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* Filtros compactos acompanham a superficie do card, inclusive no tema escuro. */
+body .management-filter-select select {
+  min-height: 40px;
+  border: 0 !important;
+  border-radius: 0;
+  background-color: transparent !important;
+  color: var(--ink) !important;
+}
+
+body.is-dark .management-filter-select select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, #aab4bf 50%),
+    linear-gradient(135deg, #aab4bf 50%, transparent 50%) !important;
+}
+
+/* A rolagem das carteiras permanece discreta, mas visivel e facil de descobrir. */
+.management-list-scroll {
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--muted) 42%, transparent) transparent !important;
+}
+
+.management-list-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.management-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.management-list-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  background-clip: padding-box;
 }
 
 /* A configuracao central de IA fica exclusivamente nas Configuracoes do Admin. */

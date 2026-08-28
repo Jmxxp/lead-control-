@@ -29,17 +29,17 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260821-good-morning-1" />
+    <link rel="stylesheet" href="styles.css?v=20260828-multi-agency-1" />
     <link rel="stylesheet" href="prospections.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="attendances.css?v=20260821-attendance-analysis-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260819-human-search-2" disabled />
-    <link rel="stylesheet" href="mobile.css?v=20260819-weekly-identity-1" />
+    <link rel="stylesheet" href="mobile.css?v=20260828-multi-agency-1" />
     <link rel="stylesheet" href="support-assistant.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260825-period-filters-1" defer></script>
-    <script src="prospections.js?v=20260825-period-filters-1" defer></script>
-    <script src="attendances.js?v=20260825-period-filters-1" defer></script>
+    <script src="app.js?v=20260828-multi-agency-1" defer></script>
+    <script src="prospections.js?v=20260828-multi-agency-1" defer></script>
+    <script src="attendances.js?v=20260828-multi-agency-1" defer></script>
     <script src="support-assistant.js?v=20260819-human-search-2" defer></script>
   </head>
   <body>
@@ -647,6 +647,26 @@
           <section id="attendanceAnalyticsPanel" class="embedded-analysis-panel is-attendances attendance-view" role="tabpanel" aria-labelledby="unifiedAnalysisAttendancesTab" hidden></section>
 
           <section id="clientManagementArea" class="admin-workspace">
+            <header id="accountCreationBar" class="account-creation-bar">
+              <div class="account-creation-copy">
+                <p class="eyebrow">Gestão de acessos</p>
+                <div>
+                  <h2>Agências e clientes</h2>
+                  <span>Organize a carteira, permissões e novos acessos sem perder o contexto das listas.</span>
+                </div>
+              </div>
+              <div class="account-creation-actions">
+                <button id="openTechnicianCreation" class="ghost-button compact-action-button" type="button">
+                  <i class="fa-solid fa-building" aria-hidden="true"></i>
+                  Nova agência
+                </button>
+                <button id="openStoreCreation" class="ghost-button compact-action-button" type="button">
+                  <i class="fa-solid fa-store" aria-hidden="true"></i>
+                  Novo cliente
+                </button>
+              </div>
+            </header>
+
             <form id="storeForm" class="form-panel" autocomplete="off">
               <div class="panel-heading">
                 <div>
@@ -706,7 +726,7 @@
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">B2B</p>
-                  <h2>Criar agência</h2>
+                  <h2 id="technicianCreationTitle">Criar agência</h2>
                 </div>
               </div>
 
@@ -769,42 +789,83 @@
             </form>
 
             <section id="technicianListPanel" class="list-panel technician-list-panel" aria-label="Agências cadastradas">
-              <div class="panel-heading align-start">
+              <div class="panel-heading align-start management-list-heading">
                 <div>
                   <p class="eyebrow">Seus clientes B2B</p>
                   <h2>Agências</h2>
                 </div>
+                <div class="management-filter-bar" role="search" aria-label="Buscar e filtrar agências">
+                  <label class="management-search-control">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input id="agencyWalletSearch" type="search" placeholder="Buscar agência ou login" aria-label="Buscar agência" />
+                    <button id="clearAgencyWalletSearch" type="button" aria-label="Limpar busca de agências" title="Limpar busca" hidden>
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </label>
+                  <label class="management-filter-select">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    <select id="agencyWalletFilter" aria-label="Filtrar agências">
+                      <option value="all">Todas as agências</option>
+                      <option value="available">Com vagas</option>
+                      <option value="full">Limite atingido</option>
+                      <option value="adjustment">Plano para ajustar</option>
+                    </select>
+                  </label>
+                </div>
               </div>
 
-              <div id="technicianEmptyState" class="empty-state">
-                <strong>Nenhuma agência cadastrada ainda.</strong>
-                <span>Crie o primeiro acesso e defina o limite de clientes.</span>
-              </div>
+              <div class="management-list-scroll" role="region" aria-label="Lista de agências" tabindex="0">
+                <div id="technicianEmptyState" class="empty-state">
+                  <strong>Nenhuma agência cadastrada ainda.</strong>
+                  <span>Crie o primeiro acesso e defina o limite de clientes.</span>
+                </div>
 
-              <div id="technicianList" class="lead-list"></div>
+                <div id="technicianList" class="lead-list"></div>
+              </div>
             </section>
 
             <section class="list-panel store-list-panel" aria-label="Carteira de clientes">
-              <div class="panel-heading align-start client-wallet-heading">
+              <div class="panel-heading align-start client-wallet-heading management-list-heading">
                 <div>
                   <p class="eyebrow">Carteira</p>
                   <h2 id="storeListTitle">Carteira de clientes</h2>
                 </div>
-                <div class="client-wallet-search" role="search">
-                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                  <input id="clientWalletSearch" type="search" placeholder="Buscar cliente por nome ou login" aria-label="Buscar cliente" />
-                  <button id="clearClientWalletSearch" type="button" aria-label="Limpar busca" title="Limpar busca" hidden>
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                  </button>
+                <div class="management-filter-bar" role="search" aria-label="Buscar e filtrar clientes">
+                  <label class="management-search-control client-wallet-search">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input id="clientWalletSearch" type="search" placeholder="Buscar cliente, login ou agência" aria-label="Buscar cliente" />
+                    <button id="clearClientWalletSearch" type="button" aria-label="Limpar busca" title="Limpar busca" hidden>
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </label>
+                  <label id="clientAgencyFilterField" class="management-filter-select">
+                    <i class="fa-solid fa-building" aria-hidden="true"></i>
+                    <select id="clientAgencyFilter" aria-label="Filtrar clientes por agência">
+                      <option value="all">Todas as agências</option>
+                      <option value="shared">Acesso compartilhado</option>
+                      <option value="unassigned">Sem agência</option>
+                    </select>
+                  </label>
+                  <label class="management-filter-select">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                    <select id="clientAccessFilter" aria-label="Filtrar clientes por recurso">
+                      <option value="all">Todos os acessos</option>
+                      <option value="prospections">Prospecções ativas</option>
+                      <option value="good-morning">Bom Dia ativo</option>
+                      <option value="leads-only">Somente Leads</option>
+                    </select>
+                  </label>
                 </div>
               </div>
 
-              <div id="storeEmptyState" class="empty-state">
-                <strong id="storeEmptyTitle">Nenhuma loja cadastrada ainda.</strong>
-                <span id="storeEmptyText">Crie o primeiro acesso para começar a receber leads.</span>
-              </div>
+              <div class="management-list-scroll" role="region" aria-label="Lista de clientes" tabindex="0">
+                <div id="storeEmptyState" class="empty-state">
+                  <strong id="storeEmptyTitle">Nenhuma loja cadastrada ainda.</strong>
+                  <span id="storeEmptyText">Crie o primeiro acesso para começar a receber leads.</span>
+                </div>
 
-              <div id="storeList" class="lead-list"></div>
+                <div id="storeList" class="lead-list"></div>
+              </div>
             </section>
           </section>
         </section>
@@ -1399,6 +1460,53 @@
             </div>
           </form>
         </section>
+      </section>
+    </div>
+
+    <div id="storeCreationModal" class="modal-backdrop account-creation-backdrop" hidden>
+      <section class="modal-dialog account-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="storeFormTitle">
+        <button class="ghost-button topbar-icon-button account-creation-close" type="button" id="storeCreationClose" aria-label="Fechar criação de cliente" title="Fechar">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <div id="storeCreationMount"></div>
+      </section>
+    </div>
+
+    <div id="technicianCreationModal" class="modal-backdrop account-creation-backdrop" hidden>
+      <section class="modal-dialog account-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="technicianCreationTitle">
+        <button class="ghost-button topbar-icon-button account-creation-close" type="button" id="technicianCreationClose" aria-label="Fechar criação de agência" title="Fechar">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <div id="technicianCreationMount"></div>
+      </section>
+    </div>
+
+    <div id="storeAccessModal" class="modal-backdrop" hidden>
+      <section class="modal-dialog store-access-dialog" role="dialog" aria-modal="true" aria-labelledby="storeAccessTitle">
+        <div class="lead-details-header">
+          <div>
+            <p class="eyebrow">Acesso compartilhado</p>
+            <h2 id="storeAccessTitle">Quem acessa este cliente</h2>
+            <span id="storeAccessSubtitle">Selecione uma ou mais agências.</span>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="storeAccessClose" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form id="storeAccessForm" class="store-access-form">
+          <input id="storeAccessId" type="hidden" />
+          <div class="store-access-note">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            <span>Somente o Admin altera esta seleção. Desmarcar uma agência remove apenas o acesso dela; o login do cliente continua ativo.</span>
+          </div>
+          <div id="storeAccessList" class="store-access-list"></div>
+          <p id="storeAccessMessage" class="form-message" role="status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button class="ghost-button" type="button" id="storeAccessCancel">Cancelar</button>
+            <button class="primary-button compact-primary" type="submit">Salvar acessos</button>
+          </div>
+        </form>
       </section>
     </div>
 

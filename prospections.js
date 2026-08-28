@@ -469,11 +469,23 @@
     };
   }
 
+  function storeHasAgencyAccess(store, agencyId) {
+    const normalizedAgencyId = String(agencyId || "");
+    if (!store || !normalizedAgencyId) return false;
+    const agencyIds = Array.isArray(store.agencyIds)
+      ? store.agencyIds
+      : Array.isArray(store.agency_ids)
+        ? store.agency_ids
+        : [];
+    if (agencyIds.some((id) => String(id) === normalizedAgencyId)) return true;
+    return String(store.technicianId || store.technician_id || "") === normalizedAgencyId;
+  }
+
   function scopedStores() {
     const allStores = bridge?.stores || [];
     if (bridge?.profile?.role === "store") return allStores.filter((store) => store.id === bridge.profile.storeId);
-    if (bridge?.profile?.role === "technician") return allStores.filter((store) => store.technicianId === bridge.profile.id);
-    if (selectedAgencyId) return allStores.filter((store) => store.technicianId === selectedAgencyId);
+    if (bridge?.profile?.role === "technician") return allStores.filter((store) => storeHasAgencyAccess(store, bridge.profile.id));
+    if (selectedAgencyId) return allStores.filter((store) => storeHasAgencyAccess(store, selectedAgencyId));
     return allStores;
   }
 
@@ -607,15 +619,14 @@
 
     const profileStoreId = String(profile.storeId || profile.store_id || (storeRoles.includes(role) ? profile.id : "") || "");
     const profileId = String(profile.id || profile.user_id || profile.technicianId || profile.technician_id || "");
-    const technicianId = String(store.technicianId || store.technician_id || "");
     const initialAgencyId = String(embeddedBridge?.initialAgencyId || "");
     if (storeRoles.includes(role) && storeId !== profileStoreId) {
       return { store: null, reason: "Esta conta não pode analisar dados de outro cliente." };
     }
-    if (agencyRoles.includes(role) && technicianId !== profileId) {
+    if (agencyRoles.includes(role) && !storeHasAgencyAccess(store, profileId)) {
       return { store: null, reason: "Este cliente não pertence à carteira desta agência." };
     }
-    if (role === "admin" && initialAgencyId && technicianId !== initialAgencyId) {
+    if (role === "admin" && initialAgencyId && !storeHasAgencyAccess(store, initialAgencyId)) {
       return { store: null, reason: "Este cliente não pertence à agência selecionada." };
     }
     if (embeddedBridge?.prospectionAccessGranted === false || store.prospectionEnabled === false || store.prospection_enabled === false) {
@@ -1078,7 +1089,7 @@
       const agencies = (bridge.agencies || []).filter((agency) => agency.isActive !== false);
       if (!agencies.length) return emptyMarkup("Nenhuma agência cadastrada", "Crie a primeira agência no módulo Leads para começar.");
       return agencies.map((agency, index) => {
-        const agencyStores = (bridge.stores || []).filter((store) => store.technicianId === agency.id);
+        const agencyStores = (bridge.stores || []).filter((store) => storeHasAgencyAccess(store, agency.id));
         const licensedAgencyStores = agencyStores.filter((store) => store.prospectionEnabled !== false);
         const rows = prospectsFor(licensedAgencyStores.map((store) => store.id));
         const metrics = metricsFor(rows);

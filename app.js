@@ -68,6 +68,7 @@ let stores = [];
 let leads = [];
 let leadIntelligenceRows = [];
 let technicians = [];
+let storeAgencyAccessRows = [];
 let profileAvatars = [];
 let customCategories = [];
 let legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pending: 0, accounts: [] };
@@ -173,6 +174,24 @@ const technicianEmptyState = $("#technicianEmptyState");
 const technicianList = $("#technicianList");
 const technicianListPanel = $("#technicianListPanel");
 const storeListPanel = $(".store-list-panel");
+const accountCreationBar = $("#accountCreationBar");
+const openStoreCreation = $("#openStoreCreation");
+const openTechnicianCreation = $("#openTechnicianCreation");
+const storeCreationModal = $("#storeCreationModal");
+const storeCreationMount = $("#storeCreationMount");
+const storeCreationClose = $("#storeCreationClose");
+const technicianCreationModal = $("#technicianCreationModal");
+const technicianCreationMount = $("#technicianCreationMount");
+const technicianCreationClose = $("#technicianCreationClose");
+const storeAccessModal = $("#storeAccessModal");
+const storeAccessForm = $("#storeAccessForm");
+const storeAccessId = $("#storeAccessId");
+const storeAccessTitle = $("#storeAccessTitle");
+const storeAccessSubtitle = $("#storeAccessSubtitle");
+const storeAccessList = $("#storeAccessList");
+const storeAccessMessage = $("#storeAccessMessage");
+const storeAccessClose = $("#storeAccessClose");
+const storeAccessCancel = $("#storeAccessCancel");
 const settingsModal = $("#settingsModal");
 const settingsClose = $("#settingsClose");
 const settingsCancel = $("#settingsCancel");
@@ -235,6 +254,12 @@ const totalStoresHint = $("#totalStoresHint");
 const storeListTitle = $("#storeListTitle");
 const clientWalletSearch = $("#clientWalletSearch");
 const clearClientWalletSearch = $("#clearClientWalletSearch");
+const agencyWalletSearch = $("#agencyWalletSearch");
+const clearAgencyWalletSearch = $("#clearAgencyWalletSearch");
+const agencyWalletFilter = $("#agencyWalletFilter");
+const clientAgencyFilterField = $("#clientAgencyFilterField");
+const clientAgencyFilter = $("#clientAgencyFilter");
+const clientAccessFilter = $("#clientAccessFilter");
 const storeEmptyTitle = $("#storeEmptyTitle");
 const storeEmptyText = $("#storeEmptyText");
 const companyWorkspaceNav = $("#companyWorkspaceNav");
@@ -475,6 +500,7 @@ async function init() {
   loadAiSettings();
   setTodayLabel();
   syncLeadIntelligenceVisibility();
+  initializeAccountCreationModals();
   bindEvents();
   initializeLeadWorkspaceSizing();
   showAuth();
@@ -489,6 +515,17 @@ async function init() {
   }
 
   await restoreSession();
+}
+
+function initializeAccountCreationModals() {
+  if (storeCreationMount && storeForm.parentElement !== storeCreationMount) {
+    storeCreationMount.appendChild(storeForm);
+    storeForm.classList.add("account-creation-form");
+  }
+  if (technicianCreationMount && technicianForm.parentElement !== technicianCreationMount) {
+    technicianCreationMount.appendChild(technicianForm);
+    technicianForm.classList.add("account-creation-form");
+  }
 }
 
 function bindEvents() {
@@ -533,6 +570,23 @@ function bindEvents() {
     syncManagedAccountProspectionToggle();
     syncManagedAccountGoodMorningSellerToggle();
   });
+  openStoreCreation?.addEventListener("click", () => openAccountCreationModal("store"));
+  openTechnicianCreation?.addEventListener("click", () => openAccountCreationModal("technician"));
+  storeCreationClose?.addEventListener("click", () => closeAccountCreationModal("store"));
+  technicianCreationClose?.addEventListener("click", () => closeAccountCreationModal("technician"));
+  storeCreationModal?.addEventListener("click", (event) => {
+    if (event.target === storeCreationModal) closeAccountCreationModal("store");
+  });
+  technicianCreationModal?.addEventListener("click", (event) => {
+    if (event.target === technicianCreationModal) closeAccountCreationModal("technician");
+  });
+  storeAccessClose?.addEventListener("click", closeStoreAccessModal);
+  storeAccessCancel?.addEventListener("click", closeStoreAccessModal);
+  storeAccessModal?.addEventListener("click", (event) => {
+    if (event.target === storeAccessModal) closeStoreAccessModal();
+  });
+  storeAccessForm?.addEventListener("submit", handleStoreAccessSubmit);
+  storeAccessList?.addEventListener("change", renderStoreAccessSelectionStatus);
   storeForm.addEventListener("submit", handleCreateStore);
   storeTechnician.addEventListener("input", syncStoreCreationAvailability);
   technicianForm.addEventListener("submit", handleCreateTechnician);
@@ -622,10 +676,19 @@ function bindEvents() {
     button.addEventListener("click", () => document.getElementById(button.dataset.avatarInput)?.click());
   });
   clientWalletSearch.addEventListener("input", renderStoreList);
+  clientAgencyFilter?.addEventListener("input", renderStoreList);
+  clientAccessFilter?.addEventListener("input", renderStoreList);
+  agencyWalletSearch?.addEventListener("input", renderTechnicianList);
+  agencyWalletFilter?.addEventListener("input", renderTechnicianList);
   clearClientWalletSearch.addEventListener("click", () => {
     clientWalletSearch.value = "";
     renderStoreList();
     clientWalletSearch.focus();
+  });
+  clearAgencyWalletSearch?.addEventListener("click", () => {
+    agencyWalletSearch.value = "";
+    renderTechnicianList();
+    agencyWalletSearch.focus();
   });
   unsavedCancel.addEventListener("click", closeUnsavedOptionsModal);
   unsavedDiscard.addEventListener("click", discardUnsavedOptionsAndContinue);
@@ -770,7 +833,17 @@ function bindEvents() {
   technicianList.addEventListener("click", handleManagementListClick);
   themeToggle.addEventListener("click", toggleTheme);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !storeOptionsPanel.hidden && unsavedOptionsModal.hidden && confirmModal.hidden) {
+    if (event.key !== "Escape") return;
+    if (!storeAccessModal?.hidden) {
+      event.preventDefault();
+      closeStoreAccessModal();
+    } else if (!storeCreationModal?.hidden) {
+      event.preventDefault();
+      closeAccountCreationModal("store");
+    } else if (!technicianCreationModal?.hidden) {
+      event.preventDefault();
+      closeAccountCreationModal("technician");
+    } else if (!storeOptionsPanel.hidden && unsavedOptionsModal.hidden && confirmModal.hidden) {
       event.preventDefault();
       requestCloseStoreOptions();
     }
@@ -1180,6 +1253,10 @@ function showAdminDashboard() {
   companyWorkspaceSection = "clients";
   selectedAnalyticsStoreId = "";
   clientWalletSearch.value = "";
+  if (agencyWalletSearch) agencyWalletSearch.value = "";
+  if (agencyWalletFilter) agencyWalletFilter.value = "all";
+  if (clientAgencyFilter) clientAgencyFilter.value = "all";
+  if (clientAccessFilter) clientAccessFilter.value = "all";
   syncAiChatStoreScope("");
   const isTechnician = currentProfile.role === "technician";
   sessionRole.textContent = `${isTechnician ? "Agência" : "Admin"} · ${currentProfile.fullName || currentProfile.username}`;
@@ -1190,6 +1267,8 @@ function showAdminDashboard() {
   appointmentMonitorToggle.hidden = true;
   appointmentMonitorPanel.hidden = true;
   closeSettingsModal();
+  closeAllAccountCreationModals();
+  closeStoreAccessModal();
   backAdminButton.hidden = true;
   adminView.hidden = false;
   storeView.hidden = true;
@@ -1239,6 +1318,7 @@ async function handleLogout() {
     stores = [];
     leads = [];
     technicians = [];
+    storeAgencyAccessRows = [];
     profileAvatars = [];
     legalAcceptanceOverview = { activeVersion: "", total: 0, accepted: 0, pending: 0, accounts: [] };
     aiChats = [];
@@ -1264,6 +1344,8 @@ function showAuth() {
   clearAppNotification();
   closeSettingsModal();
   closeManagedAccountModal();
+  closeAllAccountCreationModals();
+  closeStoreAccessModal();
   closeAiChat();
   window.ProspectionsModule?.deactivate?.();
   window.AttendancesModule?.resetSession?.();
@@ -1612,6 +1694,35 @@ async function setSystemModule(moduleName, { persist = true } = {}) {
 }
 
 
+function openAccountCreationModal(type) {
+  if (!currentProfile || !["admin", "technician"].includes(currentProfile.role)) return;
+  if (type === "technician" && (currentProfile.role !== "admin" || activeTechnicianContext)) return;
+
+  closeAccountCreationModal(type === "store" ? "technician" : "store");
+  if (type === "store") {
+    renderStoreCreationContext();
+    storeCreationModal.hidden = false;
+    requestAnimationFrame(() => (storeTechnicianField.hidden ? storeName : storeTechnician).focus());
+  } else {
+    technicianCreationModal.hidden = false;
+    requestAnimationFrame(() => technicianName.focus());
+  }
+  syncModalLock();
+}
+
+function closeAccountCreationModal(type) {
+  const modal = type === "technician" ? technicianCreationModal : storeCreationModal;
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
+  syncModalLock();
+}
+
+function closeAllAccountCreationModals() {
+  if (storeCreationModal) storeCreationModal.hidden = true;
+  if (technicianCreationModal) technicianCreationModal.hidden = true;
+  syncModalLock();
+}
+
 async function handleCreateStore(event) {
   event.preventDefault();
   clearStoreMessage();
@@ -1652,6 +1763,7 @@ async function handleCreateStore(event) {
     await refreshRemoteState();
     showStoreMessage("Loja criada.", "success");
     renderAll();
+    closeAccountCreationModal("store");
   } catch (error) {
     showStoreMessage(readableError(error));
   } finally {
@@ -1717,6 +1829,7 @@ async function handleCreateTechnician(event) {
     technicianGoodMorningSellerLimit.value = "0";
     showTechnicianMessage("Agência criada.", "success");
     renderAll();
+    closeAccountCreationModal("technician");
   } catch (error) {
     showTechnicianMessage(readableError(error));
   } finally {
@@ -1793,6 +1906,18 @@ function closeSettingsModal() {
 }
 
 function handleManagementListClick(event) {
+  const accessButton = event.target.closest("[data-store-access]");
+  if (accessButton) {
+    openStoreAccessModal(accessButton.dataset.storeAccess);
+    return;
+  }
+
+  const deactivateButton = event.target.closest("[data-account-deactivate]");
+  if (deactivateButton) {
+    confirmDeactivateStoreAccess(deactivateButton.dataset.accountId);
+    return;
+  }
+
   const exportButton = event.target.closest("[data-store-export]");
   if (exportButton) {
     exportManagedStoreLeads(exportButton.dataset.storeExport);
@@ -1828,9 +1953,106 @@ function handleManagementListClick(event) {
   guardUnsavedOptions(() => openStoreAsAdmin(button.dataset.storeLogin).catch((error) => showAppNotification(readableError(error), "error")));
 }
 
+function openStoreAccessModal(storeId) {
+  const isRootAdmin = currentProfile?.role === "admin" && !activeTechnicianContext;
+  if (!isRootAdmin) return;
+  const store = stores.find((item) => item.id === storeId);
+  if (!store) return;
+
+  storeAccessId.value = store.id;
+  storeAccessTitle.textContent = `Acesso a ${store.name}`;
+  storeAccessSubtitle.textContent = store.agencyIds.length
+    ? `${store.agencyIds.length} ${store.agencyIds.length === 1 ? "agência selecionada" : "agências selecionadas"}.`
+    : "Nenhuma agência acessa este cliente no momento.";
+  storeAccessMessage.textContent = "";
+  storeAccessList.innerHTML = technicians.length
+    ? technicians.map((technician) => {
+        const isChecked = store.agencyIds.includes(technician.id);
+        const available = Math.max(technician.storeLimit - technician.storeCount, 0);
+        const isAtCapacity = !isChecked && technician.storeCount >= technician.storeLimit;
+        return `
+          <label class="store-access-option${isChecked ? " is-selected" : ""}${isAtCapacity ? " is-unavailable" : ""}">
+            <input type="checkbox" name="storeAgencyAccess" value="${technician.id}" ${isChecked ? "checked" : ""} ${isAtCapacity ? "disabled" : ""} />
+            ${renderProfileAvatar(technician.avatarUrl, technician.fullName || technician.username, "building")}
+            <span>
+              <strong>${escapeHtml(technician.fullName || technician.username)}</strong>
+              <small>@${escapeHtml(technician.username)} · ${technician.storeCount}/${technician.storeLimit} clientes</small>
+            </span>
+            <em>${isChecked ? "Acessa" : isAtCapacity ? "Sem vagas" : `${available} ${available === 1 ? "vaga" : "vagas"}`}</em>
+          </label>
+        `;
+      }).join("")
+    : '<div class="empty-state compact-empty"><strong>Nenhuma agência disponível.</strong><span>Crie uma agência antes de compartilhar este cliente.</span></div>';
+  storeAccessModal.hidden = false;
+  renderStoreAccessSelectionStatus();
+  syncModalLock();
+}
+
+function renderStoreAccessSelectionStatus() {
+  if (!storeAccessModal || storeAccessModal.hidden) return;
+  const checked = storeAccessList.querySelectorAll('input[name="storeAgencyAccess"]:checked');
+  storeAccessList.querySelectorAll(".store-access-option").forEach((option) => {
+    option.classList.toggle("is-selected", Boolean(option.querySelector("input")?.checked));
+  });
+  storeAccessSubtitle.textContent = checked.length
+    ? `${checked.length} ${checked.length === 1 ? "agência terá acesso" : "agências terão acesso"}.`
+    : "O cliente ficará sem agência, mas o login continuará ativo.";
+}
+
+function closeStoreAccessModal() {
+  if (!storeAccessModal || storeAccessModal.hidden) return;
+  storeAccessModal.hidden = true;
+  storeAccessForm.reset();
+  storeAccessList.innerHTML = "";
+  storeAccessMessage.textContent = "";
+  syncModalLock();
+}
+
+async function handleStoreAccessSubmit(event) {
+  event.preventDefault();
+  if (currentProfile?.role !== "admin" || activeTechnicianContext) return;
+  const agencyIds = [...storeAccessList.querySelectorAll('input[name="storeAgencyAccess"]:checked')]
+    .map((input) => input.value);
+
+  try {
+    setFormBusy(storeAccessForm, true);
+    await authenticatedRpc("lc_set_store_agency_accesses", {
+      p_store_id: storeAccessId.value,
+      p_agency_ids: agencyIds,
+    });
+    await refreshRemoteState();
+    renderAll();
+    closeStoreAccessModal();
+    showAppNotification("Acessos atualizados");
+  } catch (error) {
+    storeAccessMessage.textContent = readableError(error);
+  } finally {
+    setFormBusy(storeAccessForm, false);
+  }
+}
+
+function confirmDeactivateStoreAccess(id) {
+  if (currentProfile?.role !== "technician") return;
+  const store = stores.find((item) => item.id === id);
+  if (!store || !hasStoreAgencyAccess(store, currentProfile.id)) return;
+
+  openConfirmModal({
+    eyebrow: "Desativar acesso",
+    title: `Remover ${store.name} da sua carteira?`,
+    message: "A sua agência deixará de acessar este cliente. O login do cliente e os dados permanecem ativos, e o Admin poderá liberar o acesso novamente.",
+    confirmText: "Desativar",
+    action: async () => {
+      await authenticatedRpc("lc_deactivate_store_access", { p_store_id: id });
+      await refreshRemoteState();
+      renderAll();
+      showAppNotification("Cliente desativado da agência");
+    },
+  });
+}
+
 function confirmDeleteManagedAccount(type, id) {
   const isStore = type === "store";
-  const canDelete = isStore ? canManageStoreAccount(id) : currentProfile?.role === "admin";
+  const canDelete = currentProfile?.role === "admin" && !activeTechnicianContext;
   if (!canDelete) return;
   const record = isStore
     ? stores.find((store) => store.id === id)
@@ -1839,12 +2061,12 @@ function confirmDeleteManagedAccount(type, id) {
 
   const name = isStore ? record.name : record.fullName || record.username;
   openConfirmModal({
-    eyebrow: isStore ? "Excluir cliente" : "Excluir agência",
-    title: `Excluir ${name}?`,
+    eyebrow: isStore ? "Exclusão permanente" : "Excluir agência",
+    title: isStore ? `Excluir ${name} permanentemente?` : `Excluir ${name}?`,
     message: isStore
-      ? "O acesso será desativado e o cliente sairá da carteira. Os dados históricos serão preservados no banco."
-      : "A agência só poderá ser excluída depois que todos os clientes ativos forem removidos ou transferidos.",
-    confirmText: "Excluir",
+      ? "Esta ação apaga definitivamente o cliente e os dados operacionais vinculados. Ela não pode ser desfeita."
+      : "A agência só poderá ser excluída depois que todos os acessos aos clientes forem removidos ou transferidos.",
+    confirmText: isStore ? "Excluir para sempre" : "Excluir",
     action: () => deleteManagedAccount(type, id),
   });
 }
@@ -1852,7 +2074,7 @@ function confirmDeleteManagedAccount(type, id) {
 async function deleteManagedAccount(type, id) {
   try {
     if (type === "store") {
-      await authenticatedRpc("lc_delete_store_account", { p_store_id: id });
+      await authenticatedRpc("lc_delete_store_permanently", { p_store_id: id });
     } else {
       await authenticatedRpc("lc_delete_agency_account", { p_agency_id: id });
     }
@@ -1871,7 +2093,7 @@ async function deleteManagedAccount(type, id) {
       });
     }
     renderAll();
-    showAppNotification(type === "store" ? "Cliente excluído" : "Agência excluída");
+    showAppNotification(type === "store" ? "Cliente excluído permanentemente" : "Agência excluída");
   } catch (error) {
     showAppNotification(readableError(error), "error");
   }
@@ -1892,15 +2114,9 @@ function openManagedAccountModal(type, id) {
   managedAccountTitle.textContent = type === "store" ? "Editar cliente" : "Editar agência";
   managedAccountNameLabel.textContent = type === "store" ? "Nome do cliente" : "Nome da agência";
   managedAccountName.value = type === "store" ? record.name : record.fullName || record.username;
-  const canAssignCompany = type === "store" && currentProfile?.role === "admin";
-  managedAccountTechnicianField.hidden = !canAssignCompany;
-  managedAccountTechnician.required = canAssignCompany;
-  managedAccountTechnician.innerHTML = canAssignCompany
-    ? '<option value="">Selecione a agência</option>' + technicians
-        .map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)} · ${technician.storeCount}/${technician.storeLimit}</option>`)
-        .join("")
-    : "";
-  if (canAssignCompany) managedAccountTechnician.value = record.technicianId || "";
+  managedAccountTechnicianField.hidden = true;
+  managedAccountTechnician.required = false;
+  managedAccountTechnician.innerHTML = "";
   managedAccountCurrentAvatar = record.avatarUrl || "";
   managedAccountAvatar.value = "";
   setAvatarFileName(managedAccountAvatar);
@@ -2003,11 +2219,6 @@ async function handleManagedAccountSubmit(event) {
     return;
   }
 
-  if (type === "store" && currentProfile?.role === "admin" && !managedAccountTechnician.value) {
-    showManagedAccountMessage("Selecione a agência responsável pelo cliente.");
-    return;
-  }
-
   if (type === "technician" && (!Number.isInteger(storeLimit) || storeLimit < 0)) {
     showManagedAccountMessage("Informe um limite de clientes válido.");
     return;
@@ -2045,12 +2256,13 @@ async function handleManagedAccountSubmit(event) {
     if (type === "store") {
       const wantsProspections = managedAccountProspectionAccess.checked;
       const wantsGoodMorningSeller = managedAccountGoodMorningSellerAccess.checked;
+      const managedStore = stores.find((store) => store.id === id);
       await authenticatedRpc("lc_update_store_with_all_feature_access", {
         p_store_id: id,
         p_name: managedAccountName.value.trim(),
         p_nick: username,
         p_password: password || null,
-        p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedAccountTechnician.value,
+        p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedStore?.technicianId || null,
         p_prospection_enabled: wantsProspections,
         p_good_morning_seller_enabled: wantsGoodMorningSeller,
       });
@@ -2141,33 +2353,45 @@ function syncManagedStoreEntitlementQuotas() {
   if (managedAccountType.value !== "store") return;
   const store = stores.find((item) => item.id === managedAccountId.value);
   if (!store) return;
-  const targetAgencyId = currentProfile?.role === "technician"
-    ? currentProfile.id
-    : managedAccountTechnician.value || store.technicianId;
-  const targetAgency = technicians.find((technician) => technician.id === targetAgencyId);
-  const isTransfer = Boolean(targetAgencyId && store.technicianId && targetAgencyId !== store.technicianId);
+  const targetAgencyIds = currentProfile?.role === "technician"
+    ? [currentProfile.id]
+    : store.agencyIds;
+  const targetAgencies = targetAgencyIds
+    .map((agencyId) => technicians.find((technician) => technician.id === agencyId))
+    .filter(Boolean);
 
   const syncFeature = ({ control, help, originalEnabled, countKey, limitKey, label }) => {
-    const inUse = Number(targetAgency?.[countKey] ?? accountUsage?.[countKey] ?? 0);
-    const limit = Number(targetAgency?.[limitKey] ?? accountUsage?.[limitKey] ?? 0);
-    const hasExistingReservation = originalEnabled && !isTransfer;
-    const hasAvailableLicense = hasExistingReservation || inUse < limit;
-    const transferBlocked = control.checked && isTransfer && inUse >= limit;
-    const willConsumeLicense = control.checked && (!originalEnabled || isTransfer);
-    const projectedUse = inUse + (willConsumeLicense ? 1 : 0);
-    const excess = Math.max(0, projectedUse - limit);
+    const agencyUsage = targetAgencies.length
+      ? targetAgencies.map((agency) => ({
+          name: agency.fullName || agency.username,
+          inUse: Number(agency[countKey] || 0),
+          limit: Number(agency[limitKey] || 0),
+        }))
+      : currentProfile?.role === "technician"
+        ? [{
+            name: currentProfile.fullName || currentProfile.username,
+            inUse: Number(accountUsage?.[countKey] || 0),
+            limit: Number(accountUsage?.[limitKey] || 0),
+          }]
+        : [];
+    const blockedAgencies = originalEnabled ? [] : agencyUsage.filter((usage) => usage.inUse >= usage.limit);
+    const hasAvailableLicense = blockedAgencies.length === 0;
 
     control.disabled = !control.checked && !hasAvailableLicense;
     control.dataset.quotaLocked = String(control.disabled);
-    control.dataset.transferBlocked = String(transferBlocked);
+    control.dataset.transferBlocked = "false";
 
-    help.textContent = transferBlocked
-      ? `A agência de destino já usa ${inUse} de ${limit} licenças ${label}. Desative este recurso antes de transferir ou escolha outra agência.`
-      : excess > 0
-        ? `${projectedUse} acessos ativos para ${limit} licenças. Desative ${excess} cliente${excess === 1 ? "" : "s"} para regularizar o plano.`
-        : !control.checked && !hasAvailableLicense
-          ? `${inUse} de ${limit} licenças em uso. Desative outro cliente antes de liberar este acesso.`
-          : `${projectedUse} de ${limit} licenças ${label} ficarão em uso${isTransfer ? " na agência de destino" : ""}.`;
+    if (blockedAgencies.length) {
+      help.textContent = `${blockedAgencies.map((usage) => usage.name).join(", ")} sem licença disponível ${label}.`;
+    } else if (!agencyUsage.length) {
+      help.textContent = `Nenhuma agência atribuída. O recurso ficará disponível apenas para o cliente e o Admin.`;
+    } else if (agencyUsage.length === 1) {
+      const usage = agencyUsage[0];
+      const projectedUse = usage.inUse + (control.checked && !originalEnabled ? 1 : 0);
+      help.textContent = `${projectedUse} de ${usage.limit} licenças ${label} ficarão em uso.`;
+    } else {
+      help.textContent = `Licença validada nas ${agencyUsage.length} agências que acessam este cliente.`;
+    }
   };
 
   syncFeature({
@@ -2198,7 +2422,7 @@ function syncManagedStoreEntitlementQuotas() {
 async function openStoreAsAdmin(storeId) {
   if (!["admin", "technician"].includes(currentProfile?.role)) return;
   const store = stores.find((item) => item.id === storeId);
-  if (!store || (currentProfile.role === "technician" && store.technicianId !== currentProfile.id)) return;
+  if (!store || (currentProfile.role === "technician" && !hasStoreAgencyAccess(store, currentProfile.id))) return;
 
   activeStoreContext = store;
   attendanceStoreSelectionId = store.id;
@@ -2655,6 +2879,11 @@ async function refreshRemoteState() {
     throw error;
   });
 
+  const storeAgencyAccessRequest = authenticatedRpc("lc_list_store_agency_accesses").catch((error) => {
+    if (isMissingRpcError(error)) return [];
+    throw error;
+  });
+
   const legalAcceptanceRequest = currentProfile.role === "admin"
     ? authenticatedRpc("lc_list_legal_acceptances").catch((error) => {
         if (isMissingRpcError(error)) return null;
@@ -2698,6 +2927,7 @@ async function refreshRemoteState() {
     intelligenceRows,
     entitlementRows,
     legalAcceptanceRows,
+    agencyAccessRows,
   ] = await Promise.all([
     authenticatedRpc("lc_list_stores"),
     optionRowsRequest,
@@ -2710,9 +2940,12 @@ async function refreshRemoteState() {
     leadIntelligenceRequest,
     prospectionEntitlementsRequest,
     legalAcceptanceRequest,
+    storeAgencyAccessRequest,
   ]);
 
   stores = (storeRows || []).map(mapStoreRow);
+  storeAgencyAccessRows = agencyAccessRows || [];
+  applyStoreAgencyAccesses();
   applyOptionRows(optionRows || []);
   applyCustomCategoryRows(customCategoryRows || []);
   applyCategoryLabelRows(categoryLabelRows || []);
@@ -2833,7 +3066,10 @@ function renderAdminDashboard() {
     button.classList.toggle("is-active", button.dataset.companySection === companyWorkspaceSection);
   });
 
-  storeForm.hidden = !isClients;
+  accountCreationBar.hidden = !isClients;
+  openTechnicianCreation.hidden = !isRootAdmin;
+  openStoreCreation.hidden = !isClients;
+  storeForm.hidden = false;
   technicianForm.hidden = !isRootAdmin;
   technicianListPanel.hidden = !isRootAdmin;
   settingsButton.hidden = !isRootAdmin;
@@ -2841,7 +3077,7 @@ function renderAdminDashboard() {
   totalStoresLabel.textContent = "Cliente";
   totalStoresHint.hidden = false;
   totalStoresHint.textContent = selectedStore ? "análise exclusiva" : "";
-  storeListTitle.textContent = "Carteira de clientes";
+  storeListTitle.textContent = isRootAdmin ? "Clientes" : "Sua carteira de clientes";
   $("#totalStores").textContent = selectedStore?.name || "—";
   $("#adminTotalLeads").textContent = selectedLeads.length;
   $("#adminScheduledCount").textContent = countByValue(selectedLeads, "scheduled", "Sim");
@@ -2849,6 +3085,7 @@ function renderAdminDashboard() {
   $("#adminConversionRate").textContent = formatPercent(countByValue(selectedLeads, "bought", "Sim"), selectedLeads.length);
   if (!isAnalytics) renderClientCapacity();
   renderStoreCreationContext();
+  renderClientAgencyFilter(isRootAdmin);
   renderStoreList();
   renderTechnicianList();
   renderAnalyticsClientPicker(selectedStore);
@@ -2996,6 +3233,10 @@ function scheduleEmbeddedAnalysis(module, root, store) {
 function setCompanyWorkspaceSection(section) {
   if (!["clients", "analytics", "backups", "legal"].includes(section)) return;
   if (section === "legal" && (currentProfile?.role !== "admin" || activeTechnicianContext)) return;
+  if (section !== "clients") {
+    closeAllAccountCreationModals();
+    closeStoreAccessModal();
+  }
   companyWorkspaceSection = section;
   renderAll();
   if (section === "legal") refreshLegalAcceptanceOverview();
@@ -3278,12 +3519,19 @@ function renderAnalyticsClientOptions() {
     .join("");
 }
 
+function hasStoreAgencyAccess(store, agencyId) {
+  if (!store || !agencyId) return false;
+  return Array.isArray(store.agencyIds)
+    ? store.agencyIds.includes(agencyId)
+    : store.technicianId === agencyId;
+}
+
 function getDashboardStores() {
   if (activeTechnicianContext) {
-    return stores.filter((store) => store.technicianId === activeTechnicianContext.id);
+    return stores.filter((store) => hasStoreAgencyAccess(store, activeTechnicianContext.id));
   }
   if (currentProfile?.role === "technician") {
-    return stores.filter((store) => store.technicianId === currentProfile.id);
+    return stores.filter((store) => hasStoreAgencyAccess(store, currentProfile.id));
   }
   if (currentProfile?.role === "store") {
     return stores.filter((store) => store.id === currentProfile.storeId);
@@ -3407,7 +3655,27 @@ function canManageStoreAccount(storeId) {
   if (currentProfile?.role === "admin") return true;
   if (currentProfile?.role !== "technician") return false;
   const store = stores.find((item) => item.id === storeId);
-  return Boolean(store && store.technicianId === currentProfile.id);
+  return Boolean(store && hasStoreAgencyAccess(store, currentProfile.id));
+}
+
+function renderClientAgencyFilter(isRootAdmin) {
+  if (!clientAgencyFilter || !clientAgencyFilterField) return;
+  clientAgencyFilterField.hidden = !isRootAdmin;
+  if (!isRootAdmin) {
+    clientAgencyFilter.value = "all";
+    return;
+  }
+
+  const currentValue = clientAgencyFilter.value || "all";
+  clientAgencyFilter.innerHTML = `
+    <option value="all">Todas as agências</option>
+    <option value="shared">Acesso compartilhado</option>
+    <option value="unassigned">Sem agência</option>
+    ${technicians.map((technician) => `<option value="${technician.id}">${escapeHtml(technician.fullName || technician.username)}</option>`).join("")}
+  `;
+  clientAgencyFilter.value = [...clientAgencyFilter.options].some((option) => option.value === currentValue)
+    ? currentValue
+    : "all";
 }
 
 function renderStoreList() {
@@ -3419,16 +3687,30 @@ function renderStoreList() {
 
   const allDashboardStores = getDashboardStores();
   const search = normalizeSearchText(clientWalletSearch.value.trim());
-  const dashboardStores = search
-    ? allDashboardStores.filter((store) => [store.name, store.username, store.technicianName]
-        .some((value) => normalizeSearchText(value).includes(search)))
-    : allDashboardStores;
+  const agencyFilter = clientAgencyFilter?.value || "all";
+  const accessFilter = clientAccessFilter?.value || "all";
+  const dashboardStores = allDashboardStores.filter((store) => {
+    const matchesSearch = !search || [store.name, store.username, ...(store.agencyNames || [])]
+      .some((value) => normalizeSearchText(value).includes(search));
+    const matchesAgency = agencyFilter === "all"
+      || (agencyFilter === "shared" && store.agencyIds.length > 1)
+      || (agencyFilter === "unassigned" && store.agencyIds.length === 0)
+      || store.agencyIds.includes(agencyFilter);
+    const matchesAccess = accessFilter === "all"
+      || (accessFilter === "prospections" && store.prospectionEnabled)
+      || (accessFilter === "good-morning" && store.goodMorningSellerEnabled)
+      || (accessFilter === "leads-only" && !store.prospectionEnabled && !store.goodMorningSellerEnabled);
+    return matchesSearch && matchesAgency && matchesAccess;
+  });
   const canEnterStore = ["admin", "technician"].includes(currentProfile?.role);
+  const isRootAdmin = currentProfile?.role === "admin" && !activeTechnicianContext;
+  const isAgency = currentProfile?.role === "technician";
+  const hasFilters = Boolean(search) || agencyFilter !== "all" || accessFilter !== "all";
   clearClientWalletSearch.hidden = !search;
   storeEmptyState.hidden = dashboardStores.length > 0;
-  storeEmptyTitle.textContent = search ? "Nenhum cliente encontrado." : "Nenhuma loja cadastrada ainda.";
-  storeEmptyText.textContent = search
-    ? "Tente buscar por outro nome, login ou agência responsável."
+  storeEmptyTitle.textContent = hasFilters ? "Nenhum cliente encontrado." : "Nenhum cliente cadastrado ainda.";
+  storeEmptyText.textContent = hasFilters
+    ? "Ajuste a busca ou os filtros para ampliar os resultados."
     : "Crie o primeiro acesso para começar a receber leads.";
   storeList.innerHTML = dashboardStores
     .map(
@@ -3439,7 +3721,10 @@ function renderStoreList() {
             <div class="management-profile-copy">
             <strong>${escapeHtml(store.name)}</strong>
             <span>${escapeHtml(store.username)}</span>
-            ${store.technicianName ? `<small class="management-meta"><i class="fa-solid fa-building" aria-hidden="true"></i>${escapeHtml(store.technicianName)}</small>` : ""}
+            <small class="management-meta${store.agencyNames.length ? "" : " is-unassigned"}">
+              <i class="fa-solid ${store.agencyNames.length > 1 ? "fa-building-circle-check" : store.agencyNames.length === 1 ? "fa-building" : "fa-building-circle-xmark"}" aria-hidden="true"></i>
+              ${store.agencyNames.length ? escapeHtml(store.agencyNames.join(" · ")) : "Sem agência atribuída"}
+            </small>
             <div class="management-stats">
               <span><strong>${store.leadsCount}</strong> leads</span>
               <span><strong>${store.salesCount}</strong> compras</span>
@@ -3462,8 +3747,10 @@ function renderStoreList() {
               <i class="fa-solid fa-chart-line" aria-hidden="true"></i>Analisar
             </button>
             ${canEnterStore ? `<button class="mini-button" type="button" data-store-login="${store.id}">Entrar</button>` : ""}
-            ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar acesso</button>` : ""}
-            ${canManageStoreAccount(store.id) ? `<button class="mini-button danger" type="button" data-account-delete="store" data-account-id="${store.id}">Excluir</button>` : ""}
+            ${isRootAdmin ? `<button class="mini-button access-manager-button" type="button" data-store-access="${store.id}"><i class="fa-solid fa-user-shield" aria-hidden="true"></i>Quem tem acesso</button>` : ""}
+            ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar</button>` : ""}
+            ${isAgency ? `<button class="mini-button danger subtle-danger" type="button" data-account-deactivate="store" data-account-id="${store.id}">Desativar</button>` : ""}
+            ${isRootAdmin ? `<button class="mini-button danger" type="button" data-account-delete="store" data-account-id="${store.id}">Excluir</button>` : ""}
           </div>
         </article>
       `,
@@ -3475,8 +3762,29 @@ function renderStoreList() {
 function renderTechnicianList() {
   if (!technicianList || technicianListPanel.hidden) return;
 
-  technicianEmptyState.hidden = technicians.length > 0;
-  technicianList.innerHTML = technicians
+  const search = normalizeSearchText(agencyWalletSearch?.value.trim() || "");
+  const filter = agencyWalletFilter?.value || "all";
+  const filteredTechnicians = technicians.filter((technician) => {
+    const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
+    const goodMorningExcess = Math.max(0, technician.goodMorningSellerStoreCount - technician.goodMorningSellerStoreLimit);
+    const matchesSearch = !search || [technician.fullName, technician.username]
+      .some((value) => normalizeSearchText(value).includes(search));
+    const matchesFilter = filter === "all"
+      || (filter === "available" && technician.storeCount < technician.storeLimit)
+      || (filter === "full" && technician.storeCount >= technician.storeLimit)
+      || (filter === "adjustment" && (prospectionExcess > 0 || goodMorningExcess > 0));
+    return matchesSearch && matchesFilter;
+  });
+  const hasFilters = Boolean(search) || filter !== "all";
+  clearAgencyWalletSearch.hidden = !search;
+  technicianEmptyState.hidden = filteredTechnicians.length > 0;
+  technicianEmptyState.querySelector("strong").textContent = hasFilters
+    ? "Nenhuma agência encontrada."
+    : "Nenhuma agência cadastrada ainda.";
+  technicianEmptyState.querySelector("span").textContent = hasFilters
+    ? "Ajuste a busca ou o filtro para ampliar os resultados."
+    : "Crie o primeiro acesso e defina o limite de clientes.";
+  technicianList.innerHTML = filteredTechnicians
     .map((technician) => {
       const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
       const goodMorningExcess = Math.max(0, technician.goodMorningSellerStoreCount - technician.goodMorningSellerStoreLimit);
@@ -4544,7 +4852,7 @@ function toggleStoreOptionsMode(forceOpen = null) {
   const canManage = Boolean(activeStore) && (
     currentProfile?.role === "admin" ||
     currentProfile?.role === "store" ||
-    (currentProfile?.role === "technician" && activeStore.technicianId === currentProfile.id)
+    (currentProfile?.role === "technician" && hasStoreAgencyAccess(activeStore, currentProfile.id))
   );
   if (shouldOpen && !canManage) {
     showAppNotification("Você não tem permissão para editar esta loja.", "error");
@@ -8240,10 +8548,50 @@ function mapStoreRow(row) {
     salesCount: Number(row.sales_count || 0),
     technicianId: row.technician_id || null,
     technicianName: row.technician_name || "",
+    agencyIds: row.technician_id ? [row.technician_id] : [],
+    agencyNames: row.technician_name ? [row.technician_name] : [],
     prospectionEnabled: true,
     goodMorningSellerEnabled: false,
     avatarUrl: "",
   };
+}
+
+function applyStoreAgencyAccesses() {
+  const accessByStore = new Map();
+  storeAgencyAccessRows.forEach((row) => {
+    const access = {
+      agencyId: row.agency_id,
+      agencyName: row.agency_name || row.agency_nick || "Agência",
+      agencyNick: row.agency_nick || "",
+      isPrimary: row.is_primary === true,
+    };
+    const current = accessByStore.get(row.store_id) || [];
+    current.push(access);
+    accessByStore.set(row.store_id, current);
+  });
+
+  stores.forEach((store) => {
+    const accesses = accessByStore.get(store.id) || [];
+    if (!accesses.length && store.technicianId) {
+      accesses.push({
+        agencyId: store.technicianId,
+        agencyName: store.technicianName || "Agência",
+        agencyNick: "",
+        isPrimary: true,
+      });
+    }
+    store.agencyAccesses = accesses;
+    store.agencyIds = accesses.map((access) => access.agencyId);
+    store.agencyNames = accesses.map((access) => access.agencyName);
+    const primaryAccess = accesses.find((access) => access.isPrimary) || accesses[0];
+    if (primaryAccess) {
+      store.technicianId = primaryAccess.agencyId;
+      store.technicianName = primaryAccess.agencyName;
+    } else {
+      store.technicianId = null;
+      store.technicianName = "";
+    }
+  });
 }
 
 function mapTechnicianRow(row) {

@@ -346,14 +346,27 @@
   }
 
   function normalizeStore(store = {}) {
+    const technicianId = String(firstDefined(store.technicianId, store.technician_id, store.agencyId, store.agency_id, ""));
+    const agencyIds = [...new Set([
+      ...(Array.isArray(store.agencyIds) ? store.agencyIds : []),
+      ...(Array.isArray(store.agency_ids) ? store.agency_ids : []),
+      technicianId,
+    ].map((id) => String(id || "")).filter(Boolean))];
     return {
       ...store,
       id: String(firstDefined(store.id, store.store_id, store.storeId, "")),
       name: String(firstDefined(store.name, store.store_name, store.storeName, store.username, "Cliente")),
-      technicianId: String(firstDefined(store.technicianId, store.technician_id, store.agencyId, store.agency_id, "")),
+      technicianId,
+      agencyIds,
       avatarUrl: safeImageUrl(firstDefined(store.avatarUrl, store.avatar_url, store.logoUrl, store.logo_url, "")),
       goodMorningSellerEnabled: firstDefined(store.goodMorningSellerEnabled, store.good_morning_seller_enabled) === true,
     };
+  }
+
+  function storeHasAgencyAccess(store, agencyId) {
+    const normalizedAgencyId = String(agencyId || "");
+    if (!store || !normalizedAgencyId) return false;
+    return store.agencyIds?.includes(normalizedAgencyId) || store.technicianId === normalizedAgencyId;
   }
 
   function visibleStores() {
@@ -367,10 +380,10 @@
     }
     if (isAgencyRole()) {
       const agencyId = String(firstDefined(profile.id, profile.technicianId, profile.technician_id, ""));
-      return agencyId ? all.filter((store) => store.technicianId === agencyId) : [];
+      return agencyId ? all.filter((store) => storeHasAgencyAccess(store, agencyId)) : [];
     }
     const initialAgencyId = String(state.bridge?.initialAgencyId || "");
-    if (initialAgencyId) return all.filter((store) => store.technicianId === initialAgencyId);
+    if (initialAgencyId) return all.filter((store) => storeHasAgencyAccess(store, initialAgencyId));
     return all;
   }
 
@@ -402,9 +415,9 @@
       scoped = all.filter((store) => store.id === ownId);
     } else if (isAgencyRole()) {
       const agencyId = String(firstDefined(profile.id, profile.technicianId, profile.technician_id, ""));
-      scoped = all.filter((store) => store.technicianId === agencyId);
+      scoped = all.filter((store) => storeHasAgencyAccess(store, agencyId));
     } else if (state.bridge?.initialAgencyId) {
-      scoped = all.filter((store) => store.technicianId === String(state.bridge.initialAgencyId));
+      scoped = all.filter((store) => storeHasAgencyAccess(store, state.bridge.initialAgencyId));
     }
     return scoped.some((store) => store.prospectionEnabled !== true);
   }
@@ -1078,10 +1091,10 @@
     if (storeRoles.includes(role) && store.id !== profileStoreId) {
       return { store: null, reason: "Esta conta não pode analisar atendimentos de outro cliente." };
     }
-    if (agencyRoles.includes(role) && store.technicianId !== profileId) {
+    if (agencyRoles.includes(role) && !storeHasAgencyAccess(store, profileId)) {
       return { store: null, reason: "Este cliente não pertence à carteira desta agência." };
     }
-    if (role === "admin" && initialAgencyId && store.technicianId !== initialAgencyId) {
+    if (role === "admin" && initialAgencyId && !storeHasAgencyAccess(store, initialAgencyId)) {
       return { store: null, reason: "Este cliente não pertence à agência selecionada." };
     }
     if (embeddedBridge?.prospectionAccessGranted === false || store.prospectionEnabled !== true) {
