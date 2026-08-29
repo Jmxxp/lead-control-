@@ -64,6 +64,7 @@ let companyWorkspaceSection = "clients";
 let selectedAnalyticsStoreId = "";
 let unifiedAnalysisModule = "leads";
 let managedAccountCurrentAvatar = "";
+let storeTeamMembers = [];
 let stores = [];
 let leads = [];
 let leadIntelligenceRows = [];
@@ -240,6 +241,23 @@ const managedAccountGoodMorningSellerAccess = $("#managedAccountGoodMorningSelle
 const managedAccountGoodMorningSellerHelp = $("#managedAccountGoodMorningSellerHelp");
 const managedAccountGoodMorningSellerStatus = $("#managedAccountGoodMorningSellerStatus");
 const managedAccountMessage = $("#managedAccountMessage");
+const managedAccountTeamField = $("#managedAccountTeamField");
+const managedAccountTeamSummary = $("#managedAccountTeamSummary");
+const openStoreTeam = $("#openStoreTeam");
+const storeTeamModal = $("#storeTeamModal");
+const storeTeamClose = $("#storeTeamClose");
+const storeTeamTitle = $("#storeTeamTitle");
+const storeTeamSubtitle = $("#storeTeamSubtitle");
+const storeTeamForm = $("#storeTeamForm");
+const storeTeamStoreId = $("#storeTeamStoreId");
+const storeTeamMemberId = $("#storeTeamMemberId");
+const storeTeamMemberName = $("#storeTeamMemberName");
+const storeTeamMemberActive = $("#storeTeamMemberActive");
+const storeTeamCancelEdit = $("#storeTeamCancelEdit");
+const storeTeamSubmit = $("#storeTeamSubmit");
+const storeTeamMessage = $("#storeTeamMessage");
+const storeTeamCount = $("#storeTeamCount");
+const storeTeamList = $("#storeTeamList");
 const clientCapacityPanel = $("#clientCapacityPanel");
 const clientCapacityEyebrow = $("#clientCapacityEyebrow");
 const clientCapacityTitle = $("#clientCapacityTitle");
@@ -555,6 +573,21 @@ function bindEvents() {
     if (event.target === managedAccountModal) closeManagedAccountModal();
   });
   managedAccountForm.addEventListener("submit", handleManagedAccountSubmit);
+  openStoreTeam?.addEventListener("click", () => {
+    openStoreTeamModal(managedAccountId.value)
+      .catch((error) => showManagedAccountMessage(readableError(error)));
+  });
+  storeTeamClose?.addEventListener("click", closeStoreTeamModal);
+  storeTeamModal?.addEventListener("click", (event) => {
+    if (event.target === storeTeamModal) closeStoreTeamModal();
+  });
+  storeTeamForm?.addEventListener("submit", handleStoreTeamSubmit);
+  storeTeamCancelEdit?.addEventListener("click", resetStoreTeamEditor);
+  storeTeamList?.addEventListener("click", handleStoreTeamListClick);
+  storeTeamMemberName?.addEventListener("input", () => {
+    storeTeamMessage.textContent = "";
+  });
+  storeTeamMemberActive?.addEventListener("change", syncStoreTeamActiveToggle);
   managedAccountProspectionAccess.addEventListener("change", () => {
     if (!managedAccountProspectionAccess.checked) managedAccountGoodMorningSellerAccess.checked = false;
     syncManagedStoreEntitlementQuotas();
@@ -834,7 +867,13 @@ function bindEvents() {
   themeToggle.addEventListener("click", toggleTheme);
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!storeAccessModal?.hidden) {
+    if (!confirmModal.hidden) {
+      event.preventDefault();
+      closeConfirmModal();
+    } else if (!storeTeamModal?.hidden) {
+      event.preventDefault();
+      closeStoreTeamModal();
+    } else if (!storeAccessModal?.hidden) {
       event.preventDefault();
       closeStoreAccessModal();
     } else if (!storeCreationModal?.hidden) {
@@ -2099,6 +2138,233 @@ async function deleteManagedAccount(type, id) {
   }
 }
 
+async function fetchStoreTeam(storeId) {
+  const rows = await authenticatedRpc("lc_list_store_team", { p_store_id: storeId });
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: row.id,
+    name: row.name || "Pessoa sem nome",
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at || null,
+  }));
+}
+
+function setManagedAccountTeamSummary(members) {
+  if (!managedAccountTeamSummary) return;
+  const total = members.length;
+  const active = members.filter((member) => member.isActive).length;
+  if (!total) {
+    managedAccountTeamSummary.textContent = "Nenhuma pessoa cadastrada. Monte a equipe deste cliente.";
+    return;
+  }
+  managedAccountTeamSummary.textContent = `${active} ${active === 1 ? "pessoa ativa" : "pessoas ativas"} · ${total} ${total === 1 ? "cadastro" : "cadastros"}`;
+}
+
+async function refreshManagedAccountTeamSummary(storeId) {
+  if (!managedAccountTeamSummary) return;
+  managedAccountTeamSummary.textContent = "Carregando equipe…";
+  try {
+    const members = await fetchStoreTeam(storeId);
+    if (managedAccountType.value === "store" && managedAccountId.value === storeId) {
+      setManagedAccountTeamSummary(members);
+    }
+  } catch (error) {
+    if (managedAccountType.value === "store" && managedAccountId.value === storeId) {
+      managedAccountTeamSummary.textContent = "Não foi possível carregar a equipe agora.";
+    }
+    console.warn("Não foi possível carregar o resumo da equipe.", error);
+  }
+}
+
+async function openStoreTeamModal(storeId) {
+  if (!canManageStoreAccount(storeId)) return;
+  const store = stores.find((item) => item.id === storeId);
+  if (!store) return;
+
+  storeTeamStoreId.value = store.id;
+  storeTeamTitle.textContent = `Equipe de ${store.name}`;
+  storeTeamSubtitle.textContent = "Carregando pessoas cadastradas…";
+  storeTeamMessage.textContent = "";
+  storeTeamMembers = [];
+  resetStoreTeamEditor();
+  storeTeamList.innerHTML = `
+    <div class="store-team-loading" role="status">
+      <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+      Carregando equipe…
+    </div>
+  `;
+  storeTeamModal.hidden = false;
+  syncModalLock();
+
+  try {
+    await refreshStoreTeam();
+    requestAnimationFrame(() => storeTeamMemberName.focus());
+  } catch (error) {
+    storeTeamMessage.textContent = readableError(error);
+    storeTeamList.innerHTML = `
+      <div class="empty-state compact-empty">
+        <strong>Não foi possível carregar a equipe.</strong>
+        <span>Tente fechar e abrir esta área novamente.</span>
+      </div>
+    `;
+  }
+}
+
+function closeStoreTeamModal() {
+  if (!storeTeamModal || storeTeamModal.hidden) return;
+  storeTeamModal.hidden = true;
+  storeTeamForm.reset();
+  storeTeamStoreId.value = "";
+  storeTeamMemberId.value = "";
+  storeTeamMembers = [];
+  storeTeamList.innerHTML = "";
+  storeTeamMessage.textContent = "";
+  resetStoreTeamEditor();
+  syncModalLock();
+}
+
+async function refreshStoreTeam() {
+  const storeId = storeTeamStoreId.value;
+  if (!storeId) return;
+  const members = await fetchStoreTeam(storeId);
+  if (storeTeamStoreId.value !== storeId) return;
+  storeTeamMembers = members;
+  renderStoreTeam();
+  if (managedAccountId.value === storeId) setManagedAccountTeamSummary(members);
+}
+
+function renderStoreTeam() {
+  const total = storeTeamMembers.length;
+  const active = storeTeamMembers.filter((member) => member.isActive).length;
+  storeTeamCount.textContent = `${total} ${total === 1 ? "pessoa" : "pessoas"}`;
+  storeTeamSubtitle.textContent = total
+    ? `${active} ${active === 1 ? "pessoa ativa" : "pessoas ativas"} nesta loja.`
+    : "Cadastre a primeira pessoa desta equipe.";
+  storeTeamList.innerHTML = total
+    ? storeTeamMembers.map((member) => `
+        <article class="store-team-member${member.isActive ? "" : " is-inactive"}">
+          ${renderProfileAvatar("", member.name, "user")}
+          <div class="store-team-member-copy">
+            <strong>${escapeHtml(member.name)}</strong>
+            <span class="store-team-status${member.isActive ? " is-active" : ""}">
+              <i class="fa-solid ${member.isActive ? "fa-circle-check" : "fa-circle-pause"}" aria-hidden="true"></i>
+              ${member.isActive ? "Ativo" : "Inativo"}
+            </span>
+          </div>
+          <div class="store-team-member-actions">
+            <button class="mini-button" type="button" data-team-edit="${member.id}" aria-label="Editar ${escapeHtml(member.name)}">
+              <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+              Editar
+            </button>
+            <button class="mini-button danger subtle-danger" type="button" data-team-delete="${member.id}" aria-label="Excluir ${escapeHtml(member.name)}">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+              Excluir
+            </button>
+          </div>
+        </article>
+      `).join("")
+    : `
+      <div class="empty-state compact-empty store-team-empty">
+        <i class="fa-solid fa-people-group" aria-hidden="true"></i>
+        <strong>Ninguém cadastrado ainda.</strong>
+        <span>Use o campo acima para adicionar quem trabalha nesta loja.</span>
+      </div>
+    `;
+}
+
+function syncStoreTeamActiveToggle() {
+  const status = storeTeamMemberActive?.closest(".store-team-active-toggle")?.querySelector("em");
+  if (status) status.textContent = storeTeamMemberActive.checked ? "Ativo" : "Inativo";
+}
+
+function resetStoreTeamEditor() {
+  if (!storeTeamForm) return;
+  storeTeamMemberId.value = "";
+  storeTeamMemberName.value = "";
+  storeTeamMemberActive.checked = true;
+  storeTeamCancelEdit.hidden = true;
+  storeTeamSubmit.innerHTML = '<i class="fa-solid fa-user-plus" aria-hidden="true"></i>Cadastrar pessoa';
+  storeTeamMessage.textContent = "";
+  syncStoreTeamActiveToggle();
+}
+
+function editStoreTeamMember(memberId) {
+  const member = storeTeamMembers.find((item) => item.id === memberId);
+  if (!member) return;
+  storeTeamMemberId.value = member.id;
+  storeTeamMemberName.value = member.name;
+  storeTeamMemberActive.checked = member.isActive;
+  storeTeamCancelEdit.hidden = false;
+  storeTeamSubmit.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i>Salvar pessoa';
+  storeTeamMessage.textContent = "";
+  syncStoreTeamActiveToggle();
+  storeTeamMemberName.focus();
+  storeTeamMemberName.select();
+}
+
+function handleStoreTeamListClick(event) {
+  const editButton = event.target.closest("[data-team-edit]");
+  if (editButton) {
+    editStoreTeamMember(editButton.dataset.teamEdit);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-team-delete]");
+  if (!deleteButton) return;
+  const member = storeTeamMembers.find((item) => item.id === deleteButton.dataset.teamDelete);
+  if (!member) return;
+
+  openConfirmModal({
+    eyebrow: "Excluir da equipe",
+    title: `Excluir ${member.name}?`,
+    message: "A pessoa deixará de aparecer em novas seleções, mas os atendimentos e registros antigos continuarão preservados.",
+    confirmText: "Excluir pessoa",
+    action: async () => {
+      try {
+        await authenticatedRpc("lc_archive_store_team_member", {
+          p_store_id: storeTeamStoreId.value,
+          p_member_id: member.id,
+        });
+        if (storeTeamMemberId.value === member.id) resetStoreTeamEditor();
+        await refreshStoreTeam();
+        showAppNotification("Pessoa excluída da equipe");
+      } catch (error) {
+        storeTeamMessage.textContent = readableError(error);
+      }
+    },
+  });
+}
+
+async function handleStoreTeamSubmit(event) {
+  event.preventDefault();
+  const name = storeTeamMemberName.value.trim();
+  if (!name) {
+    storeTeamMessage.textContent = "Informe o nome da pessoa.";
+    storeTeamMemberName.focus();
+    return;
+  }
+
+  const editing = Boolean(storeTeamMemberId.value);
+  const storeId = storeTeamStoreId.value;
+  try {
+    setFormBusy(storeTeamForm, true);
+    storeTeamMessage.textContent = "";
+    await authenticatedRpc("lc_upsert_store_team_member", {
+      p_store_id: storeId,
+      p_member_id: storeTeamMemberId.value || null,
+      p_name: name,
+      p_is_active: storeTeamMemberActive.checked,
+    });
+    resetStoreTeamEditor();
+    await refreshStoreTeam();
+    showAppNotification(editing ? "Pessoa atualizada" : "Pessoa cadastrada");
+    requestAnimationFrame(() => storeTeamMemberName.focus());
+  } catch (error) {
+    storeTeamMessage.textContent = readableError(error);
+  } finally {
+    setFormBusy(storeTeamForm, false);
+  }
+}
+
 function openManagedAccountModal(type, id) {
   const canManageTechnician = type === "technician" && currentProfile?.role === "admin";
   const canManageStore = type === "store" && canManageStoreAccount(id);
@@ -2148,6 +2414,8 @@ function openManagedAccountModal(type, id) {
   managedAccountProspectionAccess.checked = type === "store" && Boolean(record.prospectionEnabled);
   managedAccountGoodMorningSellerField.hidden = type !== "store";
   managedAccountGoodMorningSellerAccess.checked = type === "store" && Boolean(record.goodMorningSellerEnabled);
+  managedAccountTeamField.hidden = type !== "store";
+  if (type === "store") refreshManagedAccountTeamSummary(id);
   syncManagedStoreEntitlementQuotas();
   syncManagedAccountProspectionToggle();
   syncManagedAccountGoodMorningSellerToggle();
@@ -2159,6 +2427,7 @@ function openManagedAccountModal(type, id) {
 
 function closeManagedAccountModal() {
   if (!managedAccountModal || managedAccountModal.hidden) return;
+  closeStoreTeamModal();
   managedAccountModal.hidden = true;
   managedAccountForm.reset();
   managedAccountCurrentAvatar = "";
@@ -2182,6 +2451,8 @@ function closeManagedAccountModal() {
   managedAccountGoodMorningSellerAccess.disabled = false;
   delete managedAccountGoodMorningSellerAccess.dataset.quotaLocked;
   delete managedAccountGoodMorningSellerAccess.dataset.transferBlocked;
+  managedAccountTeamField.hidden = true;
+  managedAccountTeamSummary.textContent = "Cadastre quem trabalha neste cliente.";
   syncManagedAccountProspectionToggle();
   syncManagedAccountGoodMorningSellerToggle();
   clearManagedAccountMessage();
@@ -3746,9 +4017,9 @@ function renderStoreList() {
             <button class="secondary-button" type="button" data-store-analyze="${store.id}">
               <i class="fa-solid fa-chart-line" aria-hidden="true"></i>Analisar
             </button>
-            ${canEnterStore ? `<button class="mini-button" type="button" data-store-login="${store.id}">Entrar</button>` : ""}
+            ${canEnterStore ? `<button class="mini-button" type="button" data-store-login="${store.id}"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i>Entrar</button>` : ""}
             ${isRootAdmin ? `<button class="mini-button access-manager-button" type="button" data-store-access="${store.id}"><i class="fa-solid fa-user-shield" aria-hidden="true"></i>Quem tem acesso</button>` : ""}
-            ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}">Editar</button>` : ""}
+            ${canManageStoreAccount(store.id) ? `<button class="mini-button" type="button" data-account-edit="store" data-account-id="${store.id}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>Editar</button>` : ""}
             ${isAgency ? `<button class="mini-button danger subtle-danger" type="button" data-account-deactivate="store" data-account-id="${store.id}">Desativar</button>` : ""}
             ${isRootAdmin ? `<button class="mini-button danger" type="button" data-account-delete="store" data-account-id="${store.id}">Excluir</button>` : ""}
           </div>
@@ -3814,8 +4085,8 @@ function renderTechnicianList() {
           </div>
         </div>
         <div class="card-actions">
-          <button class="secondary-button" type="button" data-technician-login="${technician.id}">Acessar</button>
-          <button class="mini-button" type="button" data-account-edit="technician" data-account-id="${technician.id}">Editar plano</button>
+          <button class="secondary-button" type="button" data-technician-login="${technician.id}"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i>Acessar</button>
+          <button class="mini-button" type="button" data-account-edit="technician" data-account-id="${technician.id}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>Editar plano</button>
           <button class="mini-button danger" type="button" data-account-delete="technician" data-account-id="${technician.id}">Excluir</button>
         </div>
       </article>
@@ -4048,7 +4319,7 @@ function openLeadDetailsModal(id) {
     </div>
     <div class="modal-actions">
       ${lead.phone ? `<a class="mini-button phone-button" href="${formatPhoneUrl(lead.phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a>` : ""}
-      <button class="mini-button" type="button" data-detail-edit="${lead.id}">Editar</button>
+      <button class="mini-button" type="button" data-detail-edit="${lead.id}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>Editar</button>
     </div>
   `;
 

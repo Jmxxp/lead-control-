@@ -1588,6 +1588,20 @@
             <small id="managedAccountGoodMorningSellerLimitHelp" class="field-help">Defina quantos clientes desta agência podem usar metas e fila de vendedores.</small>
           </label>
 
+          <div id="managedAccountTeamField" class="managed-team-entry" hidden>
+            <span class="managed-team-entry-icon" aria-hidden="true">
+              <i class="fa-solid fa-people-group"></i>
+            </span>
+            <div class="managed-team-entry-copy">
+              <strong>Equipe da loja</strong>
+              <span id="managedAccountTeamSummary">Cadastre quem trabalha neste cliente.</span>
+            </div>
+            <button id="openStoreTeam" class="mini-button managed-team-entry-button" type="button">
+              <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+              Gerenciar
+            </button>
+          </div>
+
           <div id="managedAccountProspectionField" class="feature-access-card" hidden>
             <div class="feature-access-copy">
               <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
@@ -1624,6 +1638,57 @@
             <button class="primary-button compact-primary" type="submit">Salvar alterações</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div id="storeTeamModal" class="modal-backdrop store-team-backdrop" hidden>
+      <section class="modal-dialog store-team-dialog" role="dialog" aria-modal="true" aria-labelledby="storeTeamTitle">
+        <div class="lead-details-header store-team-header">
+          <div>
+            <p class="eyebrow">Pessoas e responsáveis</p>
+            <h2 id="storeTeamTitle">Equipe da loja</h2>
+            <span id="storeTeamSubtitle">Cadastre quem trabalha neste cliente.</span>
+          </div>
+          <button class="ghost-button topbar-icon-button" type="button" id="storeTeamClose" aria-label="Fechar equipe" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="store-team-note">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <span>Esta é a mesma equipe usada em Prospecções e Atendimentos. Excluir remove a pessoa das novas seleções, mas preserva o histórico.</span>
+        </div>
+
+        <form id="storeTeamForm" class="store-team-form" autocomplete="off">
+          <input id="storeTeamStoreId" type="hidden" />
+          <input id="storeTeamMemberId" type="hidden" />
+          <label class="field store-team-name-field">
+            <span>Nome da pessoa</span>
+            <input id="storeTeamMemberName" type="text" maxlength="100" placeholder="Ex.: Mariana Oliveira" required />
+          </label>
+          <label class="store-team-active-toggle feature-access-toggle">
+            <input id="storeTeamMemberActive" type="checkbox" checked />
+            <span aria-hidden="true"></span>
+            <em>Ativo</em>
+          </label>
+          <div class="store-team-form-actions">
+            <button id="storeTeamCancelEdit" class="ghost-button" type="button" hidden>Cancelar edição</button>
+            <button id="storeTeamSubmit" class="primary-button compact-primary" type="submit">
+              <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+              Cadastrar pessoa
+            </button>
+          </div>
+          <p id="storeTeamMessage" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+
+        <div class="store-team-list-heading">
+          <div>
+            <strong>Pessoas cadastradas</strong>
+            <span id="storeTeamCount">0 pessoas</span>
+          </div>
+          <span class="store-team-list-hint"><i class="fa-solid fa-arrows-up-down" aria-hidden="true"></i>Lista com rolagem</span>
+        </div>
+        <div id="storeTeamList" class="store-team-list"></div>
       </section>
     </div>
 

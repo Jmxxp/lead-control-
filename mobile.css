@@ -2010,4 +2010,82 @@ video {
     grid-column: 2 / -1;
     justify-self: start;
   }
+
+  .managed-team-entry {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .managed-team-entry-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .store-team-backdrop {
+    padding: 10px;
+  }
+
+  .store-team-dialog {
+    width: 100%;
+    min-height: calc(100dvh - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 16px;
+    border-radius: 17px;
+  }
+
+  .store-team-form {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .store-team-active-toggle {
+    justify-self: start;
+    min-height: 36px;
+  }
+
+  .store-team-form-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    min-width: 0;
+  }
+
+  .store-team-form-actions > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #storeTeamCancelEdit[hidden] + #storeTeamSubmit {
+    grid-column: 1 / -1;
+  }
+
+  .store-team-member {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .store-team-member .management-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .store-team-member-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    min-width: 0;
+  }
+
+  .store-team-member-actions button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .store-team-list-hint {
+    display: none;
+  }
 }
