@@ -10,6 +10,7 @@
     morningWorkspace: "lc_get_good_morning_seller_workspace",
     morningSave: "lc_save_good_morning_seller_settings",
     morningAdvance: "lc_advance_good_morning_seller_turn",
+    morningParticipation: "lc_set_good_morning_seller_participation",
   });
 
   const TAGS = Object.freeze({
@@ -42,11 +43,15 @@
     listSearchTimer: 0,
     professionals: [],
     morning: null,
+    morningGeneration: 0,
     morningLoading: false,
     morningSaving: false,
+    morningParticipationSaving: "",
     morningError: "",
     morningConfigOpen: false,
+    morningConfigGeneration: 0,
     morningDraft: null,
+    legacyAttendanceSaveRequired: false,
     serverMetrics: {},
     feedback: null,
     loadError: "",
@@ -115,6 +120,46 @@
     return ["technician", "agency", "agencia", "tecnico"].includes(getRole());
   }
 
+  function isAdminRole() {
+    return getRole() === "admin";
+  }
+
+  function canManageMorningSettings() {
+    return isStoreRole()
+      && selectedStore()?.goodMorningSellerEnabled === true
+      && state.morning?.licensed === true
+      && state.morning?.canManageSettings === true;
+  }
+
+  function canOpenMorningConfig() {
+    return (isAdminRole() || isStoreRole())
+      && selectedStore()?.goodMorningSellerEnabled === true
+      && state.morning?.licensed === true;
+  }
+
+  function canManageMorningParticipation() {
+    return canOpenMorningConfig()
+      && state.morning?.participationControlAvailable === true
+      && state.morning?.participationUpdateAvailable === true;
+  }
+
+  function invalidateMorningRequests() {
+    state.morningGeneration += 1;
+    state.morningLoading = false;
+  }
+
+  function clearMorningState({ loading = false } = {}) {
+    invalidateMorningRequests();
+    state.morning = null;
+    state.morningLoading = loading === true;
+    state.morningSaving = false;
+    state.morningParticipationSaving = "";
+    state.morningError = "";
+    state.morningConfigOpen = false;
+    state.morningConfigGeneration += 1;
+    state.morningDraft = null;
+  }
+
   function notify(message, type = "info") {
     if (!message) return;
     if (typeof state.bridge?.notify === "function") {
@@ -160,12 +205,7 @@
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
     state.professionals = [];
-    state.morning = null;
-    state.morningLoading = false;
-    state.morningSaving = false;
-    state.morningError = "";
-    state.morningConfigOpen = false;
-    state.morningDraft = null;
+    clearMorningState();
     state.serverMetrics = {};
     state.feedback = null;
     state.loadError = "";
@@ -245,7 +285,7 @@
 
   function attendanceDateLimits(reference = new Date()) {
     const today = embeddedDateInput(reference);
-    if (state.bridge?.attendanceRetroactiveDatesGranted === false) {
+    if (!attendanceRetroactiveDatesGranted()) {
       return { min: today, today };
     }
     const parts = parseIsoDateParts(today);
@@ -264,6 +304,11 @@
     return Boolean(parseIsoDateParts(date))
       && (!limits.min || date >= limits.min)
       && (!limits.today || date <= limits.today);
+  }
+
+  function attendanceRetroactiveDatesGranted() {
+    return state.legacyAttendanceSaveRequired !== true
+      && state.bridge?.attendanceRetroactiveDatesGranted !== false;
   }
 
   function safeImageUrl(value) {
@@ -609,12 +654,26 @@
       actual: normalizeMoney(value?.actual),
     });
     const professionals = Array.isArray(payload.professionals) ? payload.professionals : [];
+    const hasParticipationField = professionals.some((professional) => (
+      Object.prototype.hasOwnProperty.call(professional || {}, "good_morning_seller_enabled")
+      || Object.prototype.hasOwnProperty.call(professional || {}, "goodMorningSellerEnabled")
+    ));
     return {
       licensed: payload.licensed === true,
       configured: payload.configured === true,
+      canManageSettings: firstDefined(
+        payload.can_manage_settings,
+        payload.canManageSettings,
+        isStoreRole()
+      ) === true,
       participationControlAvailable: firstDefined(
         payload.participation_control_available,
         payload.participationControlAvailable,
+        hasParticipationField
+      ) === true,
+      participationUpdateAvailable: firstDefined(
+        payload.participation_update_available,
+        payload.participationUpdateAvailable,
         false
       ) === true,
       goalMonth: String(firstDefined(payload.goal_month, payload.goalMonth, "")),
@@ -628,6 +687,21 @@
       workdaysInMonth: Number(firstDefined(payload.workdays_in_month, payload.workdaysInMonth, 0)) || 0,
       workdaysInWeek: Number(firstDefined(payload.workdays_in_week, payload.workdaysInWeek, 0)) || 0,
       todayIsWorkingDay: firstDefined(payload.today_is_working_day, payload.todayIsWorkingDay, false) === true,
+      teamProfessionalCount: Number(firstDefined(
+        payload.team_professional_count,
+        payload.teamProfessionalCount,
+        professionals.length
+      )) || 0,
+      eligibleProfessionalCount: Number(firstDefined(
+        payload.eligible_professional_count,
+        payload.eligibleProfessionalCount,
+        professionals.filter((professional) => firstDefined(
+          professional?.good_morning_seller_enabled,
+          professional?.goodMorningSellerEnabled,
+          professional?.enabled,
+          true
+        ) !== false).length
+      )) || 0,
       goals: {
         today: normalizeGoal(goals.today),
         week: normalizeGoal(goals.week),
@@ -717,6 +791,40 @@
     const draft = { monthlyGoal, mode, professionals };
     if (mode === "equal") applyEqualMorningGoals(draft);
     return draft;
+  }
+
+  function cloneMorningDraft(draft) {
+    if (!draft) return null;
+    return {
+      monthlyGoal: normalizeMoney(draft.monthlyGoal),
+      mode: draft.mode === "custom" ? "custom" : "equal",
+      professionals: draft.professionals.map((professional) => ({
+        id: professional.id,
+        name: professional.name,
+        enabled: professional.enabled !== false,
+        goalAmount: normalizeMoney(professional.goalAmount),
+      })),
+    };
+  }
+
+  function mergeMorningDraftWithWorkspace(draft, morning) {
+    if (!draft || !morning) return createMorningDraft();
+    const previousById = new Map(draft.professionals.map((professional) => [professional.id, professional]));
+    const merged = {
+      monthlyGoal: normalizeMoney(draft.monthlyGoal),
+      mode: draft.mode === "custom" ? "custom" : "equal",
+      professionals: morning.professionals.map((professional) => {
+        const previous = previousById.get(professional.id);
+        return {
+          id: professional.id,
+          name: professional.name,
+          enabled: professional.enabled !== false,
+          goalAmount: normalizeMoney(previous?.goalAmount ?? professional.goalAmount),
+        };
+      }),
+    };
+    if (merged.mode === "equal") applyEqualMorningGoals(merged);
+    return merged;
   }
 
   function morningQueue() {
@@ -816,18 +924,24 @@
   function renderMorningConfigured() {
     const queue = morningQueue();
     const current = queue[0];
+    const canConfigure = canManageMorningSettings();
+    const canOpenConfig = canOpenMorningConfig();
     const weeklyPeriod = [formatShortDate(state.morning.weekStart), formatShortDate(state.morning.weekEnd)].filter(Boolean).join("–");
     return `<section class="attendance-morning-board" aria-labelledby="goodMorningSellerTitle">
       <header class="attendance-morning-heading">
         <div class="attendance-morning-brand"><span><i class="fa-solid fa-sun" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="goodMorningSellerTitle">Ritmo comercial de hoje</h2><small>Metas proporcionais aos dias do mês · compras registradas em Atendimentos</small></div></div>
-        <button class="attendance-secondary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Configurar metas</button>
+        ${canOpenConfig
+          ? `<button class="attendance-secondary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid ${canConfigure ? "fa-sliders" : "fa-user-check"}" aria-hidden="true"></i>${canConfigure ? "Configurar metas" : "Gerenciar participantes"}</button>`
+          : `<span class="attendance-morning-owner-note"><i class="fa-solid fa-store" aria-hidden="true"></i>Configuração da loja</span>`}
       </header>
       <div class="attendance-morning-content">
         <article class="attendance-turn-card">
           <div class="attendance-turn-label"><span><i class="fa-solid fa-bolt" aria-hidden="true"></i>Vendedor da vez</span><small>Fila compartilhada com toda a equipe</small></div>
           ${current ? `<div class="attendance-turn-current"><span>${escapeHtml(initials(current.name))}</span><div><strong>${escapeHtml(current.name)}</strong><small>Meta mensal ${escapeHtml(formatCurrency(current.goalAmount))} · ${escapeHtml(formatCurrency(current.actualMonth))} realizado</small></div></div>` : `<div class="attendance-turn-current is-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Fila ainda não configurada</strong><small>Abra as configurações para incluir a equipe.</small></div></div>`}
           <div class="attendance-turn-queue" aria-label="Ordem da vez">${queue.map((professional, index) => `<span class="${index === 0 ? "is-current" : ""}"><b>${index + 1}</b>${escapeHtml(professional.name)}</span>`).join("")}</div>
-          <button class="attendance-turn-next" type="button" data-attendance-action="advance-morning-turn" ${state.morningSaving || queue.length < 2 ? "disabled" : ""}><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>${state.morningSaving ? "Atualizando fila" : "Passar para o próximo"}</button>
+          ${canConfigure
+            ? `<button class="attendance-turn-next" type="button" data-attendance-action="advance-morning-turn" ${state.morningSaving || state.morningParticipationSaving || queue.length < 2 ? "disabled" : ""}><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>${state.morningSaving ? "Atualizando fila" : "Passar para o próximo"}</button>`
+            : `<span class="attendance-turn-owner-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>A loja controla a vez</span>`}
         </article>
         <div class="attendance-morning-goals">
           ${renderMorningGoalCard("today", "Meta de hoje", "fa-calendar-day", "dia")}
@@ -840,10 +954,31 @@
 
   function renderMorningSetup() {
     const isNewMonth = Boolean(state.morning?.savedGoalMonth && state.morning.savedGoalMonth !== state.morning.goalMonth);
+    const canConfigure = canManageMorningSettings();
+    const canOpenConfig = canOpenMorningConfig();
+    const teamProfessionalCount = state.morning?.teamProfessionalCount ?? state.morning?.professionals?.length ?? 0;
+    const hasParticipants = (state.morning?.eligibleProfessionalCount ?? morningParticipants(state.morning?.professionals || []).length) > 0;
+    const hasTeamProfessionals = teamProfessionalCount > 0;
+    const setupTitle = !hasTeamProfessionals
+      ? "Nenhum profissional cadastrado"
+      : !hasParticipants
+      ? "Nenhum vendedor participando"
+      : isAdminRole()
+      ? "Participantes do Bom Dia Vendedor"
+      : isNewMonth ? "Comece o novo mês com a meta atualizada" : "Transforme a meta em ritmo diário";
+    const setupCopy = !hasTeamProfessionals
+      ? "Cadastre a equipe deste cliente antes de configurar metas e montar a rotação da vez."
+      : isAdminRole()
+        ? "Ative somente quem participa desta área. A loja continua responsável pela meta mensal e pela ordem da vez."
+      : canConfigure
+        ? "Defina a meta mensal, escolha a divisão por vendedor e organize a fila da vez. O sistema calcula automaticamente os objetivos de hoje e desta semana."
+        : "O Admin ou a loja escolhem quem participa. A loja define a meta mensal e organiza a ordem da vez.";
     return `<section class="attendance-morning-board attendance-morning-board--setup">
       <div class="attendance-morning-setup-icon"><i class="fa-solid fa-sun" aria-hidden="true"></i></div>
-      <div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2>${isNewMonth ? "Comece o novo mês com a meta atualizada" : "Transforme a meta em ritmo diário"}</h2><p>Defina a meta mensal, escolha a divisão por vendedor e organize a fila da vez. O sistema calcula automaticamente os objetivos de hoje e desta semana.</p></div>
-      <button class="attendance-primary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>${isNewMonth ? "Atualizar meta do mês" : "Configurar Bom Dia Vendedor"}</button>
+      <div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2>${setupTitle}</h2><p>${setupCopy}</p></div>
+      ${canOpenConfig && hasTeamProfessionals
+        ? `<button class="attendance-primary-button" type="button" data-attendance-action="open-morning-config"><i class="fa-solid ${canConfigure ? "fa-wand-magic-sparkles" : "fa-user-check"}" aria-hidden="true"></i>${canConfigure ? (isNewMonth ? "Atualizar meta do mês" : "Configurar Bom Dia Vendedor") : "Gerenciar participantes"}</button>`
+        : `<span class="attendance-morning-owner-note"><i class="fa-solid ${hasTeamProfessionals ? "fa-user-shield" : "fa-users"}" aria-hidden="true"></i>${hasTeamProfessionals ? "Gerenciamento do Admin ou da loja" : "Aguardando cadastro da equipe"}</span>`}
     </section>`;
   }
 
@@ -862,7 +997,14 @@
 
   function renderMorningSellerConfigRow(professional, participants) {
     const enabled = professional.enabled !== false;
-    const participationControlAvailable = state.morning?.participationControlAvailable === true;
+    const participationControlAvailable = state.morning?.participationControlAvailable === true
+      && state.morning?.participationUpdateAvailable === true;
+    const participationBusy = Boolean(state.morningParticipationSaving);
+    const savingThisProfessional = state.morningParticipationSaving === professional.id;
+    const canToggleParticipation = canManageMorningParticipation()
+      && !state.morningSaving
+      && !participationBusy;
+    const canConfigure = canManageMorningSettings();
     const participantIndex = participants.findIndex((participant) => participant.id === professional.id);
     const participantNumber = participantIndex + 1;
     const isFirst = participantIndex === 0;
@@ -873,20 +1015,29 @@
       ? (isFirst ? "Primeiro da fila" : `${participantNumber}º na fila`)
       : "Fora da fila e do rateio";
     const visibleGoal = enabled ? professional.goalAmount : 0;
-    const goalDisabled = state.morningDraft?.mode === "equal" || !enabled;
-    return `<article class="${enabled ? "" : "is-disabled"}" data-morning-professional="${escapedId}" data-morning-enabled="${enabled}">
+    const goalDisabled = !canConfigure
+      || state.morningDraft?.mode === "equal"
+      || !enabled
+      || state.morningSaving
+      || participationBusy;
+    const participationLabel = savingThisProfessional ? "Salvando…" : (enabled ? "Participando" : "Pausado");
+    return `<article class="${enabled ? "" : "is-disabled"}${savingThisProfessional ? " is-saving" : ""}" data-morning-professional="${escapedId}" data-morning-enabled="${enabled}" aria-busy="${savingThisProfessional ? "true" : "false"}">
       <b title="${enabled ? `${participantNumber}º na fila` : "Fora da fila"}">${enabled ? participantNumber : `<i class="fa-solid fa-pause" aria-hidden="true"></i>`}</b>
       <span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span>
-      <div class="attendance-morning-seller-identity"><strong>${escapedName}</strong><small>${queueLabel}</small><label class="attendance-morning-participation${participationControlAvailable ? "" : " is-unavailable"}"><input type="checkbox" data-morning-seller-enabled="${escapedId}" ${enabled ? "checked" : ""}${participationControlAvailable ? "" : " disabled"} aria-label="${participationControlAvailable ? `${enabled ? "Retirar" : "Incluir"} ${escapedName} da fila e do rateio do Bom Dia Vendedor` : "Atualização do banco necessária para controlar a participação"}" /><span class="attendance-morning-participation-switch" aria-hidden="true"></span><span>${participationControlAvailable ? (enabled ? "Participando" : "Pausado") : "Atualização pendente"}</span></label></div>
+      <div class="attendance-morning-seller-identity"><strong>${escapedName}</strong><small>${queueLabel}</small><label class="attendance-morning-participation${canToggleParticipation || savingThisProfessional ? "" : " is-unavailable"}${savingThisProfessional ? " is-saving" : ""}"><input type="checkbox" role="switch" data-morning-seller-enabled="${escapedId}" ${enabled ? "checked" : ""}${canToggleParticipation ? "" : " disabled"} aria-checked="${enabled}" aria-label="${participationControlAvailable ? `${enabled ? "Retirar" : "Incluir"} ${escapedName} do Bom Dia Vendedor` : "Controle de participação indisponível até a atualização do banco"}" /><span class="attendance-morning-participation-switch" aria-hidden="true"></span><span>${participationLabel}</span></label></div>
       <label class="attendance-morning-seller-goal"><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapedId}" inputmode="decimal" value="${escapeHtml(String(visibleGoal || 0))}" aria-label="Meta mensal de ${escapedName}" ${goalDisabled ? "disabled" : ""} /></span></label>
-      <div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para cima" ${!enabled || isFirst ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para baixo" ${!enabled || isLast ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div>
+      <div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para cima" ${!canConfigure || state.morningSaving || participationBusy || !enabled || isFirst ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para baixo" ${!canConfigure || state.morningSaving || participationBusy || !enabled || isLast ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div>
     </article>`;
   }
 
   function renderMorningConfig() {
     const draft = state.morningDraft;
-    if (!state.morningConfigOpen || !draft) return "";
-    const participationControlAvailable = state.morning?.participationControlAvailable === true;
+    if (!state.morningConfigOpen || !draft || !canOpenMorningConfig()) return "";
+    const canConfigure = canManageMorningSettings();
+    const participationControlAvailable = state.morning?.participationControlAvailable === true
+      && state.morning?.participationUpdateAvailable === true;
+    const participationBusy = Boolean(state.morningParticipationSaving);
+    const configurationControlsEnabled = canConfigure && !state.morningSaving && !participationBusy;
     const participants = morningParticipants(draft.professionals);
     const total = morningDraftTotal();
     const difference = Math.round((normalizeMoney(draft.monthlyGoal) - total) * 100) / 100;
@@ -896,18 +1047,22 @@
       : balanced
         ? "Distribuição completa"
         : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
+    const headerCopy = canConfigure
+      ? "A participação é salva na hora; meta e ordem são salvas pelo botão abaixo."
+      : "Ative ou pause quem participa. Meta mensal e ordem da vez continuam sob responsabilidade da loja.";
     return `<div class="attendance-morning-modal" role="presentation" data-morning-backdrop>
       <section class="attendance-morning-dialog" role="dialog" aria-modal="true" aria-labelledby="morningConfigTitle" data-morning-dialog>
-        <header><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="morningConfigTitle">Meta e fila da equipe</h2><span>As metas são atualizadas para o mês atual.</span></div><button type="button" data-attendance-action="close-morning-config" aria-label="Fechar configurações"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
-        <form data-morning-config-form aria-busy="${state.morningSaving ? "true" : "false"}">
-          <div class="attendance-morning-config-top">
-            <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" required /></span></label>
-            <fieldset><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
+        <header><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="morningConfigTitle">${canConfigure ? "Meta e fila da equipe" : "Participação da equipe"}</h2><span>${headerCopy}</span></div><button type="button" data-attendance-action="close-morning-config" aria-label="Fechar configurações"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+        <form class="${canConfigure ? "" : "is-participation-only"}" data-morning-config-form aria-busy="${state.morningSaving || participationBusy ? "true" : "false"}">
+          <div class="attendance-morning-config-top${canConfigure ? "" : " is-readonly"}">
+            <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" ${configurationControlsEnabled ? "required" : "disabled"} /></span></label>
+            <fieldset ${configurationControlsEnabled ? "" : "disabled"}><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
           </div>
-          <div class="attendance-morning-config-heading"><div><strong>Vendedores e ordem da vez</strong><small>${participationControlAvailable ? "Ative quem participa. Quem estiver pausado continua na equipe, mas fica fora da fila e do rateio." : "A fila atual permanece disponível; o controle individual será liberado após a atualização segura do banco."}</small></div><span data-morning-allocation-status class="${balanced ? "is-balanced" : "is-warning"}" role="status" aria-live="polite">${escapeHtml(allocationStatus)}</span></div>
+          <div class="attendance-morning-config-heading"><div><strong>${canConfigure ? "Vendedores e ordem da vez" : "Quem participa desta área"}</strong><small>Quem estiver pausado continua cadastrado na equipe, mas fica fora da fila, das metas e do rateio.</small></div><span data-morning-allocation-status class="${canConfigure ? (balanced ? "is-balanced" : "is-warning") : "is-balanced"}" role="status" aria-live="polite">${escapeHtml(canConfigure ? allocationStatus : `${participants.length} ${participants.length === 1 ? "participante" : "participantes"}`)}</span></div>
+          ${!participationControlAvailable ? `<p class="attendance-morning-capability-warning" role="alert"><i class="fa-solid fa-database" aria-hidden="true"></i>A atualização segura do banco ainda precisa ser aplicada para liberar estes switches.</p>` : ""}
           <div class="attendance-morning-seller-list">${draft.professionals.map((professional) => renderMorningSellerConfigRow(professional, participants)).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
           ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
-          <footer><div><span>Total distribuído · ${participants.length} ${participants.length === 1 ? "participante" : "participantes"}</span><strong data-morning-distributed-total>${escapeHtml(formatCurrency(total))}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Cancelar</button><button class="attendance-primary-button" type="submit" ${state.morningSaving || !participants.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button></footer>
+          <footer><div><span>${canConfigure ? `Total distribuído · ${participants.length} ${participants.length === 1 ? "participante" : "participantes"}` : "Alterações de participação"}</span><strong data-morning-distributed-total>${canConfigure ? escapeHtml(formatCurrency(total)) : "Salvas na hora"}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Fechar</button>${canConfigure ? `<button class="attendance-primary-button" type="submit" ${state.morningSaving || participationBusy || !participants.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button>` : ""}</footer>
         </form>
       </section>
     </div>`;
@@ -925,9 +1080,34 @@
     return `<div class="attendance-morning-root" data-good-morning-seller>${content}${renderMorningConfig()}</div>`;
   }
 
-  function refreshMorningRegion() {
+  function refreshMorningRegion({ dialogScrollTop = null, focusSelector = "" } = {}) {
     const region = state.root?.querySelector("[data-good-morning-seller]");
     if (region) region.outerHTML = renderGoodMorningSeller();
+    if (dialogScrollTop !== null || focusSelector) {
+      requestAnimationFrame(() => {
+        const dialog = state.root?.querySelector("[data-morning-dialog]");
+        if (dialog && dialogScrollTop !== null) dialog.scrollTop = dialogScrollTop;
+        if (focusSelector) state.root?.querySelector(focusSelector)?.focus();
+      });
+    }
+  }
+
+  function closeMorningConfig({ restoreFocus = true, force = false } = {}) {
+    if (!force && (state.morningSaving || state.morningParticipationSaving)) {
+      notify("Aguarde a atualização terminar antes de fechar.", "warning");
+      return false;
+    }
+    state.morningConfigOpen = false;
+    state.morningConfigGeneration += 1;
+    state.morningDraft = null;
+    state.morningError = "";
+    refreshMorningRegion();
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        state.root?.querySelector('[data-attendance-action="open-morning-config"]')?.focus();
+      });
+    }
+    return true;
   }
 
   function captureDraft() {
@@ -991,7 +1171,7 @@
     const professionals = professionalRecords.map((professional) => professional.name);
     const draft = state.drafts.get(state.selectedStoreId) || { tag: "budget" };
     const dateLimits = attendanceDateLimits();
-    const retroactiveDatesGranted = state.bridge?.attendanceRetroactiveDatesGranted !== false;
+    const retroactiveDatesGranted = attendanceRetroactiveDatesGranted();
     const attendedOn = isValidAttendanceDate(draft.attendedOn, dateLimits) ? draft.attendedOn : dateLimits.today;
     const draftedProfessional = professionals.find((name) => normalizeText(name) === normalizeText(draft.professionalName));
     const selectedProfessional = draftedProfessional || (professionals.length === 1 ? professionals[0] : "");
@@ -1962,7 +2142,7 @@
 
     if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
     if (!isValidAttendanceDate(attendedOn, dateLimits)) {
-      if (state.bridge?.attendanceRetroactiveDatesGranted === false) {
+      if (!attendanceRetroactiveDatesGranted()) {
         throw new Error("Registre apenas atendimentos de hoje. Datas retroativas requerem a atualização do sistema.");
       }
       throw new Error(`Informe uma data de atendimento entre ${formatShortDate(dateLimits.min)} e hoje.`);
@@ -2079,6 +2259,15 @@
     return legacyArgs;
   }
 
+  function rememberLegacyAttendanceSave(legacyName) {
+    state.legacyAttendanceSaveRequired = true;
+    state.bridge.attendanceRetroactiveDatesGranted = false;
+    state.bridge.attendanceRpcNames = {
+      ...(state.bridge.attendanceRpcNames || {}),
+      save: legacyName || DEFAULT_RPC.saveLegacy,
+    };
+  }
+
   async function rpc(operation, args) {
     const custom = state.bridge?.attendances;
     if (operation === "workspace" && typeof custom?.load === "function") return custom.load(args);
@@ -2086,12 +2275,14 @@
     if (operation === "list" && typeof custom?.list === "function") return custom.list(args);
     if (typeof state.bridge?.rpc !== "function") throw new Error("Integração RPC de Atendimentos não configurada.");
     const names = { ...DEFAULT_RPC, ...(state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {}) };
-    const rpcName = names[operation];
+    const legacyName = names.saveLegacy || DEFAULT_RPC.saveLegacy;
+    const rpcName = operation === "save" && state.legacyAttendanceSaveRequired
+      ? legacyName
+      : names[operation];
     if (operation !== "save") return state.bridge.rpc(rpcName, args);
 
-    const legacyName = names.saveLegacy || DEFAULT_RPC.saveLegacy;
     if (rpcName === legacyName || rpcName === DEFAULT_RPC.saveLegacy) {
-      state.bridge.attendanceRetroactiveDatesGranted = false;
+      rememberLegacyAttendanceSave(legacyName);
       return state.bridge.rpc(rpcName, legacySaveArgs(args));
     }
 
@@ -2099,11 +2290,7 @@
       return await state.bridge.rpc(rpcName, args);
     } catch (error) {
       if (rpcName !== DEFAULT_RPC.save || !isMissingRpcError(error, rpcName)) throw error;
-      state.bridge.attendanceRetroactiveDatesGranted = false;
-      state.bridge.attendanceRpcNames = {
-        ...(state.bridge.attendanceRpcNames || {}),
-        save: legacyName,
-      };
+      rememberLegacyAttendanceSave(legacyName);
       return state.bridge.rpc(legacyName, legacySaveArgs(args));
     }
   }
@@ -2198,29 +2385,52 @@
   async function loadMorningWorkspace({ quiet = false } = {}) {
     const store = selectedStore();
     if (!state.active || !store?.id || !store.goodMorningSellerEnabled) {
-      state.morning = null;
-      state.morningLoading = false;
-      state.morningError = "";
-      state.morningConfigOpen = false;
-      state.morningDraft = null;
+      clearMorningState();
       if (!quiet) refreshMorningRegion();
       return;
     }
 
+    if (state.morningSaving || state.morningParticipationSaving) return;
+
     const storeId = store.id;
-    const requestGeneration = state.contextGeneration;
-    state.morningLoading = !quiet || !state.morning;
+    const contextGeneration = state.contextGeneration;
+    const requestGeneration = ++state.morningGeneration;
+    state.morningLoading = true;
     state.morningError = "";
     if (!quiet) refreshMorningRegion();
     try {
       const raw = await rpc("morningWorkspace", { p_store_id: storeId });
-      if (!state.active || requestGeneration !== state.contextGeneration || storeId !== state.selectedStoreId) return;
-      state.morning = normalizeMorningWorkspace(raw);
+      if (!state.active
+        || contextGeneration !== state.contextGeneration
+        || requestGeneration !== state.morningGeneration
+        || storeId !== state.selectedStoreId) return;
+      const nextMorning = normalizeMorningWorkspace(raw);
+      const previousTeamSignature = state.morningConfigOpen && state.morningDraft
+        ? state.morningDraft.professionals.map((professional) => `${professional.id}:${professional.enabled !== false}`).sort().join("|")
+        : "";
+      const nextTeamSignature = nextMorning.professionals.map((professional) => `${professional.id}:${professional.enabled !== false}`).sort().join("|");
+      const releasedTeamChanged = Boolean(state.morningConfigOpen && previousTeamSignature !== nextTeamSignature);
+      state.morning = nextMorning;
       state.morningLoading = false;
       state.morningError = "";
+      if (releasedTeamChanged || !canOpenMorningConfig()) {
+        state.morningConfigOpen = false;
+        state.morningConfigGeneration += 1;
+        state.morningDraft = null;
+        if (releasedTeamChanged) {
+          notify("A participação da equipe mudou em outra sessão. Abra novamente para revisar os dados atuais.", "warning");
+        }
+      }
     } catch (error) {
-      if (!state.active || requestGeneration !== state.contextGeneration || storeId !== state.selectedStoreId) return;
+      if (!state.active
+        || contextGeneration !== state.contextGeneration
+        || requestGeneration !== state.morningGeneration
+        || storeId !== state.selectedStoreId) return;
       state.morningLoading = false;
+      state.morning = null;
+      state.morningConfigOpen = false;
+      state.morningConfigGeneration += 1;
+      state.morningDraft = null;
       state.morningError = readableError(error);
     }
     refreshMorningRegion();
@@ -2239,12 +2449,7 @@
       state.listError = "";
       state.listSource = "workspace";
       state.professionals = [];
-      state.morning = null;
-      state.morningLoading = false;
-      state.morningSaving = false;
-      state.morningError = "";
-      state.morningConfigOpen = false;
-      state.morningDraft = null;
+      clearMorningState();
       state.serverMetrics = {};
       state.loading = false;
       state.loadError = "";
@@ -2394,24 +2599,27 @@
     if (remainsCurrent) await loadWorkspace({ quiet: true });
   }
 
-  function captureMorningDraftInputs() {
+  function captureMorningDraftInputs({ captureParticipation = true } = {}) {
     if (!state.morningDraft) return;
     const form = state.root?.querySelector("[data-morning-config-form]");
     if (!form) return;
-    state.morningDraft.monthlyGoal = normalizeMoney(form.elements.monthly_goal?.value);
-    state.morningDraft.mode = form.querySelector('input[name="allocation_mode"]:checked')?.value === "custom" ? "custom" : "equal";
+    const canConfigure = canManageMorningSettings();
+    if (canConfigure) {
+      state.morningDraft.monthlyGoal = normalizeMoney(form.elements.monthly_goal?.value);
+      state.morningDraft.mode = form.querySelector('input[name="allocation_mode"]:checked')?.value === "custom" ? "custom" : "equal";
+    }
     state.morningDraft.professionals.forEach((professional) => {
       const enabledInput = form.querySelector(`[data-morning-seller-enabled="${professional.id}"]`);
-      if (enabledInput) professional.enabled = enabledInput.checked;
+      if (captureParticipation && enabledInput) professional.enabled = enabledInput.checked;
       const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
-      if (professional.enabled !== false && input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
+      if (canConfigure && professional.enabled !== false && input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
     });
-    if (state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
+    if (canConfigure && state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
   }
 
   function syncMorningConfigPreview() {
     const form = state.root?.querySelector("[data-morning-config-form]");
-    if (!form || !state.morningDraft) return;
+    if (!form || !state.morningDraft || !canManageMorningSettings()) return;
     captureMorningDraftInputs();
     state.morningDraft.professionals.forEach((professional) => {
       const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
@@ -2439,11 +2647,96 @@
           ? "Distribuição completa"
           : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
     }
-    if (submit) submit.disabled = state.morningSaving || !participants.length || !balanced;
+    if (submit) submit.disabled = state.morningSaving || Boolean(state.morningParticipationSaving) || !participants.length || !balanced;
+  }
+
+  async function updateMorningParticipation(professionalId, enabled) {
+    if (!professionalId || state.morningParticipationSaving || state.morningSaving || !state.selectedStoreId) return;
+    if (!canManageMorningParticipation()) {
+      notify("A participação só pode ser alterada pelo Admin ou pela própria loja após a atualização do banco.", "warning");
+      return;
+    }
+
+    const dialogScrollTop = state.root?.querySelector("[data-morning-dialog]")?.scrollTop ?? 0;
+    captureMorningDraftInputs({ captureParticipation: false });
+    const originalDraft = cloneMorningDraft(state.morningDraft);
+    const professionalName = originalDraft?.professionals.find((professional) => professional.id === professionalId)?.name
+      || state.morning?.professionals.find((professional) => professional.id === professionalId)?.name
+      || "Profissional";
+    const changedProfessional = state.morningDraft?.professionals.find((professional) => professional.id === professionalId);
+    if (!changedProfessional) return;
+    changedProfessional.enabled = enabled === true;
+    if (canManageMorningSettings() && state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
+    const pendingDraft = cloneMorningDraft(state.morningDraft);
+    const updateContext = {
+      storeId: state.selectedStoreId,
+      generation: state.contextGeneration,
+      configGeneration: state.morningConfigGeneration,
+      professionalId,
+    };
+    const isCurrent = () => state.active
+      && state.selectedStoreId === updateContext.storeId
+      && state.contextGeneration === updateContext.generation;
+
+    invalidateMorningRequests();
+    state.morningParticipationSaving = professionalId;
+    state.morningError = "";
+    refreshMorningRegion({
+      dialogScrollTop,
+      focusSelector: '[data-attendance-action="close-morning-config"]',
+    });
+    try {
+      const raw = await rpc("morningParticipation", {
+        p_store_id: updateContext.storeId,
+        p_professional_id: professionalId,
+        p_enabled: enabled === true,
+      });
+      if (!isCurrent()) return;
+      const nextMorning = normalizeMorningWorkspace(raw);
+      state.morning = nextMorning;
+      if (state.morningConfigOpen
+        && state.morningConfigGeneration === updateContext.configGeneration
+        && canOpenMorningConfig()) {
+        state.morningDraft = canManageMorningSettings()
+          ? mergeMorningDraftWithWorkspace(pendingDraft, nextMorning)
+          : createMorningDraft();
+      }
+      const stateLabel = enabled ? "ativada" : "desativada";
+      notify(
+        isStoreRole()
+          ? `Participação de ${professionalName} ${stateLabel}. Revise e salve a meta e a fila.`
+          : `Participação de ${professionalName} ${stateLabel}. A loja poderá revisar a meta e a fila.`,
+        "success"
+      );
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (handleEntitlementLoss(error, updateContext.storeId)) return;
+      state.morningDraft = originalDraft;
+      const rpcName = DEFAULT_RPC.morningParticipation;
+      if (isMissingRpcError(error, rpcName)) {
+        if (state.morning) state.morning.participationUpdateAvailable = false;
+        state.morningError = "A atualização do banco que libera estes switches ainda não está disponível. Nada foi alterado.";
+      } else {
+        state.morningError = readableError(error);
+      }
+      notify(state.morningError, "error");
+    } finally {
+      if (isCurrent()) {
+        state.morningParticipationSaving = "";
+        refreshMorningRegion({
+          dialogScrollTop,
+          focusSelector: `[data-morning-seller-enabled="${professionalId}"]`,
+        });
+      }
+    }
   }
 
   async function saveMorningSettings(form) {
-    if (state.morningSaving || !state.morningDraft || !state.selectedStoreId) return;
+    if (state.morningSaving || state.morningParticipationSaving || !state.morningDraft || !state.selectedStoreId) return;
+    if (!canManageMorningSettings()) {
+      notify("Somente a loja pode configurar metas, divisão e ordem do Bom Dia Vendedor.", "warning");
+      return;
+    }
     captureMorningDraftInputs();
     const monthlyGoal = normalizeMoney(state.morningDraft.monthlyGoal);
     const participants = morningParticipants(state.morningDraft.professionals);
@@ -2469,6 +2762,7 @@
       return;
     }
 
+    invalidateMorningRequests();
     state.morningSaving = true;
     state.morningError = "";
     refreshMorningRegion();
@@ -2497,6 +2791,7 @@
       if (!isCurrent()) return;
       state.morning = normalizeMorningWorkspace(raw);
       state.morningConfigOpen = false;
+      state.morningConfigGeneration += 1;
       state.morningDraft = null;
       notify("Meta e fila do Bom Dia Vendedor atualizadas.", "success");
     } catch (error) {
@@ -2510,7 +2805,11 @@
   }
 
   async function advanceMorningTurn() {
-    if (state.morningSaving || !state.selectedStoreId) return;
+    if (state.morningSaving || state.morningParticipationSaving || !state.selectedStoreId) return;
+    if (!canManageMorningSettings()) {
+      notify("Somente a loja pode avançar a rotação do Bom Dia Vendedor.", "warning");
+      return;
+    }
     const advanceContext = {
       storeId: state.selectedStoreId,
       generation: state.contextGeneration,
@@ -2518,6 +2817,7 @@
     const isCurrent = () => state.active
       && state.selectedStoreId === advanceContext.storeId
       && state.contextGeneration === advanceContext.generation;
+    invalidateMorningRequests();
     state.morningSaving = true;
     state.morningError = "";
     refreshMorningRegion();
@@ -2557,7 +2857,7 @@
       scheduleOperationalListLoad();
       return;
     }
-    if (target.matches('[data-morning-config-form] input[name="monthly_goal"], [data-morning-seller-goal]')) {
+    if (target.matches('[data-morning-config-form] input[name="monthly_goal"], [data-morning-seller-goal]') && canManageMorningSettings()) {
       syncMorningConfigPreview();
     }
   }
@@ -2585,12 +2885,7 @@
       state.listError = "";
       state.listSource = "workspace";
       state.professionals = [];
-      state.morning = null;
-      state.morningLoading = Boolean(selectedStore()?.goodMorningSellerEnabled);
-      state.morningSaving = false;
-      state.morningError = "";
-      state.morningConfigOpen = false;
-      state.morningDraft = null;
+      clearMorningState({ loading: Boolean(selectedStore()?.goodMorningSellerEnabled) });
       state.idempotencyKey = "";
       state.idempotencyFingerprint = "";
       state.filtersOpen = false;
@@ -2613,22 +2908,24 @@
     }
     if (target.matches("[data-morning-seller-enabled]")) {
       const professionalId = String(target.dataset.morningSellerEnabled || "");
-      captureMorningDraftInputs();
-      if (state.morningDraft?.mode === "equal") applyEqualMorningGoals(state.morningDraft);
-      state.morningError = morningParticipants(state.morningDraft?.professionals || []).length
-        ? ""
-        : "Ative ao menos um vendedor para participar da fila e do rateio.";
-      refreshMorningRegion();
-      queueMicrotask(() => {
-        state.root?.querySelector(`[data-morning-seller-enabled="${professionalId}"]`)?.focus();
-      });
+      if (!canManageMorningParticipation()) {
+        target.checked = !target.checked;
+        notify("A participação só pode ser alterada pelo Admin ou pela própria loja após a atualização do banco.", "warning");
+        return;
+      }
+      await updateMorningParticipation(professionalId, target.checked);
       return;
     }
     if (target.matches('[data-morning-config-form] input[name="allocation_mode"]')) {
+      if (!canManageMorningSettings()) return;
+      const selectedMode = target.value === "custom" ? "custom" : "equal";
       captureMorningDraftInputs();
-      state.morningDraft.mode = target.value === "custom" ? "custom" : "equal";
+      state.morningDraft.mode = selectedMode;
       if (state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
       refreshMorningRegion();
+      queueMicrotask(() => {
+        state.root?.querySelector(`[data-morning-config-form] input[name="allocation_mode"][value="${selectedMode}"]`)?.focus();
+      });
       return;
     }
     if (target.matches("[data-attendance-filter]")) {
@@ -2642,10 +2939,7 @@
   async function onClick(event) {
     if (event.target.closest("[data-attendance-own-analysis]")) return;
     if (event.target.matches("[data-morning-backdrop]")) {
-      state.morningConfigOpen = false;
-      state.morningDraft = null;
-      state.morningError = "";
-      refreshMorningRegion();
+      closeMorningConfig();
       return;
     }
     const copyButton = event.target.closest("[data-attendance-copy-phone]");
@@ -2676,22 +2970,28 @@
       return;
     }
     if (action === "open-morning-config") {
+      if (!canOpenMorningConfig()) {
+        notify("Somente o Admin dentro do cliente ou a própria loja podem gerenciar o Bom Dia Vendedor.", "warning");
+        return;
+      }
       captureDraft();
       state.morningError = "";
       state.morningDraft = createMorningDraft();
       state.morningConfigOpen = true;
+      state.morningConfigGeneration += 1;
       refreshMorningRegion();
-      state.root?.querySelector('[data-morning-config-form] input[name="monthly_goal"]')?.focus();
+      const initialFocus = canManageMorningSettings()
+        ? state.root?.querySelector('[data-morning-config-form] input[name="monthly_goal"]')
+        : state.root?.querySelector('[data-morning-seller-enabled]:not(:disabled)');
+      (initialFocus || state.root?.querySelector('[data-attendance-action="close-morning-config"]'))?.focus();
       return;
     }
     if (action === "close-morning-config") {
-      state.morningConfigOpen = false;
-      state.morningDraft = null;
-      state.morningError = "";
-      refreshMorningRegion();
+      closeMorningConfig();
       return;
     }
     if (action === "move-morning-seller-up" || action === "move-morning-seller-down") {
+      if (!canManageMorningSettings() || state.morningParticipationSaving || state.morningSaving) return;
       captureMorningDraftInputs();
       const professionalId = String(button.dataset.professionalId || "");
       const participants = morningParticipants(state.morningDraft?.professionals || []);
@@ -2702,10 +3002,19 @@
         const nextIndex = state.morningDraft.professionals.indexOf(participants[nextParticipantIndex]);
         [state.morningDraft.professionals[currentIndex], state.morningDraft.professionals[nextIndex]] = [state.morningDraft.professionals[nextIndex], state.morningDraft.professionals[currentIndex]];
         refreshMorningRegion();
+        queueMicrotask(() => {
+          const row = state.root?.querySelector(`[data-morning-professional="${professionalId}"]`);
+          const preferred = row?.querySelector(`[data-attendance-action="${action}"]:not(:disabled)`);
+          (preferred || row?.querySelector("button:not(:disabled), input:not(:disabled)"))?.focus();
+        });
       }
       return;
     }
     if (action === "advance-morning-turn") {
+      if (!canManageMorningSettings()) {
+        notify("Somente a loja pode avançar a rotação do Bom Dia Vendedor.", "warning");
+        return;
+      }
       await advanceMorningTurn();
       return;
     }
@@ -2737,6 +3046,7 @@
     const morningForm = event.target.closest("[data-morning-config-form]");
     if (morningForm) {
       event.preventDefault();
+      if (!canManageMorningSettings()) return;
       saveMorningSettings(morningForm);
       return;
     }
@@ -2746,12 +3056,37 @@
     submitAttendance(form);
   }
 
+  function onKeydown(event) {
+    if (!state.morningConfigOpen) return;
+    const dialog = state.root?.querySelector("[data-morning-dialog]");
+    if (!dialog) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMorningConfig();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function bindRoot(root) {
     if (root.__attendanceHandlersBound) return;
     root.addEventListener("input", onInput);
     root.addEventListener("change", onChange);
     root.addEventListener("click", onClick);
     root.addEventListener("submit", onSubmit);
+    root.addEventListener("keydown", onKeydown);
     root.__attendanceHandlersBound = true;
   }
 
@@ -2770,8 +3105,9 @@
     state.bridge = { ...state.bridge, ...nextBridge };
     state.active = true;
     state.view = "operations";
-    state.morningSaving = false;
+    state.loading = true;
     state.contextGeneration += 1;
+    clearMorningState();
     state.feedback = null;
     syncContext({ preserveSelection: false });
     if (!mount(nextBridge.root || nextBridge.mountTarget)) {
@@ -2786,10 +3122,10 @@
     if (ownAnalysis) destroyEmbeddedAnalysis(ownAnalysis);
     state.active = false;
     state.loading = false;
-    state.morningSaving = false;
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
+    clearMorningState();
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
   }
@@ -2815,12 +3151,8 @@
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
     state.professionals = [];
-    state.morning = null;
-    state.morningLoading = false;
-    state.morningSaving = false;
-    state.morningError = "";
-    state.morningConfigOpen = false;
-    state.morningDraft = null;
+    clearMorningState();
+    state.legacyAttendanceSaveRequired = false;
     state.serverMetrics = {};
     state.feedback = null;
     state.loadError = "";
@@ -2838,9 +3170,10 @@
     captureDraft();
     state.bridge = { ...state.bridge, ...nextContext };
     state.contextGeneration += 1;
-    state.morningSaving = false;
+    clearMorningState();
     syncContext({ preserveSelection: true });
     if (state.active) {
+      state.loading = true;
       mount(nextContext.root || nextContext.mountTarget);
       await loadWorkspace();
     }
@@ -2939,6 +3272,10 @@
           returns: {
             licensed: "boolean",
             configured: "boolean",
+            can_manage_settings: "boolean (true only for the store account)",
+            participation_control_available: "boolean (the participation field exists)",
+            participation_update_available: "boolean (the dedicated update RPC exists)",
+            eligible_professional_count: "integer (people currently participating)",
             goals: "object",
             professionals: "array",
             queue: "array",
@@ -2959,6 +3296,15 @@
           args: { p_store_id: "uuid" },
           returns: "same workspace contract with the next professional highlighted",
         },
+        morningParticipation: {
+          name: DEFAULT_RPC.morningParticipation,
+          args: {
+            p_store_id: "uuid",
+            p_professional_id: "uuid",
+            p_enabled: "boolean",
+          },
+          returns: "same workspace contract with participation persisted immediately",
+        },
       },
       rules: [
         "A tela nunca consulta mais de um p_store_id por vez.",
@@ -2966,6 +3312,8 @@
         "attendanceAccessGranted autoriza Atendimentos; prospectionAccessGranted é apenas fallback para bridges antigos.",
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
+        "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
+        "Somente a loja configura metas, divisão, ordem e avanço da rotação.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };

@@ -2364,8 +2364,13 @@ async function openStoreTeamModal(storeId) {
 
   try {
     await refreshStoreTeam();
-    requestAnimationFrame(() => storeTeamMemberName.focus());
+    if (!storeTeamModal.hidden && storeTeamStoreId.value === store.id) {
+      requestAnimationFrame(() => {
+        if (!storeTeamModal.hidden && storeTeamStoreId.value === store.id) storeTeamMemberName.focus();
+      });
+    }
   } catch (error) {
+    if (storeTeamModal.hidden || storeTeamStoreId.value !== store.id) return;
     storeTeamMessage.textContent = readableError(error);
     storeTeamList.innerHTML = `
       <div class="empty-state compact-empty">
