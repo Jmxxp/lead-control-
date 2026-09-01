@@ -501,6 +501,12 @@
     return (bridge?.stores || []).find((store) => store.id === storeId) || null;
   }
 
+  function canUseAttendanceOpportunities(storeId = selectedStoreId) {
+    const store = storeById(storeId || bridge?.profile?.storeId || "");
+    if (bridge?.attendanceAccessGranted !== true || !store) return false;
+    return store.attendanceEnabled === true || store.attendance_enabled === true;
+  }
+
   function settingsFor(storeId) {
     return settings.find((row) => row.storeId === storeId) || { storeId, ...DEFAULT_SETTINGS };
   }
@@ -926,6 +932,11 @@
     if (!bridge) return;
     bridge = { ...bridge, ...nextContext };
     if (!active || upgradePreview) return;
+    if (!canUseAttendanceOpportunities()) {
+      listMode = "records";
+      attendanceListRequest += 1;
+      if (attendanceListState) attendanceListState.loading = false;
+    }
     const keepConfigurationOpen = Boolean(configurationSession && root.querySelector("[data-prospection-configuration-dialog]"));
     await loadData();
     if (selectedStoreId && !isLicensedStore(selectedStoreId)) selectedStoreId = "";
@@ -941,6 +952,7 @@
       renderUpgradeExperience();
       return;
     }
+    if (listMode === "attendances" && !canUseAttendanceOpportunities()) listMode = "records";
     const isOperation = bridge.profile.role === "store" || Boolean(selectedStoreId);
     bridge.setOperationMode?.(isOperation);
     if (isOperation) renderStoreWorkspace();
@@ -1111,7 +1123,7 @@
     return `<article class="prospection-account-card${locked ? " is-locked" : ""}" style="--account-color:${color}">
       <div class="prospection-account-card-header">
         <div class="prospection-account-identity">${accountVisual(avatarUrl, name, icon, logoBackground)}<div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(subtitle)}</span></div></div>
-        <div class="prospection-access-badges">${locked ? `<span class="prospection-chip is-locked">Somente Leads</span>` : `<span class="prospection-chip is-prospec"><i class="fa-solid fa-phone"></i>PROSPEC</span><span class="prospection-chip is-purchased">${formatCurrency(metrics.bonus)}</span>`}</div>
+        <div class="prospection-access-badges">${locked ? `<span class="prospection-chip is-locked">Prospecção bloqueada</span>` : `<span class="prospection-chip is-prospec"><i class="fa-solid fa-phone"></i>PROSPEC</span><span class="prospection-chip is-purchased">${formatCurrency(metrics.bonus)}</span>`}</div>
       </div>
       <div class="prospection-account-stats">
         ${accountStat(metrics.total, "prospecções")}${accountStat(metrics.returned, "vieram")}${accountStat(metrics.purchased, "compraram")}${accountStat(`${metrics.conversion}%`, "conversão")}
@@ -1328,14 +1340,15 @@
     const filterCount = prospectionListFilterCount();
     const periodTitle = dashboardPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
     const attendanceState = ensureAttendanceListState(storeId);
-    const isAttendanceMode = listMode === "attendances";
+    const attendanceAccess = canUseAttendanceOpportunities(storeId);
+    const isAttendanceMode = attendanceAccess && listMode === "attendances";
     return `<section id="prospectionListPanel" class="panel list-panel${isAttendanceMode ? " is-attendance-mode" : ""}" aria-labelledby="list-title">
       <div class="list-toolbar prospection-operation-list-toolbar">
         <div class="prospection-list-heading-row">
           <div class="panel-header list-header"><div><p class="eyebrow">${isAttendanceMode ? "Carteira de atendimentos" : periodTitle[0]}</p><h2 id="list-title">${isAttendanceMode ? "Atendimentos para prospectar" : periodTitle[1]}</h2>${isAttendanceMode ? `<span class="prospection-list-helper">Consulte o contexto antes de entrar em contato.</span>` : ""}</div></div>
           <div class="prospection-list-modes" role="group" aria-label="Visualização de prospecções">
             <button type="button" aria-pressed="${String(!isAttendanceMode)}" class="${!isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="records"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span>Registradas</span></button>
-            <button type="button" aria-pressed="${String(isAttendanceMode)}" class="${isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="attendances"><i class="fa-solid fa-user-clock" aria-hidden="true"></i><span>Para prospectar</span></button>
+            ${attendanceAccess ? `<button type="button" aria-pressed="${String(isAttendanceMode)}" class="${isAttendanceMode ? "is-active" : ""}" data-prospection-action="set-list-mode" data-list-mode="attendances"><i class="fa-solid fa-user-clock" aria-hidden="true"></i><span>Para prospectar</span></button>` : ""}
           </div>
         </div>
         ${isAttendanceMode ? attendanceFiltersMarkup(attendanceState) : `<div class="search-row prospection-smart-search-row">
@@ -1508,6 +1521,14 @@
       bridge.notify("Selecione um cliente para consultar os atendimentos.", "error");
       return;
     }
+    if (!canUseAttendanceOpportunities(requestedStoreId)) {
+      listMode = "records";
+      attendanceListRequest += 1;
+      if (attendanceListState) attendanceListState.loading = false;
+      renderProspectListPanel({ scrollTop: 0 });
+      bridge.notify("Atendimentos não foi ativado para este cliente.", "error");
+      return;
+    }
     const state = ensureAttendanceListState(requestedStoreId);
     if (state.loading || (append && !state.hasMore)) return;
     if (state.startDate && state.endDate && state.startDate > state.endDate) {
@@ -1591,6 +1612,10 @@
 
   function setListMode(nextMode) {
     const safeMode = nextMode === "attendances" ? "attendances" : "records";
+    if (safeMode === "attendances" && !canUseAttendanceOpportunities()) {
+      bridge.notify("Atendimentos não foi ativado para este cliente.", "error");
+      return;
+    }
     if (listMode === safeMode) return;
     listMode = safeMode;
     filtersOpen = false;
@@ -3607,7 +3632,7 @@
     else if (action === "clear-agency") { selectedAgencyId = ""; render(); }
     else if (action === "select-store") {
       const storeId = button.dataset.accountId;
-      if (!isLicensedStore(storeId)) bridge.notify("Este cliente possui somente Leads. Libere uma licença de Prospecções primeiro.", "error");
+      if (!isLicensedStore(storeId)) bridge.notify("Prospecção não foi ativada para este cliente.", "error");
       else {
         selectedStoreId = storeId;
         editingId = "";

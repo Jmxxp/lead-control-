@@ -3,7 +3,7 @@
 
   const DEFAULT_RPC = Object.freeze({
     workspace: "lc_get_attendance_workspace",
-    save: "lc_upsert_attendance_v2",
+    save: "lc_upsert_attendance_v3",
     list: "lc_list_attendances_v3",
     analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
@@ -131,13 +131,16 @@
 
   function isEntitlementError(error) {
     const message = normalizeText(error?.message || error?.details || error || "");
-    return /cliente nao encontrado ou sem permissao|acesso.*prospecc|prospecc.*(?:bloque|desativ|nao.*liberad)/.test(message);
+    return /cliente nao encontrado ou sem permissao|acesso.*atend|atend.*(?:bloque|desativ|nao.*liberad|nao.*licenciad)|acesso.*prospecc|prospecc.*(?:bloque|desativ|nao.*liberad)/.test(message);
   }
 
   function handleEntitlementLoss(error, storeId = state.selectedStoreId) {
     if (!isEntitlementError(error)) return false;
     const revokedStore = (state.bridge?.stores || []).find((store) => String(firstDefined(store.id, store.store_id, "")) === String(storeId || ""));
-    if (revokedStore) revokedStore.prospectionEnabled = false;
+    if (revokedStore) {
+      revokedStore.attendanceEnabled = false;
+      revokedStore.attendance_enabled = false;
+    }
     state.bridge?.onAccessRevoked?.(String(storeId || ""));
     state.generation += 1;
     state.listGeneration += 1;
@@ -170,7 +173,7 @@
     if (storeId) state.drafts.delete(String(storeId));
     syncContext({ preserveSelection: false });
     renderWorkspace();
-    notify("Atendimentos foi bloqueado junto com Prospecções. Reative a licença deste cliente para continuar.", "warning");
+    notify("A licença de Atendimentos deste cliente foi desativada. Reative o acesso para continuar.", "warning");
     return true;
   }
 
@@ -211,6 +214,52 @@
       hour: "2-digit",
       minute: "2-digit",
     }).format(date).replace(" de ", " ");
+  }
+
+  function parseIsoDateParts(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(date.getTime())
+      || date.getUTCFullYear() !== year
+      || date.getUTCMonth() !== month - 1
+      || date.getUTCDate() !== day
+    ) return null;
+    return { year, month, day, date };
+  }
+
+  function isoDateFromUtc(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return [
+      String(date.getUTCFullYear()).padStart(4, "0"),
+      String(date.getUTCMonth() + 1).padStart(2, "0"),
+      String(date.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+  }
+
+  function attendanceDateLimits(reference = new Date()) {
+    const today = embeddedDateInput(reference);
+    const parts = parseIsoDateParts(today);
+    if (!parts) return { min: "", today };
+    const minimumYear = parts.year - 2;
+    const lastDayOfMinimumMonth = new Date(Date.UTC(minimumYear, parts.month, 0)).getUTCDate();
+    const minimumDay = Math.min(parts.day, lastDayOfMinimumMonth);
+    return {
+      min: `${String(minimumYear).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(minimumDay).padStart(2, "0")}`,
+      today,
+    };
+  }
+
+  function isValidAttendanceDate(value, limits = attendanceDateLimits()) {
+    const date = String(value || "");
+    return Boolean(parseIsoDateParts(date))
+      && (!limits.min || date >= limits.min)
+      && (!limits.today || date <= limits.today);
   }
 
   function safeImageUrl(value) {
@@ -359,8 +408,13 @@
       technicianId,
       agencyIds,
       avatarUrl: safeImageUrl(firstDefined(store.avatarUrl, store.avatar_url, store.logoUrl, store.logo_url, "")),
+      attendanceEnabled: firstDefined(store.attendanceEnabled, store.attendance_enabled) === true,
       goodMorningSellerEnabled: firstDefined(store.goodMorningSellerEnabled, store.good_morning_seller_enabled) === true,
     };
+  }
+
+  function bridgeAttendanceAccessGranted(bridge = state.bridge) {
+    return firstDefined(bridge?.attendanceAccessGranted, bridge?.prospectionAccessGranted, true) !== false;
   }
 
   function storeHasAgencyAccess(store, agencyId) {
@@ -370,10 +424,11 @@
   }
 
   function visibleStores() {
+    if (!bridgeAttendanceAccessGranted()) return [];
     const profile = state.bridge?.profile || {};
     const all = (Array.isArray(state.bridge?.stores) ? state.bridge.stores : [])
       .map(normalizeStore)
-      .filter((store) => store.id && store.prospectionEnabled === true);
+      .filter((store) => store.id && store.attendanceEnabled === true);
     if (isStoreRole()) {
       const ownId = String(firstDefined(profile.storeId, profile.store_id, profile.id, ""));
       return all.filter((store) => store.id === ownId);
@@ -419,7 +474,7 @@
     } else if (state.bridge?.initialAgencyId) {
       scoped = all.filter((store) => storeHasAgencyAccess(store, state.bridge.initialAgencyId));
     }
-    return scoped.some((store) => store.prospectionEnabled !== true);
+    return !bridgeAttendanceAccessGranted() || scoped.some((store) => store.attendanceEnabled !== true);
   }
 
   function resolveRoot(target) {
@@ -498,11 +553,11 @@
     return `<section class="attendance-context-empty" aria-live="polite">
       <span class="attendance-context-empty-icon"><i class="fa-solid ${hasStores ? "fa-arrow-pointer" : blockedByPlan ? "fa-lock" : "fa-building-circle-exclamation"}" aria-hidden="true"></i></span>
       <p class="attendance-eyebrow">Dados protegidos por cliente</p>
-      <h2>${hasStores ? "Escolha uma empresa para começar" : blockedByPlan ? "Atendimentos acompanha Prospecções" : "Nenhum cliente disponível"}</h2>
+      <h2>${hasStores ? "Escolha uma empresa para começar" : blockedByPlan ? "Atendimentos não liberado" : "Nenhum cliente disponível"}</h2>
       <p>${hasStores
         ? "O painel só carrega um cliente por vez. Assim, atendimentos, profissionais e valores nunca são misturados entre empresas."
         : blockedByPlan
-          ? "Nenhum cliente desta conta possui Prospecções liberada. Ative uma licença de Prospecções em Editar acesso para liberar Atendimentos automaticamente."
+          ? "Nenhum cliente desta conta possui Atendimentos liberado. Ative esse acesso em Editar acesso para continuar."
           : "Sua conta ainda não possui uma empresa disponível para registrar atendimentos. Vincule um cliente e tente novamente."}</p>
     </section>`;
   }
@@ -561,23 +616,35 @@
       today: String(firstDefined(payload.today, "")),
       weekStart: String(firstDefined(payload.week_start, payload.weekStart, "")),
       weekEnd: String(firstDefined(payload.week_end, payload.weekEnd, "")),
+      workdaysInMonth: Number(firstDefined(payload.workdays_in_month, payload.workdaysInMonth, 0)) || 0,
+      workdaysInWeek: Number(firstDefined(payload.workdays_in_week, payload.workdaysInWeek, 0)) || 0,
+      todayIsWorkingDay: firstDefined(payload.today_is_working_day, payload.todayIsWorkingDay, false) === true,
       goals: {
         today: normalizeGoal(goals.today),
         week: normalizeGoal(goals.week),
         month: normalizeGoal(goals.month),
       },
       currentProfessionalId: String(firstDefined(payload.current_professional_id, payload.currentProfessionalId, "")),
-      professionals: professionals.map((professional, index) => ({
-        id: String(firstDefined(professional.id, professional.professional_id, "")),
-        name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
-        active: firstDefined(professional.is_active, professional.active, true) !== false,
-        goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, 0)),
-        queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
-        current: firstDefined(professional.is_current, professional.current, false) === true,
-        actualMonth: normalizeMoney(firstDefined(professional.actual_month, professional.actualMonth, 0)),
-        actualWeek: normalizeMoney(firstDefined(professional.actual_week, professional.actualWeek, 0)),
-        actualToday: normalizeMoney(firstDefined(professional.actual_today, professional.actualToday, 0)),
-      })).filter((professional) => professional.id && professional.active)
+      professionals: professionals.map((professional, index) => {
+        const goalToday = firstDefined(professional.goal_today, professional.goalToday);
+        const goalWeek = firstDefined(professional.goal_week, professional.goalWeek);
+        const goalMonth = firstDefined(professional.goal_month, professional.goalMonth, professional.goal_amount, professional.goalAmount);
+        return {
+          id: String(firstDefined(professional.id, professional.professional_id, "")),
+          name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
+          active: firstDefined(professional.is_active, professional.active, true) !== false,
+          goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, goalMonth, 0)),
+          goalToday: normalizeMoney(firstDefined(goalToday, 0)),
+          goalWeek: normalizeMoney(firstDefined(goalWeek, 0)),
+          goalMonth: normalizeMoney(firstDefined(goalMonth, 0)),
+          hasPeriodGoals: goalToday != null && goalWeek != null && goalMonth != null,
+          queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
+          current: firstDefined(professional.is_current, professional.current, false) === true,
+          actualMonth: normalizeMoney(firstDefined(professional.actual_month, professional.actualMonth, 0)),
+          actualWeek: normalizeMoney(firstDefined(professional.actual_week, professional.actualWeek, 0)),
+          actualToday: normalizeMoney(firstDefined(professional.actual_today, professional.actualToday, 0)),
+        };
+      }).filter((professional) => professional.id && professional.active)
         .sort((a, b) => a.queuePosition - b.queuePosition || a.name.localeCompare(b.name, "pt-BR")),
     };
   }
@@ -627,25 +694,77 @@
     return [...professionals.slice(currentIndex), ...professionals.slice(0, currentIndex)];
   }
 
-  function morningPeriodFactor(key) {
-    if (key === "month") return 1;
-    const today = new Date(`${state.morning?.today || ""}T12:00:00`);
-    if (Number.isNaN(today.getTime())) return 0;
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    if (!daysInMonth) return 0;
-    if (key === "today") return 1 / daysInMonth;
-    const weekStart = new Date(`${state.morning?.weekStart || ""}T12:00:00`);
-    const weekEnd = new Date(`${state.morning?.weekEnd || ""}T12:00:00`);
-    if (Number.isNaN(weekStart.getTime()) || Number.isNaN(weekEnd.getTime())) return 0;
-    const daysInWeek = Math.max(Math.round((weekEnd - weekStart) / 86_400_000) + 1, 0);
-    return daysInWeek / daysInMonth;
+  function morningWorkingDayContext() {
+    const parsedToday = parseIsoDateParts(state.morning?.today);
+    if (!parsedToday) return null;
+    const today = parsedToday.date;
+    const monthStart = new Date(Date.UTC(parsedToday.year, parsedToday.month - 1, 1));
+    const monthEnd = new Date(Date.UTC(parsedToday.year, parsedToday.month, 0));
+    const isoWeekday = today.getUTCDay() || 7;
+    const isoWeekStart = new Date(today);
+    isoWeekStart.setUTCDate(today.getUTCDate() - isoWeekday + 1);
+    const isoWeekEnd = new Date(isoWeekStart);
+    isoWeekEnd.setUTCDate(isoWeekStart.getUTCDate() + 6);
+    const weekStart = isoWeekStart < monthStart ? monthStart : isoWeekStart;
+    const weekEnd = isoWeekEnd > monthEnd ? monthEnd : isoWeekEnd;
+    let total = 0;
+    let throughToday = 0;
+    let beforeToday = 0;
+    let beforeWeek = 0;
+    let throughWeek = 0;
+    for (const cursor = new Date(monthStart); cursor <= monthEnd; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      if (cursor.getUTCDay() === 0) continue;
+      total += 1;
+      if (cursor <= today) throughToday += 1;
+      if (cursor < today) beforeToday += 1;
+      if (cursor < weekStart) beforeWeek += 1;
+      if (cursor <= weekEnd) throughWeek += 1;
+    }
+    return {
+      total,
+      throughToday,
+      beforeToday,
+      beforeWeek,
+      throughWeek,
+      todayIsWorkingDay: today.getUTCDay() !== 0,
+      weekStart: isoDateFromUtc(weekStart),
+      weekEnd: isoDateFromUtc(weekEnd),
+    };
+  }
+
+  function cumulativeGoalCents(goalCents, totalWorkdays, completedWorkdays) {
+    if (goalCents <= 0 || totalWorkdays <= 0 || completedWorkdays <= 0) return 0;
+    if (completedWorkdays >= totalWorkdays) return goalCents;
+    return Math.round((goalCents * completedWorkdays) / totalWorkdays);
+  }
+
+  function morningProfessionalGoal(professional, key, context) {
+    if (professional.hasPeriodGoals) {
+      if (key === "today") return professional.goalToday;
+      if (key === "week") return professional.goalWeek;
+      return professional.goalMonth;
+    }
+    if (key === "month") return professional.goalAmount;
+    if (!context?.total) return 0;
+    const goalCents = Math.max(Math.round(Number(professional.goalAmount || 0) * 100), 0);
+    if (key === "today") {
+      if (!context.todayIsWorkingDay) return 0;
+      return (
+        cumulativeGoalCents(goalCents, context.total, context.throughToday)
+        - cumulativeGoalCents(goalCents, context.total, context.beforeToday)
+      ) / 100;
+    }
+    return (
+      cumulativeGoalCents(goalCents, context.total, context.throughWeek)
+      - cumulativeGoalCents(goalCents, context.total, context.beforeWeek)
+    ) / 100;
   }
 
   function renderMorningIndividualGoals(key) {
-    const factor = morningPeriodFactor(key);
+    const context = morningWorkingDayContext();
     const professionals = morningQueue();
     if (!professionals.length) return "";
-    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(professional.goalAmount * factor))}</strong></p>`).join("")}</div></div>`;
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context)))}</strong></p>`).join("")}</div></div>`;
   }
 
   function renderMorningGoalCard(key, label, icon, helper) {
@@ -722,7 +841,7 @@
             <fieldset><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
           </div>
           <div class="attendance-morning-config-heading"><div><strong>Vendedores e ordem da vez</strong><small>Use as setas para organizar quem aparece primeiro na fila.</small></div><span data-morning-allocation-status class="${balanced ? "is-balanced" : "is-warning"}">${balanced ? "Distribuição completa" : `${difference > 0 ? "Faltam" : "Excedeu"} ${escapeHtml(formatCurrency(Math.abs(difference)))}`}</span></div>
-          <div class="attendance-morning-seller-list">${draft.professionals.map((professional, index) => `<article data-morning-professional="${escapeHtml(professional.id)}"><b>${index + 1}</b><span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span><div><strong>${escapeHtml(professional.name)}</strong><small>${index === 0 ? "Primeiro da fila" : `${index + 1}º na fila`}</small></div><label><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapeHtml(professional.id)}" inputmode="decimal" value="${escapeHtml(String(professional.goalAmount || 0))}" ${draft.mode === "equal" ? "disabled" : ""} /></span></label><div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para cima" ${index === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para baixo" ${index === draft.professionals.length - 1 ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div></article>`).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe nas configurações de Prospecções para dividir a meta e montar a fila.</small></div></div>`}</div>
+          <div class="attendance-morning-seller-list">${draft.professionals.map((professional, index) => `<article data-morning-professional="${escapeHtml(professional.id)}"><b>${index + 1}</b><span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span><div><strong>${escapeHtml(professional.name)}</strong><small>${index === 0 ? "Primeiro da fila" : `${index + 1}º na fila`}</small></div><label><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapeHtml(professional.id)}" inputmode="decimal" value="${escapeHtml(String(professional.goalAmount || 0))}" ${draft.mode === "equal" ? "disabled" : ""} /></span></label><div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para cima" ${index === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para baixo" ${index === draft.professionals.length - 1 ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div></article>`).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
           ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
           <footer><div><span>Total distribuído</span><strong data-morning-distributed-total>${escapeHtml(formatCurrency(total))}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Cancelar</button><button class="attendance-primary-button" type="submit" ${state.morningSaving || !draft.professionals.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button></footer>
         </form>
@@ -752,6 +871,7 @@
     if (!form || !state.selectedStoreId) return;
     state.drafts.set(state.selectedStoreId, {
       professionalName: String(form.elements.professional_name?.value || ""),
+      attendedOn: String(form.elements.attended_on?.value || ""),
       customerName: String(form.elements.customer_name?.value || ""),
       phone: String(form.elements.phone?.value || ""),
       cpf: String(form.elements.cpf?.value || ""),
@@ -806,6 +926,8 @@
     const professionalRecords = registeredProfessionalRecords();
     const professionals = professionalRecords.map((professional) => professional.name);
     const draft = state.drafts.get(state.selectedStoreId) || { tag: "budget" };
+    const dateLimits = attendanceDateLimits();
+    const attendedOn = isValidAttendanceDate(draft.attendedOn, dateLimits) ? draft.attendedOn : dateLimits.today;
     const draftedProfessional = professionals.find((name) => normalizeText(name) === normalizeText(draft.professionalName));
     const selectedProfessional = draftedProfessional || (professionals.length === 1 ? professionals[0] : "");
     const hasProfessionals = professionals.length > 0;
@@ -820,13 +942,18 @@
             <span>Atendimento realizado por <b>*</b></span>
             <span class="attendance-input-wrap attendance-input-wrap--select"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><select name="professional_name" required ${hasProfessionals ? "" : "disabled"}>
               <option value="">${hasProfessionals ? "Selecione o profissional" : "Nenhum profissional cadastrado"}</option>
-              ${professionalRecords.map((professional) => `<option value="${escapeHtml(professional.name)}" ${professional.name === selectedProfessional ? "selected" : ""}>${escapeHtml(professional.name)}${professional.active ? "" : " · inativo em Prospecções"}</option>`).join("")}
+              ${professionalRecords.map((professional) => `<option value="${escapeHtml(professional.name)}" ${professional.name === selectedProfessional ? "selected" : ""}>${escapeHtml(professional.name)}${professional.active ? "" : " · inativo na equipe"}</option>`).join("")}
             </select></span>
-            <small class="attendance-professional-source ${hasProfessionals ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${hasProfessionals ? "Equipe completa sincronizada; inativos em Prospecções continuam disponíveis aqui." : "Cadastre ao menos um profissional nas configurações de Prospecções para registrar atendimentos."}</small>
+            <small class="attendance-professional-source ${hasProfessionals ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${hasProfessionals ? "Equipe do cliente sincronizada; profissionais inativos continuam disponíveis no histórico." : "Cadastre ao menos um profissional na equipe deste cliente para registrar atendimentos."}</small>
           </label>
           <label class="attendance-field">
             <span>Cliente <b>*</b></span>
             <span class="attendance-input-wrap"><i class="fa-solid fa-user" aria-hidden="true"></i><input name="customer_name" autocomplete="name" placeholder="Nome do cliente" value="${escapeHtml(draft.customerName || "")}" required /></span>
+          </label>
+          <label class="attendance-field">
+            <span>Data do atendimento <b>*</b></span>
+            <span class="attendance-input-wrap"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><input name="attended_on" type="date" min="${escapeHtml(dateLimits.min)}" max="${escapeHtml(dateLimits.today)}" value="${escapeHtml(attendedOn)}" required /></span>
+            <small>Hoje ou uma data dos últimos 2 anos.</small>
           </label>
           <label class="attendance-field">
             <span>Telefone</span>
@@ -1097,8 +1224,8 @@
     if (role === "admin" && initialAgencyId && !storeHasAgencyAccess(store, initialAgencyId)) {
       return { store: null, reason: "Este cliente não pertence à agência selecionada." };
     }
-    if (embeddedBridge?.prospectionAccessGranted === false || store.prospectionEnabled !== true) {
-      return { store, reason: "Atendimentos é liberado junto com Prospecções para este cliente.", locked: true };
+    if (!bridgeAttendanceAccessGranted(embeddedBridge) || store.attendanceEnabled !== true) {
+      return { store, reason: "Atendimentos não está liberado para este cliente.", locked: true };
     }
     return { store, reason: "", locked: false };
   }
@@ -1354,7 +1481,7 @@
     if (state.destroyed || !state.root.isConnected) return;
     state.root.removeAttribute("aria-busy");
     if (kind === "locked") {
-      state.root.innerHTML = `<section class="attendance-context-empty" aria-live="polite"><span class="attendance-context-empty-icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></span><p class="attendance-eyebrow">Recurso não liberado</p><h2>Atendimentos acompanha Prospecções</h2><p>${escapeHtml(message)}</p></section>`;
+      state.root.innerHTML = `<section class="attendance-context-empty" aria-live="polite"><span class="attendance-context-empty-icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></span><p class="attendance-eyebrow">Recurso não liberado</p><h2>Atendimentos não liberado</h2><p>${escapeHtml(message)}</p></section>`;
       return;
     }
     state.root.innerHTML = `<section class="attendance-context-empty attendance-context-empty--error" role="alert"><span class="attendance-context-empty-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span><p class="attendance-eyebrow">Análise indisponível</p><h2>Não foi possível carregar Atendimentos</h2><p>${escapeHtml(message)}</p><button class="attendance-secondary-button" type="button" data-attendance-embedded-retry><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>Tentar novamente</button></section>`;
@@ -1757,6 +1884,8 @@
     const professionalName = registeredProfessionalOptions().find(
       (name) => normalizeText(name) === normalizeText(submittedProfessionalName),
     ) || "";
+    const attendedOn = String(values.attended_on || "").trim();
+    const dateLimits = attendanceDateLimits();
     const customerName = String(values.customer_name || "").trim();
     const phone = onlyDigits(values.phone).replace(/^55(?=\d{10,11}$)/, "");
     const cpf = formatCpf(values.cpf);
@@ -1767,6 +1896,9 @@
     const serviceOrder = String(values.service_order || "").trim();
 
     if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
+    if (!isValidAttendanceDate(attendedOn, dateLimits)) {
+      throw new Error(`Informe uma data de atendimento entre ${formatShortDate(dateLimits.min)} e hoje.`);
+    }
     if (!customerName) throw new Error("Informe o nome do cliente.");
     if (!phone && !cpf) throw new Error("Informe o telefone ou o CPF do cliente.");
     if (phone && ![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
@@ -1776,7 +1908,7 @@
     if (tag === "purchase" && purchaseValue <= 0) throw new Error("Informe o valor da compra.");
     if (tag === "purchase" && !serviceOrder) throw new Error("Informe a ordem de serviço da compra.");
 
-    return { professionalName, customerName, phone, cpf, description, tag, serviceValue, purchaseValue, serviceOrder };
+    return { attendedOn, professionalName, customerName, phone, cpf, description, tag, serviceValue, purchaseValue, serviceOrder };
   }
 
   function normalizeSaveFeedback(raw, submitted) {
@@ -2061,6 +2193,7 @@
     const submissionFingerprint = JSON.stringify([
       state.selectedStoreId,
       submitted.professionalName,
+      submitted.attendedOn,
       submitted.customerName,
       submitted.phone,
       submitted.cpf,
@@ -2087,6 +2220,7 @@
       const args = {
         p_store_id: saveContext.storeId,
         p_professional_name: submitted.professionalName,
+        p_attended_on: submitted.attendedOn,
         p_customer_name: submitted.customerName,
         p_phone: submitted.phone,
         p_cpf: submitted.cpf || null,
@@ -2199,7 +2333,7 @@
       return;
     }
     if (!state.morningDraft.professionals.length) {
-      state.morningError = "Cadastre ao menos um vendedor ativo em Prospecções.";
+      state.morningError = "Cadastre ao menos um vendedor ativo na equipe deste cliente.";
       refreshMorningRegion();
       return;
     }
@@ -2559,11 +2693,11 @@
 
   function getIntegrationContract() {
     return {
-      version: 1,
+      version: 3,
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
+        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
       },
       rpc: {
         workspace: {
@@ -2576,6 +2710,7 @@
           args: {
             p_store_id: "uuid",
             p_professional_name: "text",
+            p_attended_on: "date (America/Sao_Paulo; últimos 2 anos até hoje)",
             p_customer_name: "text",
             p_phone: "text (digits)",
             p_cpf: "text | null",
@@ -2656,6 +2791,7 @@
       rules: [
         "A tela nunca consulta mais de um p_store_id por vez.",
         "Lead e Prospecção podem estar vinculados simultaneamente.",
+        "attendanceAccessGranted autoriza Atendimentos; prospectionAccessGranted é apenas fallback para bridges antigos.",
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
         "A fila só avança por uma ação explícita do usuário.",

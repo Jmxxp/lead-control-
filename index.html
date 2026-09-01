@@ -29,7 +29,7 @@
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
     <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260828-multi-agency-1" />
+    <link rel="stylesheet" href="styles.css?v=20260901-module-access-lead-loss-1" />
     <link rel="stylesheet" href="prospections.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="attendances.css?v=20260821-attendance-analysis-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260819-human-search-2" disabled />
@@ -37,9 +37,9 @@
     <link rel="stylesheet" href="support-assistant.css?v=20260819-weekly-identity-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260828-multi-agency-1" defer></script>
-    <script src="prospections.js?v=20260828-multi-agency-1" defer></script>
-    <script src="attendances.js?v=20260828-multi-agency-1" defer></script>
+    <script src="app.js?v=20260901-module-access-lead-loss-1" defer></script>
+    <script src="prospections.js?v=20260901-module-access-1" defer></script>
+    <script src="attendances.js?v=20260901-retroactive-goals-access-1" defer></script>
     <script src="support-assistant.js?v=20260819-human-search-2" defer></script>
   </head>
   <body>
@@ -389,7 +389,7 @@
               <span id="clientCapacityPercent">0%</span>
             </div>
             <div id="featureCapacitySummary" class="feature-capacity-summary" aria-label="Licenças de recursos premium">
-              <span id="prospectionCapacityBadge"><i class="fa-solid fa-phone" aria-hidden="true"></i><b>0 de 0</b> Prospecções + Atendimentos</span>
+              <span id="prospectionCapacityBadge"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>0 de 0</b> módulos adicionais</span>
               <span id="goodMorningSellerCapacityBadge"><i class="fa-solid fa-sun" aria-hidden="true"></i><b>0 de 0</b> Bom Dia Vendedor</span>
             </div>
           </section>
@@ -718,6 +718,61 @@
                 </div>
               </label>
 
+              <section class="store-module-access" aria-labelledby="storeModuleAccessTitle">
+                <div class="store-module-access-heading">
+                  <p class="eyebrow">Acessos do cliente</p>
+                  <strong id="storeModuleAccessTitle">Áreas liberadas</strong>
+                  <span>A agência ativa cada área manualmente. Criar o cliente não libera nenhum módulo automaticamente.</span>
+                </div>
+
+                <div class="store-module-access-grid">
+                  <div id="storeLeadField" class="feature-access-card">
+                    <div class="feature-access-copy">
+                      <span class="feature-access-icon"><i class="fa-solid fa-user-group" aria-hidden="true"></i></span>
+                      <div>
+                        <strong>Lead</strong>
+                        <span id="storeLeadHelp">Libere a área de gestão de leads para este cliente.</span>
+                      </div>
+                    </div>
+                    <label class="feature-access-toggle">
+                      <input id="storeLeadAccess" type="checkbox" aria-label="Ativar área de Lead" aria-describedby="storeLeadHelp" />
+                      <span aria-hidden="true"></span>
+                      <em id="storeLeadStatus">Inativo</em>
+                    </label>
+                  </div>
+
+                  <div id="storeProspectionField" class="feature-access-card">
+                    <div class="feature-access-copy">
+                      <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
+                      <div>
+                        <strong>Prospecção</strong>
+                        <span id="storeProspectionHelp">Ativação manual; compartilha a mesma licença contratada com Atendimento.</span>
+                      </div>
+                    </div>
+                    <label class="feature-access-toggle">
+                      <input id="storeProspectionAccess" type="checkbox" aria-label="Ativar área de Prospecção" aria-describedby="storeProspectionHelp" />
+                      <span aria-hidden="true"></span>
+                      <em id="storeProspectionStatus">Inativo</em>
+                    </label>
+                  </div>
+
+                  <div id="storeAttendanceField" class="feature-access-card">
+                    <div class="feature-access-copy">
+                      <span class="feature-access-icon"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i></span>
+                      <div>
+                        <strong>Atendimento</strong>
+                        <span id="storeAttendanceHelp">Ativação manual; compartilha a mesma licença contratada com Prospecção.</span>
+                      </div>
+                    </div>
+                    <label class="feature-access-toggle">
+                      <input id="storeAttendanceAccess" type="checkbox" aria-label="Ativar área de Atendimento" aria-describedby="storeAttendanceHelp" />
+                      <span aria-hidden="true"></span>
+                      <em id="storeAttendanceStatus">Inativo</em>
+                    </label>
+                  </div>
+                </div>
+              </section>
+
               <p id="storeMessage" class="form-message" role="status" aria-live="polite"></p>
               <button class="primary-button" type="submit">Criar acesso da loja</button>
             </form>
@@ -757,9 +812,9 @@
               </label>
 
               <label class="field">
-                <span>Clientes com Prospecções</span>
+                <span>Clientes com módulos adicionais</span>
                 <input id="technicianProspectionLimit" type="number" min="0" max="9999" step="1" value="0" required />
-                <small class="field-help">Franquia adicional: Prospecções e Atendimentos são liberados juntos para cada cliente.</small>
+                <small class="field-help">Uma licença por cliente que use Prospecção, Atendimento ou ambos.</small>
               </label>
 
               <label class="field">
@@ -850,9 +905,12 @@
                     <i class="fa-solid fa-filter" aria-hidden="true"></i>
                     <select id="clientAccessFilter" aria-label="Filtrar clientes por recurso">
                       <option value="all">Todos os acessos</option>
-                      <option value="prospections">Prospecções ativas</option>
+                      <option value="leads">Lead ativo</option>
+                      <option value="leads-only">Somente Lead</option>
+                      <option value="prospections">Prospecção ativa</option>
+                      <option value="attendances">Atendimento ativo</option>
                       <option value="good-morning">Bom Dia ativo</option>
-                      <option value="leads-only">Somente Leads</option>
+                      <option value="none">Sem módulos</option>
                     </select>
                   </label>
                 </div>
@@ -1016,6 +1074,17 @@
                   <label class="field">
                     <span>Responsável</span>
                     <input id="leadOwnerName" type="text" maxlength="160" placeholder="Quem está atendendo" />
+                  </label>
+                  <label id="leadLossReasonField" class="field lead-loss-reason-field" hidden>
+                    <span>Motivo da perda</span>
+                    <input
+                      id="leadLossReason"
+                      name="lossReason"
+                      type="text"
+                      maxlength="300"
+                      placeholder="Ex.: preço, sem retorno ou concorrência"
+                    />
+                    <small class="field-help">Obrigatório ao marcar o lead como perdido.</small>
                   </label>
                 </div>
               </section>
@@ -1259,6 +1328,17 @@
               <h2>Preparando o registro da loja</h2>
               <span>Carregando profissionais, retornos e permissões da empresa.</span>
             </div>
+          </div>
+        </section>
+        <section id="moduleAccessView" class="module-access-view" aria-labelledby="moduleAccessTitle" hidden>
+          <div class="module-access-card">
+            <span class="module-access-icon" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
+            <div class="module-access-copy">
+              <p class="eyebrow">Áreas do sistema</p>
+              <h2 id="moduleAccessTitle">Nenhum módulo liberado</h2>
+              <p>Sua agência precisa liberar uma área para você começar. Solicite acesso a Lead, Prospecção ou Atendimento.</p>
+            </div>
+            <span class="module-access-badge"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Aguardando liberação</span>
           </div>
         </section>
       </main>
@@ -1577,9 +1657,9 @@
           </label>
 
           <label id="managedAccountProspectionLimitField" class="field" hidden>
-            <span>Clientes com Prospecções</span>
+            <span>Clientes com módulos adicionais</span>
             <input id="managedAccountProspectionLimit" type="number" min="0" max="9999" step="1" />
-            <small id="managedAccountProspectionLimitHelp" class="field-help">Prospecções e Atendimentos usam a mesma licença. Ao reduzir o plano, novas liberações ficam bloqueadas enquanto houver excesso.</small>
+            <small id="managedAccountProspectionLimitHelp" class="field-help">Uma licença por cliente que use Prospecção, Atendimento ou ambos. Reduções bloqueiam novas ativações enquanto houver excesso.</small>
           </label>
 
           <label id="managedAccountGoodMorningSellerLimitField" class="field" hidden>
@@ -1602,18 +1682,48 @@
             </button>
           </div>
 
+          <div id="managedAccountLeadField" class="feature-access-card" hidden>
+            <div class="feature-access-copy">
+              <span class="feature-access-icon"><i class="fa-solid fa-user-group" aria-hidden="true"></i></span>
+              <div>
+                <strong>Lead</strong>
+                <span id="managedAccountLeadHelp">Libere a área de gestão de leads para este cliente.</span>
+              </div>
+            </div>
+            <label class="feature-access-toggle">
+              <input id="managedAccountLeadAccess" type="checkbox" aria-label="Ativar área de Lead" aria-describedby="managedAccountLeadHelp" />
+              <span aria-hidden="true"></span>
+              <em id="managedAccountLeadStatus">Inativo</em>
+            </label>
+          </div>
+
           <div id="managedAccountProspectionField" class="feature-access-card" hidden>
             <div class="feature-access-copy">
               <span class="feature-access-icon"><i class="fa-solid fa-phone" aria-hidden="true"></i></span>
               <div>
-                <strong>Prospecções + Atendimentos</strong>
-                <span id="managedAccountProspectionHelp">Libere o módulo adicional para este cliente.</span>
+                <strong>Prospecções</strong>
+                <span id="managedAccountProspectionHelp">Ative esta área. Ela compartilha a licença contratada com Atendimento.</span>
               </div>
             </div>
             <label class="feature-access-toggle">
-              <input id="managedAccountProspectionAccess" type="checkbox" />
+              <input id="managedAccountProspectionAccess" type="checkbox" aria-label="Ativar área de Prospecção" aria-describedby="managedAccountProspectionHelp" />
               <span aria-hidden="true"></span>
               <em id="managedAccountProspectionStatus">Ativo</em>
+            </label>
+          </div>
+
+          <div id="managedAccountAttendanceField" class="feature-access-card" hidden>
+            <div class="feature-access-copy">
+              <span class="feature-access-icon"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i></span>
+              <div>
+                <strong>Atendimento</strong>
+                <span id="managedAccountAttendanceHelp">Ative esta área. Ela compartilha a licença contratada com Prospecção.</span>
+              </div>
+            </div>
+            <label class="feature-access-toggle">
+              <input id="managedAccountAttendanceAccess" type="checkbox" aria-label="Ativar área de Atendimento" aria-describedby="managedAccountAttendanceHelp" />
+              <span aria-hidden="true"></span>
+              <em id="managedAccountAttendanceStatus">Inativo</em>
             </label>
           </div>
 
