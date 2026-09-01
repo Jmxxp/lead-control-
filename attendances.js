@@ -4,6 +4,7 @@
   const DEFAULT_RPC = Object.freeze({
     workspace: "lc_get_attendance_workspace",
     save: "lc_upsert_attendance_v3",
+    saveLegacy: "lc_upsert_attendance_v2",
     list: "lc_list_attendances_v3",
     analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
@@ -244,6 +245,9 @@
 
   function attendanceDateLimits(reference = new Date()) {
     const today = embeddedDateInput(reference);
+    if (state.bridge?.attendanceRetroactiveDatesGranted === false) {
+      return { min: today, today };
+    }
     const parts = parseIsoDateParts(today);
     if (!parts) return { min: "", today };
     const minimumYear = parts.year - 2;
@@ -927,6 +931,7 @@
     const professionals = professionalRecords.map((professional) => professional.name);
     const draft = state.drafts.get(state.selectedStoreId) || { tag: "budget" };
     const dateLimits = attendanceDateLimits();
+    const retroactiveDatesGranted = state.bridge?.attendanceRetroactiveDatesGranted !== false;
     const attendedOn = isValidAttendanceDate(draft.attendedOn, dateLimits) ? draft.attendedOn : dateLimits.today;
     const draftedProfessional = professionals.find((name) => normalizeText(name) === normalizeText(draft.professionalName));
     const selectedProfessional = draftedProfessional || (professionals.length === 1 ? professionals[0] : "");
@@ -953,7 +958,7 @@
           <label class="attendance-field">
             <span>Data do atendimento <b>*</b></span>
             <span class="attendance-input-wrap"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><input name="attended_on" type="date" min="${escapeHtml(dateLimits.min)}" max="${escapeHtml(dateLimits.today)}" value="${escapeHtml(attendedOn)}" required /></span>
-            <small>Hoje ou uma data dos últimos 2 anos.</small>
+            <small>${retroactiveDatesGranted ? "Hoje ou uma data dos últimos 2 anos." : "Somente hoje. Datas retroativas requerem a atualização do sistema."}</small>
           </label>
           <label class="attendance-field">
             <span>Telefone</span>
@@ -1897,6 +1902,9 @@
 
     if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
     if (!isValidAttendanceDate(attendedOn, dateLimits)) {
+      if (state.bridge?.attendanceRetroactiveDatesGranted === false) {
+        throw new Error("Registre apenas atendimentos de hoje. Datas retroativas requerem a atualização do sistema.");
+      }
       throw new Error(`Informe uma data de atendimento entre ${formatShortDate(dateLimits.min)} e hoje.`);
     }
     if (!customerName) throw new Error("Informe o nome do cliente.");
@@ -1985,6 +1993,32 @@
     };
   }
 
+  function isMissingRpcError(error, functionName) {
+    const expectedName = String(functionName || "").trim().toLowerCase();
+    const message = [error?.message, error?.details, error?.hint]
+      .filter((value) => value !== undefined && value !== null)
+      .map(String)
+      .join(" ")
+      .toLowerCase();
+    if (!expectedName || !message.includes(expectedName)) return false;
+
+    const code = String(error?.code || "").trim().toUpperCase();
+    return code === "PGRST202"
+      || code === "42883"
+      || message.includes("could not find the function")
+      || (message.includes("function") && message.includes("does not exist"));
+  }
+
+  function legacySaveArgs(args) {
+    const attendedOn = String(args?.p_attended_on || "").trim();
+    if (attendedOn !== embeddedDateInput(new Date())) {
+      throw new Error("Datas retroativas requerem a atualização do sistema. Por enquanto, registre apenas atendimentos de hoje.");
+    }
+    const legacyArgs = { ...args };
+    delete legacyArgs.p_attended_on;
+    return legacyArgs;
+  }
+
   async function rpc(operation, args) {
     const custom = state.bridge?.attendances;
     if (operation === "workspace" && typeof custom?.load === "function") return custom.load(args);
@@ -1992,7 +2026,26 @@
     if (operation === "list" && typeof custom?.list === "function") return custom.list(args);
     if (typeof state.bridge?.rpc !== "function") throw new Error("Integração RPC de Atendimentos não configurada.");
     const names = { ...DEFAULT_RPC, ...(state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {}) };
-    return state.bridge.rpc(names[operation], args);
+    const rpcName = names[operation];
+    if (operation !== "save") return state.bridge.rpc(rpcName, args);
+
+    const legacyName = names.saveLegacy || DEFAULT_RPC.saveLegacy;
+    if (rpcName === legacyName || rpcName === DEFAULT_RPC.saveLegacy) {
+      state.bridge.attendanceRetroactiveDatesGranted = false;
+      return state.bridge.rpc(rpcName, legacySaveArgs(args));
+    }
+
+    try {
+      return await state.bridge.rpc(rpcName, args);
+    } catch (error) {
+      if (rpcName !== DEFAULT_RPC.save || !isMissingRpcError(error, rpcName)) throw error;
+      state.bridge.attendanceRetroactiveDatesGranted = false;
+      state.bridge.attendanceRpcNames = {
+        ...(state.bridge.attendanceRpcNames || {}),
+        save: legacyName,
+      };
+      return state.bridge.rpc(legacyName, legacySaveArgs(args));
+    }
   }
 
   function attendanceProfessionalId(name) {
@@ -2697,7 +2750,7 @@
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
+        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
       },
       rpc: {
         workspace: {
@@ -2730,6 +2783,10 @@
             bonus_amount: "numeric | null (returned by backend only)",
             bonus_reason: "text | null",
           },
+        },
+        saveLegacy: {
+          name: DEFAULT_RPC.saveLegacy,
+          compatibility: "Somente a data atual; p_attended_on é removido antes da chamada.",
         },
         list: {
           name: DEFAULT_RPC.list,

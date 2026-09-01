@@ -58,6 +58,7 @@ let activeStoreContext = null;
 let activeTechnicianContext = null;
 let activeSystemModule = "leads";
 let leadModuleSnapshot = null;
+let moduleAccessContractVersion = 1;
 let attendanceStoreSelectionId = "";
 let accountUsage = null;
 let companyWorkspaceSection = "clients";
@@ -613,10 +614,13 @@ function bindEvents() {
     syncManagedAccountLeadToggle();
   });
   managedAccountProspectionAccess.addEventListener("change", () => {
+    syncLegacyCombinedModuleAccess(managedAccountProspectionAccess, managedAccountAttendanceAccess);
+    if (!managedAccountAttendanceAccess?.checked) managedAccountGoodMorningSellerAccess.checked = false;
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountProspectionToggle();
   });
   managedAccountAttendanceAccess?.addEventListener("change", () => {
+    syncLegacyCombinedModuleAccess(managedAccountAttendanceAccess, managedAccountProspectionAccess);
     if (!managedAccountAttendanceAccess.checked) managedAccountGoodMorningSellerAccess.checked = false;
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountAttendanceToggle();
@@ -651,7 +655,11 @@ function bindEvents() {
   storeForm.addEventListener("submit", handleCreateStore);
   storeTechnician.addEventListener("input", syncStoreCreationAvailability);
   [storeLeadAccess, storeProspectionAccess, storeAttendanceAccess].forEach((control) => {
-    control?.addEventListener("change", syncStoreCreationAvailability);
+    control?.addEventListener("change", () => {
+      if (control === storeProspectionAccess) syncLegacyCombinedModuleAccess(storeProspectionAccess, storeAttendanceAccess);
+      if (control === storeAttendanceAccess) syncLegacyCombinedModuleAccess(storeAttendanceAccess, storeProspectionAccess);
+      syncStoreCreationAvailability();
+    });
   });
   technicianForm.addEventListener("submit", handleCreateTechnician);
   adminAccountForm.addEventListener("submit", handleAdminAccountSubmit);
@@ -1339,7 +1347,6 @@ function showAdminDashboard() {
   closeSettingsModal();
   closeAllAccountCreationModals();
   closeStoreAccessModal();
-  backAdminButton.hidden = true;
   adminView.hidden = false;
   storeView.hidden = true;
   if (moduleAccessView) moduleAccessView.hidden = true;
@@ -1354,7 +1361,6 @@ function showStoreDashboard() {
   };
   attendanceStoreSelectionId = activeStoreContext.id || "";
   sessionRole.textContent = `Cliente · ${activeStoreContext?.name || currentProfile.username}`;
-  backAdminButton.hidden = true;
   settingsButton.hidden = true;
   appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
@@ -1384,6 +1390,7 @@ async function handleLogout() {
     currentProfile = null;
     activeStoreContext = null;
     activeTechnicianContext = null;
+    moduleAccessContractVersion = 1;
     accountUsage = null;
     companyWorkspaceSection = "clients";
     selectedAnalyticsStoreId = "";
@@ -1425,6 +1432,7 @@ function showAuth() {
   setProspectionVisualMode(false);
   setAttendanceVisualMode(false);
   leadModuleSnapshot = null;
+  moduleAccessContractVersion = 1;
   attendanceStoreSelectionId = "";
   settingsButton.hidden = true;
   authScreen.hidden = false;
@@ -1465,6 +1473,18 @@ function handleModuleSwitcherKeydown(event) {
   event.preventDefault();
   buttons[nextIndex].focus();
   buttons[nextIndex].click();
+}
+
+function hasAdminReturnTarget() {
+  if (!["admin", "technician"].includes(currentProfile?.role)) return false;
+  return Boolean(
+    activeStoreContext
+    || (currentProfile.role === "admin" && activeTechnicianContext),
+  );
+}
+
+function syncBackAdminButton() {
+  backAdminButton.hidden = !hasAdminReturnTarget();
 }
 
 function updateSystemModuleControls() {
@@ -1508,6 +1528,7 @@ function updateSystemModuleControls() {
     ? "Registrar e acompanhar atendimentos"
     : "Atendimentos não foi ativado para este cliente";
   if (moduleAccessView) moduleAccessView.hidden = !isInsideClient || activeSystemModule !== "none";
+  syncBackAdminButton();
   window.SupportAssistant?.refreshCapabilities?.();
 }
 
@@ -1617,12 +1638,21 @@ function setAttendanceVisualMode(enabled) {
   document.body.classList.toggle("is-attendances-module", enabled);
 }
 
+function attendanceCompatibilityBridge() {
+  const retroactiveDatesGranted = moduleAccessContractVersion >= 2;
+  return {
+    attendanceRetroactiveDatesGranted: retroactiveDatesGranted,
+    attendanceRpcNames: {
+      save: retroactiveDatesGranted ? "lc_upsert_attendance_v3" : "lc_upsert_attendance_v2",
+    },
+  };
+}
+
 function captureLeadModuleSnapshot() {
   return {
     adminViewHidden: adminView.hidden,
     storeViewHidden: storeView.hidden,
     sessionRoleText: sessionRole.textContent,
-    backAdminHidden: backAdminButton.hidden,
     settingsHidden: settingsButton.hidden,
     appointmentToggleHidden: appointmentMonitorToggle.hidden,
     appointmentPanelHidden: appointmentMonitorPanel.hidden,
@@ -1635,10 +1665,10 @@ function restoreLeadModuleSnapshot() {
   adminView.hidden = snapshot.adminViewHidden ?? !fallbackShowsAdmin;
   storeView.hidden = snapshot.storeViewHidden ?? fallbackShowsAdmin;
   sessionRole.textContent = snapshot.sessionRoleText || sessionRole.textContent;
-  backAdminButton.hidden = snapshot.backAdminHidden ?? true;
   settingsButton.hidden = snapshot.settingsHidden ?? currentProfile?.role !== "admin";
   appointmentMonitorToggle.hidden = snapshot.appointmentToggleHidden ?? currentProfile?.role !== "store";
   appointmentMonitorPanel.hidden = snapshot.appointmentPanelHidden ?? true;
+  syncBackAdminButton();
 }
 
 async function setSystemModule(moduleName, { persist = true, force = false } = {}) {
@@ -1697,7 +1727,6 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
     prospectionView.hidden = false;
     appointmentMonitorToggle.hidden = true;
     appointmentMonitorPanel.hidden = true;
-    backAdminButton.hidden = !["admin", "technician"].includes(currentProfile.role);
     settingsButton.hidden = true;
     closeAiChat();
 
@@ -1741,7 +1770,6 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
     attendanceView.hidden = false;
     appointmentMonitorToggle.hidden = true;
     appointmentMonitorPanel.hidden = true;
-    backAdminButton.hidden = !["admin", "technician"].includes(currentProfile.role);
     settingsButton.hidden = true;
     closeAiChat();
 
@@ -1752,6 +1780,7 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
         agencies: technicians.map((technician) => ({ ...technician })),
         attendanceAccessGranted: canUseAttendances(),
         prospectionAccessGranted: canUseProspections(),
+        ...attendanceCompatibilityBridge(),
         initialStoreId: activeStoreContext?.id || currentProfile.storeId || attendanceStoreSelectionId || "",
         initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
         rpc: authenticatedRpc,
@@ -1783,13 +1812,27 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
             return;
           }
           if (activeSystemModule !== "attendances") return;
+          if (!canUseAttendances()) {
+            await setSystemModule(resolveAvailableSystemModule("attendances") || "none", {
+              persist: false,
+              force: true,
+            });
+            return;
+          }
+          await window.AttendancesModule?.refreshContext?.({
+            stores: getOperationalModuleStores(),
+            agencies: technicians.map((technician) => ({ ...technician })),
+            attendanceAccessGranted: canUseAttendances(),
+            prospectionAccessGranted: canUseProspections(),
+            ...attendanceCompatibilityBridge(),
+          });
           renderAll();
           adminView.hidden = true;
           storeView.hidden = true;
           attendanceView.hidden = false;
           appointmentMonitorToggle.hidden = true;
           appointmentMonitorPanel.hidden = true;
-          backAdminButton.hidden = !["admin", "technician"].includes(currentProfile.role);
+          syncBackAdminButton();
           settingsButton.hidden = true;
         },
         openLeadsForStore: async (storeId) => {
@@ -1827,7 +1870,6 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
     appointmentMonitorToggle.hidden = true;
     appointmentMonitorPanel.hidden = true;
     settingsButton.hidden = true;
-    backAdminButton.hidden = currentProfile.role === "store";
     closeAiChat();
     updateSystemModuleControls();
     renderCurrentSessionAvatar();
@@ -1887,30 +1929,44 @@ async function handleCreateStore(event) {
   try {
     setFormBusy(storeForm, true);
     const avatarUrl = await avatarFileToDataUrl(storeAvatar.files?.[0]);
-    const createdStore = firstRow(await authenticatedRpc("lc_create_store_with_module_access_v2", {
-      p_name: storeName.value.trim(),
-      p_nick: username,
-      p_password: storePassword.value,
-      p_technician_id: technicianId,
-      p_lead_enabled: Boolean(storeLeadAccess?.checked),
-      p_prospection_enabled: Boolean(storeProspectionAccess?.checked),
-      p_attendance_enabled: Boolean(storeAttendanceAccess?.checked),
-    }));
+    const creation = await createStoreWithCompatibleModuleAccess({
+      name: storeName.value.trim(),
+      nick: username,
+      password: storePassword.value,
+      technicianId,
+      leadEnabled: Boolean(storeLeadAccess?.checked),
+      prospectionEnabled: Boolean(storeProspectionAccess?.checked),
+      attendanceEnabled: Boolean(storeAttendanceAccess?.checked),
+    });
+    const createdStore = creation.store;
+    const warnings = [...creation.warnings];
     if (avatarUrl && createdStore?.store_id) {
-      await authenticatedRpc("lc_set_profile_avatar", {
-        p_account_type: "store",
-        p_account_id: createdStore.store_id,
-        p_avatar_url: avatarUrl,
-      });
+      try {
+        await authenticatedRpc("lc_set_profile_avatar", {
+          p_account_type: "store",
+          p_account_id: createdStore.store_id,
+          p_avatar_url: avatarUrl,
+        });
+      } catch (error) {
+        warnings.push(`A imagem não foi salva: ${readableError(error)}`);
+      }
     }
     storeForm.reset();
     setAvatarPreview(storeAvatarPreview, "", "store");
     setAvatarFileName(storeAvatar);
     syncStoreCreationAvailability();
-    await refreshRemoteState();
-    showStoreMessage("Loja criada.", "success");
-    renderAll();
+    try {
+      await refreshRemoteState();
+      renderAll();
+    } catch (error) {
+      warnings.push(`A lista não pôde ser atualizada agora: ${readableError(error)}`);
+    }
     closeAccountCreationModal("store");
+    if (warnings.length) {
+      showAppNotification(`Cliente criado. ${warnings.join(" ")}`, "error");
+    } else {
+      showAppNotification("Cliente criado.");
+    }
   } catch (error) {
     showStoreMessage(readableError(error));
   } finally {
@@ -2228,17 +2284,18 @@ async function deleteManagedAccount(type, id) {
     await refreshRemoteState();
     if (activeSystemModule === "prospections") {
       await window.ProspectionsModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
         attendanceAccessGranted: canUseAttendances(),
       });
     } else if (activeSystemModule === "attendances") {
       await window.AttendancesModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         attendanceAccessGranted: canUseAttendances(),
         prospectionAccessGranted: canUseProspections(),
+        ...attendanceCompatibilityBridge(),
       });
     }
     renderAll();
@@ -2662,16 +2719,16 @@ async function handleManagedAccountSubmit(event) {
       const wantsAttendances = Boolean(managedAccountAttendanceAccess?.checked);
       const wantsGoodMorningSeller = managedAccountGoodMorningSellerAccess.checked;
       const managedStore = stores.find((store) => store.id === id);
-      await authenticatedRpc("lc_update_store_with_module_access_v2", {
-        p_store_id: id,
-        p_name: managedAccountName.value.trim(),
-        p_nick: username,
-        p_password: password || null,
-        p_technician_id: currentProfile.role === "technician" ? currentProfile.id : managedStore?.technicianId || null,
-        p_lead_enabled: wantsLeads,
-        p_prospection_enabled: wantsProspections,
-        p_attendance_enabled: wantsAttendances,
-        p_good_morning_seller_enabled: wantsGoodMorningSeller,
+      await updateStoreWithCompatibleModuleAccess({
+        storeId: id,
+        name: managedAccountName.value.trim(),
+        nick: username,
+        password: password || null,
+        technicianId: currentProfile.role === "technician" ? currentProfile.id : managedStore?.technicianId || null,
+        leadEnabled: wantsLeads,
+        prospectionEnabled: wantsProspections,
+        attendanceEnabled: wantsAttendances,
+        goodMorningSellerEnabled: wantsGoodMorningSeller,
       });
     } else if (type === "technician") {
       await authenticatedRpc("lc_update_technician_with_all_feature_plan", {
@@ -2701,17 +2758,18 @@ async function handleManagedAccountSubmit(event) {
     }
     if (activeSystemModule === "prospections") {
       await window.ProspectionsModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         prospectionAccessGranted: canUseProspections(),
         attendanceAccessGranted: canUseAttendances(),
       });
     } else if (activeSystemModule === "attendances") {
       await window.AttendancesModule?.refreshContext?.({
-        stores: stores.map((store) => ({ ...store })),
+        stores: getOperationalModuleStores(),
         agencies: technicians.map((technician) => ({ ...technician })),
         attendanceAccessGranted: canUseAttendances(),
         prospectionAccessGranted: canUseProspections(),
+        ...attendanceCompatibilityBridge(),
       });
     }
     renderAll();
@@ -2747,6 +2805,11 @@ function syncFeatureAccessStatus(control, status) {
   status.textContent = unavailable ? "Sem licença" : enabled ? "Ativo" : "Desativado";
   status.classList.toggle("is-enabled", enabled);
   status.classList.toggle("is-unavailable", unavailable);
+}
+
+function syncLegacyCombinedModuleAccess(source, target) {
+  if (moduleAccessContractVersion >= 2 || !source || !target) return;
+  target.checked = source.checked;
 }
 
 function syncManagedAccountLeadToggle() {
@@ -2830,6 +2893,9 @@ function syncManagedStoreEntitlementQuotas() {
     } else {
       help.textContent = `Licença compartilhada validada nas ${premiumUsage.length} agências deste cliente.`;
     }
+    if (moduleAccessContractVersion < 2) {
+      help.textContent += " No banco atual, Prospecção e Atendimento permanecem juntos.";
+    }
   });
 
   const goodMorningUsage = getAgencyUsage("goodMorningSellerStoreCount", "goodMorningSellerStoreLimit");
@@ -2863,8 +2929,13 @@ function syncManagedStoreEntitlementQuotas() {
   }
 
   if (managedAccountLeadHelp) {
-    managedAccountLeadHelp.textContent = "Acesso padrão disponível dentro da capacidade de clientes da agência.";
+    managedAccountLeadAccess.checked = moduleAccessContractVersion < 2 ? true : managedAccountLeadAccess.checked;
+    managedAccountLeadAccess.disabled = moduleAccessContractVersion < 2;
+    managedAccountLeadHelp.textContent = moduleAccessContractVersion < 2
+      ? "Lead vem ativo por padrão. A atualização do banco permitirá desligá-lo individualmente."
+      : "Lead vem ativo por padrão e pode ser administrado individualmente para este cliente.";
   }
+  syncManagedAccountLeadToggle();
   syncManagedAccountProspectionToggle();
   syncManagedAccountAttendanceToggle();
   syncManagedAccountGoodMorningSellerToggle();
@@ -2878,7 +2949,7 @@ async function openStoreAsAdmin(storeId) {
   activeStoreContext = store;
   attendanceStoreSelectionId = store.id;
   sessionRole.textContent = `${currentProfile.role === "technician" ? "Agência" : "Admin"} · ${store.name}`;
-  backAdminButton.hidden = false;
+  syncBackAdminButton();
   appointmentMonitorToggle.hidden = false;
   toggleOptionsEditButton.hidden = false;
   clearFormButton.hidden = true;
@@ -2909,7 +2980,6 @@ function openTechnicianAsAdmin(technicianId) {
   syncAiChatStoreScope("");
   analyticsStoreFilter.value = "";
   sessionRole.textContent = `Agência · ${technician.fullName || technician.username}`;
-  backAdminButton.hidden = false;
   adminView.hidden = false;
   storeView.hidden = true;
   renderAll();
@@ -2962,7 +3032,6 @@ async function returnToAdmin() {
   }
   appointmentMonitorToggle.hidden = true;
   appointmentMonitorPanel.hidden = true;
-  backAdminButton.hidden = currentProfile.role === "technician" || !activeTechnicianContext;
   adminView.hidden = false;
   storeView.hidden = true;
   if (currentProfile.role === "technician") {
@@ -3057,7 +3126,7 @@ async function handleLeadSubmit(event) {
         p_intelligence: intelligencePayload,
       });
     } catch (error) {
-      if (!isMissingRpcError(error)) throw error;
+      if (!isMissingRpcError(error, "lc_upsert_lead_with_intelligence_v2")) throw error;
       const savedLeadId = await authenticatedRpc("lc_upsert_lead_v2", payload);
       const leadId = Array.isArray(savedLeadId) ? savedLeadId[0] : savedLeadId;
       if (leadId) {
@@ -4157,7 +4226,10 @@ function syncStoreCreationAvailability() {
   const hasPremiumCapacity = Boolean(context)
     && Number(context.prospectionStoreCount || 0) < Number(context.prospectionStoreLimit || 0);
 
-  if (storeLeadAccess) storeLeadAccess.disabled = !hasCapacity;
+  if (storeLeadAccess) {
+    if (moduleAccessContractVersion < 2) storeLeadAccess.checked = true;
+    storeLeadAccess.disabled = !hasCapacity || moduleAccessContractVersion < 2;
+  }
   if (!hasPremiumCapacity) {
     if (storeProspectionAccess) storeProspectionAccess.checked = false;
     if (storeAttendanceAccess) storeAttendanceAccess.checked = false;
@@ -4171,7 +4243,7 @@ function syncStoreCreationAvailability() {
 
   if (storeLeadHelp) {
     storeLeadHelp.textContent = hasCapacity
-      ? "Ativação manual incluída no acesso padrão desta agência."
+      ? "Lead será criado ativo por padrão para este cliente."
       : "Selecione uma agência com capacidade para liberar Leads.";
   }
   const premiumHelp = !context
@@ -4179,8 +4251,11 @@ function syncStoreCreationAvailability() {
     : hasPremiumCapacity
       ? `${Number(context.prospectionStoreCount || 0) + (storeProspectionAccess?.checked || storeAttendanceAccess?.checked ? 1 : 0)} de ${Number(context.prospectionStoreLimit || 0)} licenças compartilhadas ficarão em uso.`
       : "A agência não possui licença adicional disponível.";
-  if (storeProspectionHelp) storeProspectionHelp.textContent = premiumHelp;
-  if (storeAttendanceHelp) storeAttendanceHelp.textContent = premiumHelp;
+  const compatiblePremiumHelp = moduleAccessContractVersion < 2
+    ? `${premiumHelp} No banco atual, Prospecção e Atendimento permanecem juntos.`
+    : premiumHelp;
+  if (storeProspectionHelp) storeProspectionHelp.textContent = compatiblePremiumHelp;
+  if (storeAttendanceHelp) storeAttendanceHelp.textContent = compatiblePremiumHelp;
 
   submitButton.disabled = !hasCapacity;
   if (!context) {
@@ -9068,6 +9143,107 @@ async function authenticatedRpc(functionName, args = {}) {
   });
 }
 
+function assertLegacyModuleSelection({ leadEnabled, prospectionEnabled, attendanceEnabled }) {
+  if (!leadEnabled) {
+    throw new Error("A atualização do banco para controlar Lead individualmente ainda está pendente. No banco atual, Lead precisa permanecer ativo.");
+  }
+  if (Boolean(prospectionEnabled) !== Boolean(attendanceEnabled)) {
+    throw new Error("A atualização do banco para separar Prospecção e Atendimento ainda está pendente. No banco atual, os dois acessos precisam ficar iguais.");
+  }
+}
+
+async function createStoreWithCompatibleModuleAccess({
+  name,
+  nick,
+  password,
+  technicianId,
+  leadEnabled,
+  prospectionEnabled,
+  attendanceEnabled,
+}) {
+  if (moduleAccessContractVersion >= 2) {
+    try {
+      const store = firstRow(await authenticatedRpc("lc_create_store_with_module_access_v2", {
+        p_name: name,
+        p_nick: nick,
+        p_password: password,
+        p_technician_id: technicianId,
+        p_lead_enabled: Boolean(leadEnabled),
+        p_prospection_enabled: Boolean(prospectionEnabled),
+        p_attendance_enabled: Boolean(attendanceEnabled),
+      }));
+      return { store, warnings: [] };
+    } catch (error) {
+      if (!isMissingRpcError(error, "lc_create_store_with_module_access_v2")) throw error;
+      moduleAccessContractVersion = 1;
+    }
+  }
+
+  assertLegacyModuleSelection({ leadEnabled, prospectionEnabled, attendanceEnabled });
+  const store = firstRow(await authenticatedRpc("lc_create_store", {
+    p_name: name,
+    p_nick: nick,
+    p_password: password,
+    p_technician_id: technicianId,
+  }));
+  const warnings = [];
+
+  if (prospectionEnabled && store?.store_id) {
+    try {
+      await authenticatedRpc("lc_set_store_prospection_access", {
+        p_store_id: store.store_id,
+        p_enabled: true,
+      });
+    } catch (error) {
+      warnings.push(`Prospecção e Atendimento não foram ativados: ${readableError(error)}`);
+    }
+  }
+
+  return { store, warnings };
+}
+
+async function updateStoreWithCompatibleModuleAccess({
+  storeId,
+  name,
+  nick,
+  password,
+  technicianId,
+  leadEnabled,
+  prospectionEnabled,
+  attendanceEnabled,
+  goodMorningSellerEnabled,
+}) {
+  if (moduleAccessContractVersion >= 2) {
+    try {
+      return await authenticatedRpc("lc_update_store_with_module_access_v2", {
+        p_store_id: storeId,
+        p_name: name,
+        p_nick: nick,
+        p_password: password,
+        p_technician_id: technicianId,
+        p_lead_enabled: Boolean(leadEnabled),
+        p_prospection_enabled: Boolean(prospectionEnabled),
+        p_attendance_enabled: Boolean(attendanceEnabled),
+        p_good_morning_seller_enabled: Boolean(goodMorningSellerEnabled),
+      });
+    } catch (error) {
+      if (!isMissingRpcError(error, "lc_update_store_with_module_access_v2")) throw error;
+      moduleAccessContractVersion = 1;
+    }
+  }
+
+  assertLegacyModuleSelection({ leadEnabled, prospectionEnabled, attendanceEnabled });
+  return authenticatedRpc("lc_update_store_with_all_feature_access", {
+    p_store_id: storeId,
+    p_name: name,
+    p_nick: nick,
+    p_password: password,
+    p_technician_id: technicianId,
+    p_prospection_enabled: Boolean(prospectionEnabled),
+    p_good_morning_seller_enabled: Boolean(goodMorningSellerEnabled),
+  });
+}
+
 function profileFromSessionRow(row) {
   if (!row) throw new Error("Resposta de sessão vazia.");
   return {
@@ -9110,7 +9286,7 @@ function mapStoreRow(row) {
     technicianName: row.technician_name || "",
     agencyIds: row.technician_id ? [row.technician_id] : [],
     agencyNames: row.technician_name ? [row.technician_name] : [],
-    leadEnabled: false,
+    leadEnabled: true,
     prospectionEnabled: false,
     attendanceEnabled: false,
     goodMorningSellerEnabled: false,
@@ -9181,9 +9357,17 @@ function normalizeProspectionEntitlements(data) {
 
 function applyProspectionEntitlements(data) {
   const entitlements = normalizeProspectionEntitlements(data);
+  const entitlementStores = Array.isArray(entitlements?.stores) ? entitlements.stores : [];
+  const declaredVersion = Number(entitlements?.profile?.module_access_version || 0);
+  const hasIndependentModuleFields = entitlementStores.some((row) => (
+    Object.prototype.hasOwnProperty.call(row || {}, "lead_enabled")
+    || Object.prototype.hasOwnProperty.call(row || {}, "attendance_enabled")
+  ));
+  moduleAccessContractVersion = declaredVersion >= 2 || hasIndependentModuleFields ? 2 : 1;
+
   if (!entitlements) {
     stores.forEach((store) => {
-      store.leadEnabled = false;
+      store.leadEnabled = true;
       store.prospectionEnabled = false;
       store.attendanceEnabled = false;
       store.goodMorningSellerEnabled = false;
@@ -9197,12 +9381,18 @@ function applyProspectionEntitlements(data) {
     return;
   }
 
-  const storeAccess = new Map((entitlements.stores || []).map((row) => [row.store_id, row]));
+  const storeAccess = new Map(entitlementStores.map((row) => [row.store_id, row]));
   stores.forEach((store) => {
     const access = storeAccess.get(store.id) || {};
-    store.leadEnabled = access.lead_enabled === true;
-    store.prospectionEnabled = access.prospection_enabled === true;
-    store.attendanceEnabled = access.attendance_enabled === true;
+    if (moduleAccessContractVersion >= 2) {
+      store.leadEnabled = access.lead_enabled === true;
+      store.prospectionEnabled = access.prospection_enabled === true;
+      store.attendanceEnabled = access.attendance_enabled === true;
+    } else {
+      store.leadEnabled = true;
+      store.prospectionEnabled = access.prospection_enabled === true;
+      store.attendanceEnabled = store.prospectionEnabled;
+    }
     store.goodMorningSellerEnabled = access.good_morning_seller_enabled === true;
   });
 
@@ -9906,7 +10096,8 @@ function applyStoredTheme() {
 
 function bindFocusModality() {
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Tab" || event.key.startsWith("Arrow") || ["Home", "End"].includes(event.key)) {
+    const key = typeof event.key === "string" ? event.key : "";
+    if (key === "Tab" || key.startsWith("Arrow") || ["Home", "End"].includes(key)) {
       document.body.classList.add("is-keyboard-navigation");
     }
   }, true);
@@ -9935,9 +10126,13 @@ function readableError(error) {
   return error?.message || String(error || "Erro inesperado.");
 }
 
-function isMissingRpcError(error) {
+function isMissingRpcError(error, functionName = "") {
   const message = readableError(error).toLowerCase();
-  return message.includes("could not find the function") || message.includes("function") && message.includes("does not exist");
+  const expectedName = String(functionName || "").trim().toLowerCase();
+  if (expectedName && !message.includes(expectedName)) return false;
+  return ["PGRST202", "42883"].includes(String(error?.code || "").toUpperCase())
+    || message.includes("could not find the function")
+    || message.includes("function") && message.includes("does not exist");
 }
 
 function isLeadModuleAccessError(error) {

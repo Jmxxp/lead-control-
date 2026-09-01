@@ -6,7 +6,7 @@ set local search_path = public, extensions;
 
 -- Lead, Prospeccao e Atendimento sao acessos independentes. Clientes
 -- existentes preservam o comportamento anterior; novos clientes nascem com
--- cada modulo desligado ate a agencia libera-lo explicitamente.
+-- Lead ativo e os modulos premium desligados ate a agencia libera-los.
 alter table public.stores
   add column if not exists lead_enabled boolean;
 
@@ -15,7 +15,7 @@ set lead_enabled = true
 where lead_enabled is null;
 
 alter table public.stores
-  alter column lead_enabled set default false,
+  alter column lead_enabled set default true,
   alter column lead_enabled set not null;
 
 alter table public.stores
@@ -50,7 +50,7 @@ end;
 $constraint$;
 
 comment on column public.stores.lead_enabled is
-  'Libera o modulo Lead para este cliente. Novos clientes exigem ativacao explicita.';
+  'Libera o modulo Lead para este cliente. Novos clientes recebem Lead ativo por padrao.';
 comment on column public.stores.prospection_enabled is
   'Libera exclusivamente o modulo Prospeccao para este cliente.';
 comment on column public.stores.attendance_enabled is
@@ -621,6 +621,7 @@ begin
   return jsonb_build_object(
     'profile', jsonb_build_object(
       'role', v_session.user_role::text,
+      'module_access_version', 2,
       'prospection_store_limit', case
         when v_session.user_role::text = 'technician' then coalesce((
           select u.prospection_store_limit
@@ -1505,7 +1506,7 @@ create or replace function app_private.rpc_create_store_with_module_access_v2(
   p_nick text,
   p_password text,
   p_technician_id uuid default null,
-  p_lead_enabled boolean default false,
+  p_lead_enabled boolean default true,
   p_prospection_enabled boolean default false,
   p_attendance_enabled boolean default false
 )
@@ -1541,13 +1542,11 @@ begin
     p_technician_id
   );
 
-  if coalesce(p_lead_enabled, false) then
-    perform app_private.rpc_set_store_lead_access(
-      p_session_token,
-      v_created.store_id,
-      true
-    );
-  end if;
+  perform app_private.rpc_set_store_lead_access(
+    p_session_token,
+    v_created.store_id,
+    coalesce(p_lead_enabled, true)
+  );
 
   if coalesce(p_prospection_enabled, false) then
     perform app_private.rpc_set_store_prospection_access(
@@ -1583,10 +1582,10 @@ create or replace function app_private.rpc_update_store_with_module_access_v2(
   p_nick text,
   p_password text default null,
   p_technician_id uuid default null,
-  p_lead_enabled boolean default false,
-  p_prospection_enabled boolean default false,
-  p_attendance_enabled boolean default false,
-  p_good_morning_seller_enabled boolean default false
+  p_lead_enabled boolean default null,
+  p_prospection_enabled boolean default null,
+  p_attendance_enabled boolean default null,
+  p_good_morning_seller_enabled boolean default null
 )
 returns jsonb
 language plpgsql
@@ -1598,10 +1597,10 @@ declare
   v_current record;
   v_actual record;
   v_result jsonb;
-  v_lead_enabled boolean := coalesce(p_lead_enabled, false);
-  v_prospection_enabled boolean := coalesce(p_prospection_enabled, false);
-  v_attendance_enabled boolean := coalesce(p_attendance_enabled, false);
-  v_good_morning_enabled boolean := coalesce(p_good_morning_seller_enabled, false);
+  v_lead_enabled boolean;
+  v_prospection_enabled boolean;
+  v_attendance_enabled boolean;
+  v_good_morning_enabled boolean;
 begin
   select * into v_session from app_private.session_user(p_session_token);
 
@@ -1632,6 +1631,15 @@ begin
   if not found then
     raise exception 'Cliente nao encontrado ou sem permissao.';
   end if;
+
+  v_lead_enabled := coalesce(p_lead_enabled, v_current.lead_enabled, true);
+  v_prospection_enabled := coalesce(p_prospection_enabled, v_current.prospection_enabled, false);
+  v_attendance_enabled := coalesce(p_attendance_enabled, v_current.attendance_enabled, false);
+  v_good_morning_enabled := coalesce(
+    p_good_morning_seller_enabled,
+    v_current.good_morning_seller_enabled,
+    false
+  );
 
   if v_good_morning_enabled and not v_attendance_enabled then
     raise exception 'Bom Dia Vendedor exige o modulo Atendimento ativo.';
@@ -1894,7 +1902,7 @@ create or replace function public.lc_create_store_with_module_access_v2(
   p_nick text,
   p_password text,
   p_technician_id uuid default null,
-  p_lead_enabled boolean default false,
+  p_lead_enabled boolean default true,
   p_prospection_enabled boolean default false,
   p_attendance_enabled boolean default false
 )
@@ -1930,10 +1938,10 @@ create or replace function public.lc_update_store_with_module_access_v2(
   p_nick text,
   p_password text default null,
   p_technician_id uuid default null,
-  p_lead_enabled boolean default false,
-  p_prospection_enabled boolean default false,
-  p_attendance_enabled boolean default false,
-  p_good_morning_seller_enabled boolean default false
+  p_lead_enabled boolean default null,
+  p_prospection_enabled boolean default null,
+  p_attendance_enabled boolean default null,
+  p_good_morning_seller_enabled boolean default null
 )
 returns jsonb
 language sql
