@@ -612,6 +612,11 @@
     return {
       licensed: payload.licensed === true,
       configured: payload.configured === true,
+      participationControlAvailable: firstDefined(
+        payload.participation_control_available,
+        payload.participationControlAvailable,
+        false
+      ) === true,
       goalMonth: String(firstDefined(payload.goal_month, payload.goalMonth, "")),
       savedGoalMonth: String(firstDefined(payload.saved_goal_month, payload.savedGoalMonth, "")),
       allocationMode: String(firstDefined(payload.allocation_mode, payload.allocationMode, "equal")) === "custom" ? "custom" : "equal",
@@ -637,6 +642,12 @@
           id: String(firstDefined(professional.id, professional.professional_id, "")),
           name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
           active: firstDefined(professional.is_active, professional.active, true) !== false,
+          enabled: firstDefined(
+            professional.good_morning_seller_enabled,
+            professional.goodMorningSellerEnabled,
+            professional.enabled,
+            true
+          ) !== false,
           goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, goalMonth, 0)),
           goalToday: normalizeMoney(firstDefined(goalToday, 0)),
           goalWeek: normalizeMoney(firstDefined(goalWeek, 0)),
@@ -673,25 +684,43 @@
     return Array.from({ length: count }, (_, index) => (base + (index < remainder ? 1 : 0)) / 100);
   }
 
+  function morningParticipants(professionals = []) {
+    return professionals.filter((professional) => professional.enabled !== false);
+  }
+
+  function applyEqualMorningGoals(draft) {
+    if (!draft) return;
+    const participants = morningParticipants(draft.professionals);
+    const goals = calculateEqualSellerGoals(draft.monthlyGoal, participants.length);
+    let participantIndex = 0;
+    draft.professionals.forEach((professional) => {
+      if (professional.enabled === false) {
+        professional.goalAmount = 0;
+        return;
+      }
+      professional.goalAmount = goals[participantIndex] || 0;
+      participantIndex += 1;
+    });
+  }
+
   function createMorningDraft() {
     const morning = state.morning;
     if (!morning) return null;
     const professionals = morning.professionals.map((professional) => ({
       id: professional.id,
       name: professional.name,
+      enabled: professional.enabled !== false,
       goalAmount: professional.goalAmount,
     }));
     const monthlyGoal = morning.configured ? morning.monthlyGoal : morning.lastMonthlyGoal;
     const mode = morning.allocationMode || "equal";
-    if (mode === "equal") {
-      const equalGoals = calculateEqualSellerGoals(monthlyGoal, professionals.length);
-      professionals.forEach((professional, index) => { professional.goalAmount = equalGoals[index] || 0; });
-    }
-    return { monthlyGoal, mode, professionals };
+    const draft = { monthlyGoal, mode, professionals };
+    if (mode === "equal") applyEqualMorningGoals(draft);
+    return draft;
   }
 
   function morningQueue() {
-    const professionals = state.morning?.professionals || [];
+    const professionals = morningParticipants(state.morning?.professionals || []);
     if (!professionals.length) return [];
     const currentIndex = professionals.findIndex((professional) => professional.current || professional.id === state.morning.currentProfessionalId);
     if (currentIndex <= 0) return professionals;
@@ -827,15 +856,46 @@
   }
 
   function morningDraftTotal() {
-    return (state.morningDraft?.professionals || []).reduce((sum, professional) => sum + normalizeMoney(professional.goalAmount), 0);
+    return morningParticipants(state.morningDraft?.professionals || [])
+      .reduce((sum, professional) => sum + normalizeMoney(professional.goalAmount), 0);
+  }
+
+  function renderMorningSellerConfigRow(professional, participants) {
+    const enabled = professional.enabled !== false;
+    const participationControlAvailable = state.morning?.participationControlAvailable === true;
+    const participantIndex = participants.findIndex((participant) => participant.id === professional.id);
+    const participantNumber = participantIndex + 1;
+    const isFirst = participantIndex === 0;
+    const isLast = participantIndex === participants.length - 1;
+    const escapedId = escapeHtml(professional.id);
+    const escapedName = escapeHtml(professional.name);
+    const queueLabel = enabled
+      ? (isFirst ? "Primeiro da fila" : `${participantNumber}º na fila`)
+      : "Fora da fila e do rateio";
+    const visibleGoal = enabled ? professional.goalAmount : 0;
+    const goalDisabled = state.morningDraft?.mode === "equal" || !enabled;
+    return `<article class="${enabled ? "" : "is-disabled"}" data-morning-professional="${escapedId}" data-morning-enabled="${enabled}">
+      <b title="${enabled ? `${participantNumber}º na fila` : "Fora da fila"}">${enabled ? participantNumber : `<i class="fa-solid fa-pause" aria-hidden="true"></i>`}</b>
+      <span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span>
+      <div class="attendance-morning-seller-identity"><strong>${escapedName}</strong><small>${queueLabel}</small><label class="attendance-morning-participation${participationControlAvailable ? "" : " is-unavailable"}"><input type="checkbox" data-morning-seller-enabled="${escapedId}" ${enabled ? "checked" : ""}${participationControlAvailable ? "" : " disabled"} aria-label="${participationControlAvailable ? `${enabled ? "Retirar" : "Incluir"} ${escapedName} da fila e do rateio do Bom Dia Vendedor` : "Atualização do banco necessária para controlar a participação"}" /><span class="attendance-morning-participation-switch" aria-hidden="true"></span><span>${participationControlAvailable ? (enabled ? "Participando" : "Pausado") : "Atualização pendente"}</span></label></div>
+      <label class="attendance-morning-seller-goal"><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapedId}" inputmode="decimal" value="${escapeHtml(String(visibleGoal || 0))}" aria-label="Meta mensal de ${escapedName}" ${goalDisabled ? "disabled" : ""} /></span></label>
+      <div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para cima" ${!enabled || isFirst ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapedId}" aria-label="Mover ${escapedName} para baixo" ${!enabled || isLast ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div>
+    </article>`;
   }
 
   function renderMorningConfig() {
     const draft = state.morningDraft;
     if (!state.morningConfigOpen || !draft) return "";
+    const participationControlAvailable = state.morning?.participationControlAvailable === true;
+    const participants = morningParticipants(draft.professionals);
     const total = morningDraftTotal();
     const difference = Math.round((normalizeMoney(draft.monthlyGoal) - total) * 100) / 100;
-    const balanced = Math.abs(difference) < 0.01;
+    const balanced = participants.length > 0 && Math.abs(difference) < 0.01;
+    const allocationStatus = participants.length === 0
+      ? "Ative ao menos 1 vendedor"
+      : balanced
+        ? "Distribuição completa"
+        : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
     return `<div class="attendance-morning-modal" role="presentation" data-morning-backdrop>
       <section class="attendance-morning-dialog" role="dialog" aria-modal="true" aria-labelledby="morningConfigTitle" data-morning-dialog>
         <header><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="morningConfigTitle">Meta e fila da equipe</h2><span>As metas são atualizadas para o mês atual.</span></div><button type="button" data-attendance-action="close-morning-config" aria-label="Fechar configurações"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
@@ -844,10 +904,10 @@
             <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" required /></span></label>
             <fieldset><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
           </div>
-          <div class="attendance-morning-config-heading"><div><strong>Vendedores e ordem da vez</strong><small>Use as setas para organizar quem aparece primeiro na fila.</small></div><span data-morning-allocation-status class="${balanced ? "is-balanced" : "is-warning"}">${balanced ? "Distribuição completa" : `${difference > 0 ? "Faltam" : "Excedeu"} ${escapeHtml(formatCurrency(Math.abs(difference)))}`}</span></div>
-          <div class="attendance-morning-seller-list">${draft.professionals.map((professional, index) => `<article data-morning-professional="${escapeHtml(professional.id)}"><b>${index + 1}</b><span class="attendance-morning-seller-avatar">${escapeHtml(initials(professional.name))}</span><div><strong>${escapeHtml(professional.name)}</strong><small>${index === 0 ? "Primeiro da fila" : `${index + 1}º na fila`}</small></div><label><span>Meta mensal</span><span><b>R$</b><input data-morning-seller-goal="${escapeHtml(professional.id)}" inputmode="decimal" value="${escapeHtml(String(professional.goalAmount || 0))}" ${draft.mode === "equal" ? "disabled" : ""} /></span></label><div class="attendance-morning-order-actions"><button type="button" data-attendance-action="move-morning-seller-up" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para cima" ${index === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button><button type="button" data-attendance-action="move-morning-seller-down" data-professional-id="${escapeHtml(professional.id)}" aria-label="Mover ${escapeHtml(professional.name)} para baixo" ${index === draft.professionals.length - 1 ? "disabled" : ""}><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button></div></article>`).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
+          <div class="attendance-morning-config-heading"><div><strong>Vendedores e ordem da vez</strong><small>${participationControlAvailable ? "Ative quem participa. Quem estiver pausado continua na equipe, mas fica fora da fila e do rateio." : "A fila atual permanece disponível; o controle individual será liberado após a atualização segura do banco."}</small></div><span data-morning-allocation-status class="${balanced ? "is-balanced" : "is-warning"}" role="status" aria-live="polite">${escapeHtml(allocationStatus)}</span></div>
+          <div class="attendance-morning-seller-list">${draft.professionals.map((professional) => renderMorningSellerConfigRow(professional, participants)).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
           ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
-          <footer><div><span>Total distribuído</span><strong data-morning-distributed-total>${escapeHtml(formatCurrency(total))}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Cancelar</button><button class="attendance-primary-button" type="submit" ${state.morningSaving || !draft.professionals.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button></footer>
+          <footer><div><span>Total distribuído · ${participants.length} ${participants.length === 1 ? "participante" : "participantes"}</span><strong data-morning-distributed-total>${escapeHtml(formatCurrency(total))}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Cancelar</button><button class="attendance-primary-button" type="submit" ${state.morningSaving || !participants.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button></footer>
         </form>
       </section>
     </div>`;
@@ -2341,13 +2401,12 @@
     state.morningDraft.monthlyGoal = normalizeMoney(form.elements.monthly_goal?.value);
     state.morningDraft.mode = form.querySelector('input[name="allocation_mode"]:checked')?.value === "custom" ? "custom" : "equal";
     state.morningDraft.professionals.forEach((professional) => {
+      const enabledInput = form.querySelector(`[data-morning-seller-enabled="${professional.id}"]`);
+      if (enabledInput) professional.enabled = enabledInput.checked;
       const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
-      if (input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
+      if (professional.enabled !== false && input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
     });
-    if (state.morningDraft.mode === "equal") {
-      const goals = calculateEqualSellerGoals(state.morningDraft.monthlyGoal, state.morningDraft.professionals.length);
-      state.morningDraft.professionals.forEach((professional, index) => { professional.goalAmount = goals[index] || 0; });
-    }
+    if (state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
   }
 
   function syncMorningConfigPreview() {
@@ -2356,11 +2415,17 @@
     captureMorningDraftInputs();
     state.morningDraft.professionals.forEach((professional) => {
       const input = form.querySelector(`[data-morning-seller-goal="${professional.id}"]`);
-      if (input && state.morningDraft.mode === "equal") input.value = String(professional.goalAmount.toFixed(2));
+      if (input) {
+        input.disabled = state.morningDraft.mode === "equal" || professional.enabled === false;
+        if (state.morningDraft.mode === "equal" || professional.enabled === false) {
+          input.value = String((professional.enabled === false ? 0 : professional.goalAmount).toFixed(2));
+        }
+      }
     });
+    const participants = morningParticipants(state.morningDraft.professionals);
     const total = morningDraftTotal();
     const difference = Math.round((normalizeMoney(state.morningDraft.monthlyGoal) - total) * 100) / 100;
-    const balanced = Math.abs(difference) < 0.01;
+    const balanced = participants.length > 0 && Math.abs(difference) < 0.01;
     const totalElement = form.querySelector("[data-morning-distributed-total]");
     const status = form.querySelector("[data-morning-allocation-status]");
     const submit = form.querySelector('button[type="submit"]');
@@ -2368,17 +2433,20 @@
     if (status) {
       status.classList.toggle("is-balanced", balanced);
       status.classList.toggle("is-warning", !balanced);
-      status.textContent = balanced
-        ? "Distribuição completa"
-        : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
+      status.textContent = participants.length === 0
+        ? "Ative ao menos 1 vendedor"
+        : balanced
+          ? "Distribuição completa"
+          : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
     }
-    if (submit) submit.disabled = state.morningSaving || !state.morningDraft.professionals.length || !balanced;
+    if (submit) submit.disabled = state.morningSaving || !participants.length || !balanced;
   }
 
   async function saveMorningSettings(form) {
     if (state.morningSaving || !state.morningDraft || !state.selectedStoreId) return;
     captureMorningDraftInputs();
     const monthlyGoal = normalizeMoney(state.morningDraft.monthlyGoal);
+    const participants = morningParticipants(state.morningDraft.professionals);
     const total = morningDraftTotal();
     if (monthlyGoal <= 0) {
       state.morningError = "Informe uma meta mensal maior que zero.";
@@ -2387,6 +2455,11 @@
     }
     if (!state.morningDraft.professionals.length) {
       state.morningError = "Cadastre ao menos um vendedor ativo na equipe deste cliente.";
+      refreshMorningRegion();
+      return;
+    }
+    if (!participants.length) {
+      state.morningError = "Ative ao menos um vendedor para participar da fila e do rateio.";
       refreshMorningRegion();
       return;
     }
@@ -2399,45 +2472,71 @@
     state.morningSaving = true;
     state.morningError = "";
     refreshMorningRegion();
+    const saveContext = {
+      storeId: state.selectedStoreId,
+      generation: state.contextGeneration,
+    };
+    const isCurrent = () => state.active
+      && state.selectedStoreId === saveContext.storeId
+      && state.contextGeneration === saveContext.generation;
     try {
+      const participantPositions = new Map(participants.map((professional, index) => [professional.id, index + 1]));
       const raw = await rpc("morningSave", {
-        p_store_id: state.selectedStoreId,
+        p_store_id: saveContext.storeId,
         p_monthly_goal: monthlyGoal,
         p_allocation_mode: state.morningDraft.mode,
-        p_allocations: state.morningDraft.professionals.map((professional, index) => ({
+        p_allocations: state.morningDraft.professionals.map((professional) => ({
           professional_id: professional.id,
-          goal_amount: normalizeMoney(professional.goalAmount).toFixed(2),
-          queue_position: index + 1,
+          enabled: professional.enabled !== false,
+          goal_amount: professional.enabled === false ? "0.00" : normalizeMoney(professional.goalAmount).toFixed(2),
+          queue_position: professional.enabled === false
+            ? null
+            : participantPositions.get(professional.id),
         })),
       });
+      if (!isCurrent()) return;
       state.morning = normalizeMorningWorkspace(raw);
       state.morningConfigOpen = false;
       state.morningDraft = null;
       notify("Meta e fila do Bom Dia Vendedor atualizadas.", "success");
     } catch (error) {
-      state.morningError = readableError(error);
+      if (isCurrent()) state.morningError = readableError(error);
     } finally {
-      state.morningSaving = false;
-      refreshMorningRegion();
+      if (isCurrent()) {
+        state.morningSaving = false;
+        refreshMorningRegion();
+      }
     }
   }
 
   async function advanceMorningTurn() {
     if (state.morningSaving || !state.selectedStoreId) return;
+    const advanceContext = {
+      storeId: state.selectedStoreId,
+      generation: state.contextGeneration,
+    };
+    const isCurrent = () => state.active
+      && state.selectedStoreId === advanceContext.storeId
+      && state.contextGeneration === advanceContext.generation;
     state.morningSaving = true;
     state.morningError = "";
     refreshMorningRegion();
     try {
-      const raw = await rpc("morningAdvance", { p_store_id: state.selectedStoreId });
+      const raw = await rpc("morningAdvance", { p_store_id: advanceContext.storeId });
+      if (!isCurrent()) return;
       state.morning = normalizeMorningWorkspace(raw);
       const current = morningQueue()[0];
       notify(current ? `${current.name} está na vez agora.` : "Fila atualizada.", "success");
     } catch (error) {
-      state.morningError = readableError(error);
-      notify(state.morningError, "error");
+      if (isCurrent()) {
+        state.morningError = readableError(error);
+        notify(state.morningError, "error");
+      }
     } finally {
-      state.morningSaving = false;
-      refreshMorningRegion();
+      if (isCurrent()) {
+        state.morningSaving = false;
+        refreshMorningRegion();
+      }
     }
   }
 
@@ -2512,13 +2611,23 @@
       syncPurchaseFields();
       return;
     }
+    if (target.matches("[data-morning-seller-enabled]")) {
+      const professionalId = String(target.dataset.morningSellerEnabled || "");
+      captureMorningDraftInputs();
+      if (state.morningDraft?.mode === "equal") applyEqualMorningGoals(state.morningDraft);
+      state.morningError = morningParticipants(state.morningDraft?.professionals || []).length
+        ? ""
+        : "Ative ao menos um vendedor para participar da fila e do rateio.";
+      refreshMorningRegion();
+      queueMicrotask(() => {
+        state.root?.querySelector(`[data-morning-seller-enabled="${professionalId}"]`)?.focus();
+      });
+      return;
+    }
     if (target.matches('[data-morning-config-form] input[name="allocation_mode"]')) {
       captureMorningDraftInputs();
       state.morningDraft.mode = target.value === "custom" ? "custom" : "equal";
-      if (state.morningDraft.mode === "equal") {
-        const goals = calculateEqualSellerGoals(state.morningDraft.monthlyGoal, state.morningDraft.professionals.length);
-        state.morningDraft.professionals.forEach((professional, index) => { professional.goalAmount = goals[index] || 0; });
-      }
+      if (state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
       refreshMorningRegion();
       return;
     }
@@ -2585,10 +2694,13 @@
     if (action === "move-morning-seller-up" || action === "move-morning-seller-down") {
       captureMorningDraftInputs();
       const professionalId = String(button.dataset.professionalId || "");
-      const index = state.morningDraft?.professionals.findIndex((professional) => professional.id === professionalId) ?? -1;
-      const nextIndex = action === "move-morning-seller-up" ? index - 1 : index + 1;
-      if (index >= 0 && nextIndex >= 0 && nextIndex < state.morningDraft.professionals.length) {
-        [state.morningDraft.professionals[index], state.morningDraft.professionals[nextIndex]] = [state.morningDraft.professionals[nextIndex], state.morningDraft.professionals[index]];
+      const participants = morningParticipants(state.morningDraft?.professionals || []);
+      const participantIndex = participants.findIndex((professional) => professional.id === professionalId);
+      const nextParticipantIndex = action === "move-morning-seller-up" ? participantIndex - 1 : participantIndex + 1;
+      if (participantIndex >= 0 && nextParticipantIndex >= 0 && nextParticipantIndex < participants.length) {
+        const currentIndex = state.morningDraft.professionals.indexOf(participants[participantIndex]);
+        const nextIndex = state.morningDraft.professionals.indexOf(participants[nextParticipantIndex]);
+        [state.morningDraft.professionals[currentIndex], state.morningDraft.professionals[nextIndex]] = [state.morningDraft.professionals[nextIndex], state.morningDraft.professionals[currentIndex]];
         refreshMorningRegion();
       }
       return;
@@ -2658,6 +2770,7 @@
     state.bridge = { ...state.bridge, ...nextBridge };
     state.active = true;
     state.view = "operations";
+    state.morningSaving = false;
     state.contextGeneration += 1;
     state.feedback = null;
     syncContext({ preserveSelection: false });
@@ -2673,6 +2786,7 @@
     if (ownAnalysis) destroyEmbeddedAnalysis(ownAnalysis);
     state.active = false;
     state.loading = false;
+    state.morningSaving = false;
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
@@ -2724,6 +2838,7 @@
     captureDraft();
     state.bridge = { ...state.bridge, ...nextContext };
     state.contextGeneration += 1;
+    state.morningSaving = false;
     syncContext({ preserveSelection: true });
     if (state.active) {
       mount(nextContext.root || nextContext.mountTarget);
@@ -2835,7 +2950,7 @@
             p_store_id: "uuid",
             p_monthly_goal: "numeric",
             p_allocation_mode: "equal | custom",
-            p_allocations: "jsonb array",
+            p_allocations: "jsonb array with every active professional: { professional_id, enabled, goal_amount, queue_position }",
           },
           returns: "same workspace contract",
         },

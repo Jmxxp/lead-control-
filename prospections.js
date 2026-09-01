@@ -15,9 +15,19 @@
     dailyGoal: 15,
     bonusMinimum: 300,
     bonusAmount: 20,
+    bonusPaymentWeekday: 1,
     accentColor: "#16855f",
     logoBackgroundColor: "#ffffff",
   });
+  const BONUS_PAYMENT_WEEKDAYS = Object.freeze([
+    [1, "Segunda-feira"],
+    [2, "Terça-feira"],
+    [3, "Quarta-feira"],
+    [4, "Quinta-feira"],
+    [5, "Sexta-feira"],
+    [6, "Sábado"],
+    [7, "Domingo"],
+  ]);
   const BONUS_ALL_STORES = "all-stores";
   const ATTENDANCE_TYPES = Object.freeze({
     all: { label: "Todos os tipos", icon: "fa-layer-group" },
@@ -64,6 +74,8 @@
   let bonusStartDate = "";
   let bonusEndDate = "";
   let bonusProfessionalId = "all";
+  let weeklyBonusSummary = [];
+  let weeklyBonusSummaryAvailable = true;
   let bonusPurchases = [];
   let bonusRequest = 0;
   let pendingPurchaseId = "";
@@ -429,13 +441,34 @@
     };
   }
 
+  function mapWeeklyBonusSummary(row) {
+    const paymentWeekday = Number(row.bonus_payment_weekday ?? DEFAULT_SETTINGS.bonusPaymentWeekday);
+    return {
+      storeId: String(row.store_id || ""),
+      storeName: String(row.store_name || storeById(row.store_id)?.name || "Cliente"),
+      weekStart: String(row.week_start || ""),
+      weekEnd: String(row.week_end || ""),
+      bonusPaymentWeekday: Number.isInteger(paymentWeekday) && paymentWeekday >= 1 && paymentWeekday <= 7
+        ? paymentWeekday
+        : DEFAULT_SETTINGS.bonusPaymentWeekday,
+      paymentDate: String(row.payment_date || ""),
+      purchaseCount: Math.max(0, Number(row.purchase_count || 0)),
+      eligiblePurchaseCount: Math.max(0, Number(row.eligible_purchase_count || 0)),
+      totalBonus: Math.max(0, Number(row.total_bonus || 0)),
+    };
+  }
+
   function mapSettings(row) {
+    const paymentWeekday = Number(row.bonus_payment_weekday ?? DEFAULT_SETTINGS.bonusPaymentWeekday);
     return {
       storeId: row.store_id,
       revision: row.revision || "",
       dailyGoal: Number(row.daily_goal ?? DEFAULT_SETTINGS.dailyGoal),
       bonusMinimum: Number(row.bonus_minimum ?? DEFAULT_SETTINGS.bonusMinimum),
       bonusAmount: Number(row.bonus_amount ?? DEFAULT_SETTINGS.bonusAmount),
+      bonusPaymentWeekday: Number.isInteger(paymentWeekday) && paymentWeekday >= 1 && paymentWeekday <= 7
+        ? paymentWeekday
+        : DEFAULT_SETTINGS.bonusPaymentWeekday,
       accentColor: row.accent_color || DEFAULT_SETTINGS.accentColor,
       logoBackgroundColor: row.logo_background_color || DEFAULT_SETTINGS.logoBackgroundColor,
     };
@@ -499,6 +532,12 @@
 
   function storeById(storeId) {
     return (bridge?.stores || []).find((store) => store.id === storeId) || null;
+  }
+
+  function canConfigureBonusPayment(store) {
+    if (bridge?.profile?.role === "admin") return true;
+    if (bridge?.profile?.role !== "technician" || !store) return false;
+    return String(store.technicianId || store.technician_id || "") === String(bridge.profile.id || "");
   }
 
   function canUseAttendanceOpportunities(storeId = selectedStoreId) {
@@ -820,18 +859,30 @@
     return Boolean(state);
   }
 
+  function isMissingWeeklyBonusSummaryRpc(error) {
+    const message = String(error?.message || error || "");
+    return error?.code === "PGRST202"
+      || /lc_get_prospection_weekly_bonus_summary/i.test(message)
+        && /does not exist|could not find the function|schema cache/i.test(message);
+  }
+
+  async function loadWeeklyBonusSummary() {
+    try {
+      const raw = await bridge.rpc("lc_get_prospection_weekly_bonus_summary", { p_store_id: null });
+      weeklyBonusSummary = (Array.isArray(raw) ? raw : []).map(mapWeeklyBonusSummary);
+      weeklyBonusSummaryAvailable = true;
+    } catch (error) {
+      if (!isMissingWeeklyBonusSummaryRpc(error)) throw error;
+      weeklyBonusSummary = [];
+      weeklyBonusSummaryAvailable = false;
+    }
+  }
+
   async function loadData() {
-    const [prospectRows, configurationRows, bonusRowsResult] = await Promise.all([
+    const [prospectRows, configurationRows] = await Promise.all([
       bridge.rpc("lc_list_prospections"),
       bridge.rpc("lc_get_prospection_configuration"),
-      bridge.rpc("lc_list_prospection_bonus_purchases", {
-        p_start_date: bonusStartDate || null,
-        p_end_date: bonusEndDate || null,
-        p_store_id: null,
-      }).catch((error) => {
-        if (/does not exist|could not find the function/i.test(String(error?.message || error))) return [];
-        throw error;
-      }),
+      loadWeeklyBonusSummary(),
     ]);
     prospects = (Array.isArray(prospectRows) ? prospectRows : []).map(mapProspect);
     const configuration = normalizeRpcObject(configurationRows);
@@ -839,7 +890,6 @@
     professionals = (configuration.professionals || []).map(mapProfessional);
     tagCategories = (configuration.categories || []).map(mapTagCategory);
     tags = (configuration.tags || []).map(mapTag);
-    bonusPurchases = (Array.isArray(bonusRowsResult) ? bonusRowsResult : []).map(mapBonusPurchase);
     configurationNeedsRefresh = false;
   }
 
@@ -848,16 +898,11 @@
       await loadData();
       return;
     }
-    const [rows, bonusRowsResult] = await Promise.all([
+    const [rows] = await Promise.all([
       bridge.rpc("lc_list_prospections"),
-      bridge.rpc("lc_list_prospection_bonus_purchases", {
-        p_start_date: formatDateInput(startOfWeek(new Date())),
-        p_end_date: formatDateInput(new Date()),
-        p_store_id: null,
-      }).catch(() => []),
+      loadWeeklyBonusSummary(),
     ]);
     prospects = (Array.isArray(rows) ? rows : []).map(mapProspect);
-    bonusPurchases = (Array.isArray(bonusRowsResult) ? bonusRowsResult : []).map(mapBonusPurchase);
   }
 
   async function activate(nextBridge) {
@@ -890,6 +935,8 @@
     bonusStartDate = "";
     bonusEndDate = "";
     bonusProfessionalId = "all";
+    weeklyBonusSummary = [];
+    weeklyBonusSummaryAvailable = true;
     bonusPurchases = [];
     bonusRequest += 1;
     initializeInsightDates();
@@ -921,6 +968,9 @@
     active = false;
     upgradePreview = false;
     archiveProspects = [];
+    weeklyBonusSummary = [];
+    weeklyBonusSummaryAvailable = true;
+    bonusPurchases = [];
     attendanceListRequest += 1;
     attendanceListState = null;
     prospectPrefill = null;
@@ -1030,32 +1080,58 @@
     </section>`;
   }
 
+  function bonusPaymentWeekdayLabel(value) {
+    return BONUS_PAYMENT_WEEKDAYS.find(([weekday]) => weekday === Number(value))?.[1] || "Segunda-feira";
+  }
+
+  function bonusPaymentWeekdayOptions(selectedValue = DEFAULT_SETTINGS.bonusPaymentWeekday) {
+    const selected = Number(selectedValue);
+    return BONUS_PAYMENT_WEEKDAYS
+      .map(([weekday, label]) => `<option value="${weekday}"${selected === weekday ? " selected" : ""}>${escapeHtml(label)}</option>`)
+      .join("");
+  }
+
   function weeklyBonusPreviewMarkup(storeIds) {
     const allowed = new Set(Array.isArray(storeIds) ? storeIds : [storeIds]);
-    const rows = bonusPurchases
-      .filter((row) => allowed.has(row.storeId))
-      .sort((a, b) => new Date(b.purchasedAt || 0) - new Date(a.purchasedAt || 0));
-    const eligibleRows = rows.filter(isBonusEligible);
-    const grouped = new Map();
-    eligibleRows.forEach((row) => {
-      const key = row.professionalId || `name:${normalize(row.professionalName)}`;
-      const item = grouped.get(key) || { name: row.professionalName || "Sem responsável", clients: 0, amount: 0 };
-      item.clients += 1;
-      item.amount += Number(row.bonusAwardedAmount ?? row.bonusAmount ?? 0);
-      grouped.set(key, item);
-    });
-    const people = [...grouped.values()].sort((a, b) => b.amount - a.amount || b.clients - a.clients);
-    const total = bonusFor(eligibleRows);
-    return `<section class="prospection-weekly-bonus" aria-labelledby="weekly-bonus-title">
+    const rows = weeklyBonusSummary.filter((row) => allowed.has(row.storeId));
+    const purchaseCount = rows.reduce((sum, row) => sum + row.purchaseCount, 0);
+    const eligiblePurchaseCount = rows.reduce((sum, row) => sum + row.eligiblePurchaseCount, 0);
+    const total = rows.reduce((sum, row) => sum + row.totalBonus, 0);
+    const fallbackStart = formatDateInput(startOfWeek(new Date()));
+    const fallbackEnd = formatDateInput(new Date());
+    const weekStarts = rows.map((row) => row.weekStart).filter(Boolean).sort();
+    const weekEnds = rows.map((row) => row.weekEnd).filter(Boolean).sort();
+    const weekStart = weekStarts[0] || fallbackStart;
+    const weekEnd = weekEnds[weekEnds.length - 1] || fallbackEnd;
+    const paymentDates = [...new Set(rows.map((row) => row.paymentDate).filter(Boolean))].sort();
+    const paymentWeekdays = [...new Set(rows.map((row) => row.bonusPaymentWeekday).filter(Boolean))];
+    const periodLabel = `${formatInputDateDisplay(weekStart)} a ${formatInputDateDisplay(weekEnd)}`;
+    const paymentLabel = paymentDates.length
+      ? formatInputDateDisplay(paymentDates[0])
+      : weeklyBonusSummaryAvailable
+        ? "Após o fechamento"
+        : "Atualização pendente";
+    const paymentHelper = !weeklyBonusSummaryAvailable
+      ? "Atualização necessária"
+      : paymentDates.length > 1
+        ? `${paymentDates.length} datas conforme cada cliente`
+        : paymentWeekdays.length === 1
+          ? `${bonusPaymentWeekdayLabel(paymentWeekdays[0])} da semana seguinte`
+          : "Conforme a regra de cada cliente";
+    const availabilityCopy = weeklyBonusSummaryAvailable
+      ? `Período semanal contínuo, inclusive quando atravessa dois meses · ${periodLabel}`
+      : "O resumo agregado será exibido após a atualização segura do banco.";
+    return `<section class="prospection-weekly-bonus${weeklyBonusSummaryAvailable ? "" : " is-unavailable"}" aria-labelledby="weekly-bonus-title">
       <div class="prospection-weekly-bonus-summary">
         <span class="prospection-weekly-bonus-icon"><i class="fa-solid fa-gift" aria-hidden="true"></i></span>
-        <div><p class="eyebrow">Fechamento desta semana</p><h3 id="weekly-bonus-title">Quem bonificar e quem comprou</h3><span>Compras rastreadas de segunda-feira até hoje.</span></div>
-        <div class="prospection-weekly-bonus-total"><small>Total a bonificar</small><strong>${formatCurrency(total)}</strong><span>${eligibleRows.length} compra${eligibleRows.length === 1 ? "" : "s"} elegível${eligibleRows.length === 1 ? "" : "eis"}</span></div>
+        <div class="prospection-weekly-bonus-copy"><p class="eyebrow">Fechamento semanal</p><h3 id="weekly-bonus-title">Bonificações da semana</h3><span>${escapeHtml(availabilityCopy)}</span></div>
+        <div class="prospection-weekly-bonus-total"><small>Total a bonificar</small><strong>${weeklyBonusSummaryAvailable ? formatCurrency(total) : "—"}</strong><span>${weeklyBonusSummaryAvailable ? `${eligiblePurchaseCount} compra${eligiblePurchaseCount === 1 ? "" : "s"} elegível${eligiblePurchaseCount === 1 ? "" : "eis"}` : "Resumo indisponível"}</span></div>
         <button class="prospection-button" type="button" data-prospection-action="open-bonus"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Ver fechamento</button>
       </div>
-      <div class="prospection-weekly-bonus-detail">
-        <div><small>Equipe a bonificar</small>${people.length ? `<ul>${people.slice(0, 5).map((person) => `<li><span>${escapeHtml(person.name)}</span><strong>${formatCurrency(person.amount)}</strong><small>${person.clients} cliente${person.clients === 1 ? "" : "s"}</small></li>`).join("")}</ul>` : `<p>Nenhum bônus devido até agora.</p>`}</div>
-        <div><small>Clientes que compraram</small>${rows.length ? `<ul>${rows.slice(0, 5).map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${formatCurrency(row.purchaseAmount)}</strong><small>${escapeHtml(row.storeName)}${row.purchaseOrder ? ` · OS ${escapeHtml(row.purchaseOrder)}` : ""}</small></li>`).join("")}</ul>` : `<p>Nenhuma compra de prospecção nesta semana.</p>`}</div>
+      <div class="prospection-weekly-bonus-facts" aria-label="Resumo do fechamento semanal">
+        <span><i class="fa-regular fa-calendar" aria-hidden="true"></i><small>Período</small><strong>${escapeHtml(periodLabel)}</strong></span>
+        <span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i><small>Compras rastreadas</small><strong>${weeklyBonusSummaryAvailable ? purchaseCount : "—"}</strong></span>
+        <span><i class="fa-regular fa-credit-card" aria-hidden="true"></i><small>Próximo pagamento</small><strong>${escapeHtml(paymentLabel)}</strong><em>${escapeHtml(paymentHelper)}</em></span>
       </div>
     </section>`;
   }
@@ -2347,22 +2423,40 @@
     return bonusPurchases.filter((row) => allowed.has(row.storeId) && row.purchasedAt && isInOptionalRange(row.purchasedAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
   }
 
-  function bonusActivityRows(storeIds) {
+  function bonusEventRows(storeIds, dateField) {
     const allowed = new Set(storeIds);
-    return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row.createdAt, bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
+    return prospects.filter((row) => allowed.has(row.storeId) && isInOptionalRange(row[dateField], bonusStartDate, bonusEndDate) && matchesProfessionalFilter(row, bonusProfessionalId));
   }
 
-  function bonusProfessionalPerformanceMarkup(activityRows, purchaseRows) {
+  function bonusInsightKpisMarkup(createdRows, returnedRows, purchaseRows) {
+    const purchasedRows = purchaseRows.filter((row) => row.purchasedAt);
+    const eligibleRows = purchasedRows.filter(isBonusEligible);
+    const revenue = purchasedRows.reduce((sum, row) => sum + row.purchaseAmount, 0);
+    const ticket = purchasedRows.length ? revenue / purchasedRows.length : 0;
+    const definitions = [
+      ["fa-phone", "Prospecções", createdRows.length, "Criadas no período"],
+      ["fa-store", "Retornaram", returnedRows.length, "Retornos no período"],
+      ["fa-bag-shopping", "Compraram", purchasedRows.length, "Compras no período"],
+      ["fa-sack-dollar", "Faturamento", formatCurrency(revenue), `${formatCurrency(ticket)} de ticket médio`],
+      ["fa-gift", "Bonificação", formatCurrency(bonusFor(eligibleRows)), `${eligibleRows.length} compras válidas`],
+    ];
+    return `<section class="prospection-insight-kpis">${definitions.map(([icon, label, value, helper]) => `<article><i class="fa-solid ${icon}"></i><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(helper)}</small></article>`).join("")}</section>`;
+  }
+
+  function bonusProfessionalPerformanceMarkup(createdRows, returnedRows, purchaseRows) {
     const grouped = new Map();
     const ensure = (row) => {
       const key = row.professionalId || `name:${normalize(row.professionalName || "Sem responsável")}`;
       if (!grouped.has(key)) grouped.set(key, { name: row.professionalName || "Sem responsável", total: 0, returned: 0, purchased: 0, revenue: 0, bonus: 0 });
       return grouped.get(key);
     };
-    activityRows.forEach((row) => {
+    createdRows.forEach((row) => {
       const item = ensure(row);
       item.total += 1;
-      if (row.returnedAt) item.returned += 1;
+    });
+    returnedRows.forEach((row) => {
+      const item = ensure(row);
+      item.returned += 1;
     });
     purchaseRows.forEach((row) => {
       const item = ensure(row);
@@ -2372,7 +2466,7 @@
     });
     const entries = [...grouped.values()].sort((a, b) => b.bonus - a.bonus || b.purchased - a.purchased || b.revenue - a.revenue);
     if (!entries.length) return emptyMarkup("Nenhum responsável no período", "As atividades e compras aparecerão aqui após os primeiros registros.");
-    return `<div class="prospection-performance-table" role="table"><div class="prospection-performance-head" role="row"><span>Responsável</span><span>Feitas</span><span>Retornaram</span><span>Compraram</span><span>Faturamento</span><span>Bônus</span></div>${entries.map((row, index) => `<div class="prospection-performance-row" role="row"><span><b>${index + 1}</b><strong>${escapeHtml(row.name)}</strong></span><span>${row.total}</span><span>${row.returned}<small>${percentage(row.returned, row.total)}%</small></span><span>${row.purchased}<small>${percentage(row.purchased, row.total)}%</small></span><span>${formatCurrency(row.revenue)}</span><span class="is-bonus">${formatCurrency(row.bonus)}</span></div>`).join("")}</div>`;
+    return `<div class="prospection-performance-table" role="table"><div class="prospection-performance-head" role="row"><span>Responsável</span><span>Feitas</span><span>Retornaram</span><span>Compraram</span><span>Faturamento</span><span>Bônus</span></div>${entries.map((row, index) => `<div class="prospection-performance-row" role="row"><span><b>${index + 1}</b><strong>${escapeHtml(row.name)}</strong></span><span>${row.total}<small>no período</small></span><span>${row.returned}<small>no período</small></span><span>${row.purchased}<small>no período</small></span><span>${formatCurrency(row.revenue)}</span><span class="is-bonus">${formatCurrency(row.bonus)}</span></div>`).join("")}</div>`;
   }
 
   function bonusPurchaseListMarkup(rows) {
@@ -2442,8 +2536,8 @@
       return;
     }
     const rows = bonusRows(storeIds);
-    const activityRows = bonusActivityRows(storeIds);
-    const eligibleRows = rows.filter(isBonusEligible);
+    const createdRows = bonusEventRows(storeIds, "createdAt");
+    const returnedRows = bonusEventRows(storeIds, "returnedAt");
     const titleStore = bonusStoreId === BONUS_ALL_STORES ? null : storeById(bonusStoreId);
     openDialog(dialogShell({
       eyebrow: "Remuneração variável",
@@ -2458,8 +2552,8 @@
         <label>Responsável<select name="professionalId">${professionalFilterOptions(storeIds, bonusProfessionalId)}</select></label>
         <button class="prospection-button" type="submit"><i class="fa-solid fa-filter"></i>Aplicar período</button>
       </form>
-      ${insightKpisMarkup(activityRows, { bonusRows: eligibleRows, purchaseRows: rows })}
-      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Pagamento da equipe</p><h3>Bonificação por responsável</h3><span>Produção do período e compras que atingiram o mínimo configurado.</span></div></div>${bonusProfessionalPerformanceMarkup(activityRows, rows)}</article>
+      ${bonusInsightKpisMarkup(createdRows, returnedRows, rows)}
+      <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Pagamento da equipe</p><h3>Bonificação por responsável</h3><span>Cada evento é contado pela data em que ocorreu, mesmo quando a semana atravessa dois meses.</span></div></div>${bonusProfessionalPerformanceMarkup(createdRows, returnedRows, rows)}</article>
       <article class="prospection-panel"><div class="prospection-panel-heading"><div><p class="eyebrow">Conferência</p><h3>Clientes, faturamento e OS</h3><span>Rastreabilidade completa de cada compra do período.</span></div></div>${bonusPurchaseListMarkup(rows)}</article>`,
     }));
   }
@@ -2496,6 +2590,7 @@
         daily_goal: numberValue(draft.settings.dailyGoal),
         bonus_minimum: numberValue(draft.settings.bonusMinimum),
         bonus_amount: numberValue(draft.settings.bonusAmount),
+        bonus_payment_weekday: numberValue(draft.settings.bonusPaymentWeekday),
         accent_color: String(draft.settings.accentColor || DEFAULT_SETTINGS.accentColor).toLowerCase(),
         logo_background_color: String(draft.settings.logoBackgroundColor || DEFAULT_SETTINGS.logoBackgroundColor).toLowerCase(),
       },
@@ -2943,6 +3038,13 @@
   function configurationRowMarkup(store) {
     const draft = configurationDraftFor(store.id) || createConfigurationDraft(store.id);
     const config = draft.settings;
+    const canManagePaymentSchedule = canConfigureBonusPayment(store);
+    const paymentSchedulePending = !weeklyBonusSummaryAvailable || !canManagePaymentSchedule;
+    const paymentScheduleHelper = !canManagePaymentSchedule
+      ? "Somente o Admin ou a agência responsável pode alterar este dia."
+      : !weeklyBonusSummaryAvailable
+        ? "Disponível após a atualização segura do banco."
+        : "Pagamento na semana seguinte ao fechamento de domingo.";
     return `<article class="admin-store-settings-panel prospection-config-row" data-config-store="${escapeHtml(store.id)}" style="--account-color:${escapeHtml(config.accentColor)}">
       <div class="prospection-config-row-header"><div class="prospection-account-identity">${accountVisual(store.avatarUrl || "", store.name, "fa-store", config.logoBackgroundColor)}<div><strong>${escapeHtml(store.name)}</strong><span>Metas, identidade, categorias, subcategorias e equipe</span></div></div>${["admin", "technician"].includes(bridge.profile.role) ? `<button class="secondary-button prospection-import-trigger" type="button" data-prospection-action="open-import" data-store-id="${escapeHtml(store.id)}"><i class="fa-solid fa-file-import"></i><span>Importar dados</span></button>` : ""}</div>
       <div class="prospection-config-section-heading"><div><span>Metas e identidade</span><small>Regras comerciais e aparência desta loja.</small></div></div>
@@ -2950,6 +3052,7 @@
         <label class="prospection-field">Meta diária<input name="dailyGoal" data-config-setting="dailyGoal" type="number" min="1" max="9999" value="${config.dailyGoal}" /></label>
         <label class="prospection-field">Compra mínima para bônus<input name="bonusMinimum" data-config-setting="bonusMinimum" type="number" min="0" step="0.01" value="${config.bonusMinimum}" /></label>
         <label class="prospection-field">Bônus por compra válida<input name="bonusAmount" data-config-setting="bonusAmount" type="number" min="0" step="0.01" value="${config.bonusAmount}" /></label>
+        <label class="prospection-field prospection-payment-schedule-field"><span>Dia do pagamento</span><select name="bonusPaymentWeekday" data-config-setting="bonusPaymentWeekday"${paymentSchedulePending ? " disabled" : ""}>${bonusPaymentWeekdayOptions(config.bonusPaymentWeekday)}</select><small>${escapeHtml(paymentScheduleHelper)}</small></label>
         <label class="prospection-field prospection-color-field"><span>Cor de destaque</span><span class="prospection-color-control"><input name="accentColor" data-config-setting="accentColor" type="color" value="${escapeHtml(config.accentColor)}" /><code>${escapeHtml(config.accentColor.toUpperCase())}</code></span></label>
         <label class="prospection-field prospection-color-field"><span>Fundo da logo</span><span class="prospection-color-control"><input name="logoBackgroundColor" data-config-setting="logoBackgroundColor" type="color" value="${escapeHtml(config.logoBackgroundColor)}" /><code>${escapeHtml(config.logoBackgroundColor.toUpperCase())}</code></span></label>
       </div>
@@ -3137,6 +3240,7 @@
     if (!Number.isInteger(nextSettings.daily_goal) || nextSettings.daily_goal < 1 || nextSettings.daily_goal > 9999) return "Informe uma meta diária entre 1 e 9.999.";
     if (!Number.isFinite(nextSettings.bonus_minimum) || nextSettings.bonus_minimum < 0) return "A compra mínima não pode ser negativa.";
     if (!Number.isFinite(nextSettings.bonus_amount) || nextSettings.bonus_amount < 0) return "O bônus por compra não pode ser negativo.";
+    if (!Number.isInteger(nextSettings.bonus_payment_weekday) || nextSettings.bonus_payment_weekday < 1 || nextSettings.bonus_payment_weekday > 7) return "Escolha um dia válido para o pagamento semanal.";
     if (!/^#[0-9a-f]{6}$/i.test(nextSettings.accent_color) || !/^#[0-9a-f]{6}$/i.test(nextSettings.logo_background_color)) return "Escolha cores válidas para a loja e para o fundo da logo.";
 
     const categoryNames = new Set();

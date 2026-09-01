@@ -125,6 +125,17 @@ body.is-dark .module-switcher-button.is-active {
   font-size: 1rem;
 }
 
+.prospection-weekly-bonus-copy {
+  min-width: 0;
+}
+
+.prospection-weekly-bonus-copy > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .prospection-weekly-bonus-summary > div > span,
 .prospection-weekly-bonus-total small,
 .prospection-weekly-bonus-total span {
@@ -144,6 +155,71 @@ body.is-dark .module-switcher-button.is-active {
   color: var(--prospection-green-strong);
   font-size: 1.35rem;
   letter-spacing: -0.04em;
+}
+
+.prospection-weekly-bonus-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+}
+
+.prospection-weekly-bonus-facts > span {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 1px 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--prospection-green) 14%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.prospection-weekly-bonus-facts i {
+  grid-row: 1 / span 3;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  align-self: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--prospection-green) 11%, transparent);
+  color: var(--prospection-green);
+  font-size: 0.76rem;
+}
+
+.prospection-weekly-bonus-facts small,
+.prospection-weekly-bonus-facts strong,
+.prospection-weekly-bonus-facts em {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prospection-weekly-bonus-facts small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.prospection-weekly-bonus-facts strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.prospection-weekly-bonus-facts em {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-style: normal;
+}
+
+.prospection-weekly-bonus.is-unavailable .prospection-weekly-bonus-icon,
+.prospection-weekly-bonus.is-unavailable .prospection-weekly-bonus-facts {
+  opacity: 0.72;
 }
 
 .prospection-weekly-bonus-detail {
@@ -213,8 +289,14 @@ body.is-dark .module-switcher-button.is-active {
   }
 
   .prospection-weekly-bonus-total {
+    grid-column: 1 / -1;
     padding-left: 0;
     border-left: 0;
+  }
+
+  .prospection-weekly-bonus-summary > .prospection-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 
@@ -239,10 +321,30 @@ body.is-dark .module-switcher-button.is-active {
     grid-template-columns: 1fr;
   }
 
+  .prospection-weekly-bonus-facts {
+    grid-template-columns: 1fr;
+  }
+
   .prospection-weekly-bonus-detail > div + div {
     border-top: 1px solid var(--border);
     border-left: 0;
   }
+}
+
+body.is-dark .prospection-weekly-bonus {
+  border-color: rgba(47, 196, 154, 0.28);
+  background: linear-gradient(145deg, #121b19, #0d1311);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.3);
+}
+
+body.is-dark .prospection-weekly-bonus-facts {
+  border-top-color: rgba(255, 255, 255, 0.1);
+  background: rgba(4, 12, 10, 0.34);
+}
+
+body.is-dark .prospection-weekly-bonus-facts > span {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .prospection-embedded-analysis {
@@ -1036,7 +1138,8 @@ body.is-dark .module-switcher-button.is-active {
   min-height: 0;
   padding-right: 5px;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
 }
 
@@ -1135,7 +1238,8 @@ body.is-dark .module-switcher-button.is-active {
   min-height: 0;
   padding: 2px 7px 22px 2px;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
 }
 
@@ -2588,7 +2692,7 @@ body.is-prospections-module .prospection-view {
 }
 
 body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 body.is-prospections-module .prospection-view .store-settings-fields .config-save-button {
@@ -3018,7 +3122,7 @@ body.is-prospections-module .prospection-view .admin-settings-panel .prospection
 }
 
 body.is-prospections-module .prospection-view .store-settings-fields.prospection-config-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -4539,7 +4643,7 @@ body.is-prospections-module #appView .prospection-view [data-prospection-configu
 }
 
 body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .store-settings-fields.prospection-config-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: end;
   gap: 10px;
 }
@@ -4548,6 +4652,19 @@ body.is-prospections-module #appView .prospection-view [data-prospection-configu
   gap: 5px;
   min-width: 0;
   font-size: 0.7rem;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-payment-schedule-field small {
+  min-height: 2.5em;
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] .prospection-payment-schedule-field select:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
 }
 
 body.is-prospections-module #appView .prospection-view [data-prospection-configuration-dialog] input:not([type="checkbox"]):not([type="color"]),

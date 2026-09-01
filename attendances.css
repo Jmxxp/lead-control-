@@ -468,7 +468,6 @@ body.is-dark .attendance-shell,
 
 .attendance-module-main {
   position: relative;
-  z-index: 1;
   padding: 20px;
 }
 
@@ -1284,7 +1283,8 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   max-height: none;
   padding: 11px;
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
 }
 
 .attendance-record {
@@ -2869,6 +2869,19 @@ body.is-dark .attendance-turn-label > span,
   border: 1px solid var(--att-line);
   border-radius: 10px;
   background: var(--att-panel-soft);
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.attendance-morning-seller-list article.is-disabled {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--att-panel-soft) 76%, var(--att-panel-muted));
+}
+
+.attendance-morning-seller-list article.is-disabled > b,
+.attendance-morning-seller-list article.is-disabled .attendance-morning-seller-avatar {
+  background: var(--att-panel-muted);
+  color: var(--att-muted);
+  box-shadow: none;
 }
 
 .attendance-morning-seller-list article > b {
@@ -2894,9 +2907,16 @@ body.is-dark .attendance-turn-label > span,
   display: block;
 }
 
+.attendance-morning-seller-identity {
+  min-width: 0;
+}
+
 .attendance-morning-seller-list article > div:nth-of-type(1) strong {
+  overflow: hidden;
   color: var(--att-ink);
   font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attendance-morning-seller-list article > div:nth-of-type(1) small,
@@ -2904,6 +2924,99 @@ body.is-dark .attendance-turn-label > span,
   color: var(--att-muted);
   font-size: 0.6rem;
   font-weight: 750;
+}
+
+.attendance-morning-participation {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 28px;
+  margin-top: 6px;
+  color: var(--att-emerald);
+  cursor: pointer;
+  font-size: 0.59rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.attendance-morning-participation:hover .attendance-morning-participation-switch {
+  border-color: var(--att-emerald);
+}
+
+.attendance-morning-participation.is-unavailable {
+  color: var(--att-muted);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.attendance-morning-participation.is-unavailable:hover .attendance-morning-participation-switch {
+  border-color: var(--att-line-strong);
+}
+
+.attendance-morning-participation > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-morning-participation input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attendance-morning-participation-switch {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 18px;
+  border: 1px solid var(--att-line-strong);
+  border-radius: 999px;
+  background: var(--att-panel-muted);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--att-ink) 10%, transparent);
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.attendance-morning-participation-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--att-panel);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--att-ink) 24%, transparent);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.attendance-morning-participation input:checked + .attendance-morning-participation-switch {
+  border-color: var(--att-emerald);
+  background: var(--att-emerald);
+}
+
+.attendance-morning-participation input:checked + .attendance-morning-participation-switch::after {
+  transform: translateX(12px);
+}
+
+.attendance-morning-participation input:focus-visible + .attendance-morning-participation-switch {
+  outline: 3px solid color-mix(in srgb, var(--att-emerald) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.attendance-morning-seller-list article.is-disabled .attendance-morning-participation,
+.attendance-morning-seller-list article.is-disabled .attendance-morning-seller-identity > small {
+  color: var(--att-muted);
+}
+
+.attendance-morning-seller-list article.is-disabled > .attendance-morning-seller-goal {
+  opacity: 0.58;
 }
 
 .attendance-morning-seller-list article > label {
