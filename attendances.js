@@ -8,7 +8,8 @@
     list: "lc_list_attendances_v3",
     analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
-    morningSave: "lc_save_good_morning_seller_settings",
+    morningSave: "lc_save_good_morning_seller_settings_v2",
+    morningSaveLegacy: "lc_save_good_morning_seller_settings",
     morningAdvance: "lc_advance_good_morning_seller_turn",
     morningParticipation: "lc_set_good_morning_seller_participation",
   });
@@ -72,6 +73,8 @@
   const embeddedAnalysisStates = new WeakMap();
   const EMBEDDED_ANALYSIS_PAGE_SIZE = 200;
   const EMBEDDED_EXPORT_MAX_RECORDS = 50000;
+  const MORNING_CLOSED_DAY_LIMIT = 31;
+  const MORNING_CLOSED_DAY_REASON_MAX_LENGTH = 160;
 
   const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -283,6 +286,85 @@
       String(date.getUTCMonth() + 1).padStart(2, "0"),
       String(date.getUTCDate()).padStart(2, "0"),
     ].join("-");
+  }
+
+  function morningMonthDateLimits(referenceToday = state.morning?.today) {
+    const parsed = parseIsoDateParts(referenceToday);
+    if (!parsed) return { min: "", max: "" };
+    return {
+      min: `${String(parsed.year).padStart(4, "0")}-${String(parsed.month).padStart(2, "0")}-01`,
+      max: isoDateFromUtc(new Date(Date.UTC(parsed.year, parsed.month, 0))),
+    };
+  }
+
+  function normalizeMorningClosedDayReason(value, { fallback = true } = {}) {
+    const reason = String(value ?? "").replace(/\s+/g, " ").trim();
+    if (reason) return reason.slice(0, MORNING_CLOSED_DAY_REASON_MAX_LENGTH);
+    return fallback ? "Sem expediente" : "";
+  }
+
+  function normalizeMorningClosedDays(value, referenceToday = state.morning?.today) {
+    const limits = morningMonthDateLimits(referenceToday);
+    const seen = new Set();
+    return (Array.isArray(value) ? value : [])
+      .map((item) => {
+        const source = item && typeof item === "object" ? item : {};
+        const date = String(firstDefined(source.date, source.closed_on, source.closedOn, "")).trim();
+        const parsed = parseIsoDateParts(date);
+        if (!parsed || parsed.date.getUTCDay() === 0) return null;
+        if (limits.min && (date < limits.min || date > limits.max)) return null;
+        if (seen.has(date)) return null;
+        seen.add(date);
+        return {
+          date,
+          reason: normalizeMorningClosedDayReason(firstDefined(source.reason, source.description, source.label, "")),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function validateMorningClosedDayEntry(dateValue, reasonValue, existingDays = [], referenceToday = state.morning?.today) {
+    const date = String(dateValue || "").trim();
+    const reason = normalizeMorningClosedDayReason(reasonValue, { fallback: false });
+    const parsed = parseIsoDateParts(date);
+    const limits = morningMonthDateLimits(referenceToday);
+    if (!date) return { valid: false, error: "Escolha a data sem expediente." };
+    if (!parsed) return { valid: false, error: "Informe uma data válida." };
+    if (!limits.min || date < limits.min || date > limits.max) {
+      return { valid: false, error: "A data precisa estar dentro do mês atual." };
+    }
+    if (parsed.date.getUTCDay() === 0) {
+      return { valid: false, error: "Domingos já ficam fora do cálculo e não precisam ser cadastrados." };
+    }
+    if ((Array.isArray(existingDays) ? existingDays : []).some((item) => item?.date === date)) {
+      return { valid: false, error: "Esta data já foi adicionada aos dias sem expediente." };
+    }
+    if ((Array.isArray(existingDays) ? existingDays : []).length >= MORNING_CLOSED_DAY_LIMIT) {
+      return { valid: false, error: `É possível cadastrar no máximo ${MORNING_CLOSED_DAY_LIMIT} dias sem expediente.` };
+    }
+    if (String(reasonValue ?? "").replace(/\s+/g, " ").trim().length > MORNING_CLOSED_DAY_REASON_MAX_LENGTH) {
+      return { valid: false, error: `O motivo pode ter no máximo ${MORNING_CLOSED_DAY_REASON_MAX_LENGTH} caracteres.` };
+    }
+    return {
+      valid: true,
+      entry: { date, reason: reason || "Sem expediente" },
+    };
+  }
+
+  function formatMorningClosedDayDate(value) {
+    const parsed = parseIsoDateParts(value);
+    if (!parsed) return "Data inválida";
+    const dayMonth = new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+    }).format(parsed.date).replace(" de ", " ").replace(".", "");
+    const weekday = new Intl.DateTimeFormat("pt-BR", {
+      weekday: "long",
+      timeZone: "UTC",
+    }).format(parsed.date);
+    return `${dayMonth} · ${weekday}`;
   }
 
   function attendanceDateLimits(reference = new Date()) {
@@ -651,6 +733,7 @@
   function normalizeMorningWorkspace(raw) {
     const payload = unwrapPayload(raw);
     const goals = payload.goals && typeof payload.goals === "object" ? payload.goals : {};
+    const today = String(firstDefined(payload.today, ""));
     const normalizeGoal = (value) => ({
       target: normalizeMoney(value?.target),
       actual: normalizeMoney(value?.actual),
@@ -678,12 +761,22 @@
         payload.participationUpdateAvailable,
         false
       ) === true,
+      closedDaysConfigurationAvailable: firstDefined(
+        payload.closed_days_configuration_available,
+        payload.closedDaysConfigurationAvailable,
+        false
+      ) === true,
+      closedDays: normalizeMorningClosedDays(firstDefined(
+        payload.closed_days,
+        payload.closedDays,
+        []
+      ), today),
       goalMonth: String(firstDefined(payload.goal_month, payload.goalMonth, "")),
       savedGoalMonth: String(firstDefined(payload.saved_goal_month, payload.savedGoalMonth, "")),
       allocationMode: String(firstDefined(payload.allocation_mode, payload.allocationMode, "equal")) === "custom" ? "custom" : "equal",
       monthlyGoal: normalizeMoney(firstDefined(payload.monthly_goal, payload.monthlyGoal, 0)),
       lastMonthlyGoal: normalizeMoney(firstDefined(payload.last_monthly_goal, payload.lastMonthlyGoal, payload.monthly_goal, 0)),
-      today: String(firstDefined(payload.today, "")),
+      today,
       weekStart: String(firstDefined(payload.week_start, payload.weekStart, "")),
       weekEnd: String(firstDefined(payload.week_end, payload.weekEnd, "")),
       workdaysInMonth: Number(firstDefined(payload.workdays_in_month, payload.workdaysInMonth, 0)) || 0,
@@ -829,7 +922,14 @@
     }));
     const monthlyGoal = morning.configured ? morning.monthlyGoal : morning.lastMonthlyGoal;
     const mode = morning.allocationMode || "equal";
-    const draft = { monthlyGoal, mode, professionals };
+    const draft = {
+      monthlyGoal,
+      mode,
+      professionals,
+      closedDays: normalizeMorningClosedDays(morning.closedDays, morning.today),
+      closedDayDate: "",
+      closedDayReason: "",
+    };
     if (mode === "equal") applyEqualMorningGoals(draft);
     return draft;
   }
@@ -845,6 +945,9 @@
         enabled: professional.enabled !== false,
         goalAmount: normalizeMoney(professional.goalAmount),
       })),
+      closedDays: normalizeMorningClosedDays(draft.closedDays, state.morning?.today),
+      closedDayDate: String(draft.closedDayDate || ""),
+      closedDayReason: String(draft.closedDayReason || ""),
     };
   }
 
@@ -854,6 +957,9 @@
     const merged = {
       monthlyGoal: normalizeMoney(draft.monthlyGoal),
       mode: draft.mode === "custom" ? "custom" : "equal",
+      closedDays: normalizeMorningClosedDays(draft.closedDays, morning.today),
+      closedDayDate: String(draft.closedDayDate || ""),
+      closedDayReason: String(draft.closedDayReason || ""),
       professionals: morning.professionals.map((professional) => {
         const previous = previousById.get(professional.id);
         return {
@@ -876,10 +982,11 @@
     return [...professionals.slice(currentIndex), ...professionals.slice(0, currentIndex)];
   }
 
-  function morningWorkingDayContext() {
-    const parsedToday = parseIsoDateParts(state.morning?.today);
+  function calculateMorningWorkingDayContext(todayValue, weekStartValue, weekEndValue, closedDays = []) {
+    const parsedToday = parseIsoDateParts(todayValue);
     if (!parsedToday) return null;
     const today = parsedToday.date;
+    const closedDates = new Set(normalizeMorningClosedDays(closedDays, todayValue).map((item) => item.date));
     const monthStart = new Date(Date.UTC(parsedToday.year, parsedToday.month - 1, 1));
     const monthEnd = new Date(Date.UTC(parsedToday.year, parsedToday.month, 0));
     const isoWeekday = today.getUTCDay() || 7;
@@ -889,8 +996,8 @@
     isoWeekEnd.setUTCDate(isoWeekStart.getUTCDate() + 6);
     const fallbackWeekStart = isoWeekStart < monthStart ? monthStart : isoWeekStart;
     const fallbackWeekEnd = isoWeekEnd > monthEnd ? monthEnd : isoWeekEnd;
-    const parsedWeekStart = parseIsoDateParts(state.morning?.weekStart)?.date;
-    const parsedWeekEnd = parseIsoDateParts(state.morning?.weekEnd)?.date;
+    const parsedWeekStart = parseIsoDateParts(weekStartValue)?.date;
+    const parsedWeekEnd = parseIsoDateParts(weekEndValue)?.date;
     const weekStart = parsedWeekStart && parsedWeekStart >= monthStart && parsedWeekStart <= monthEnd
       ? parsedWeekStart
       : fallbackWeekStart;
@@ -903,7 +1010,8 @@
     let beforeWeek = 0;
     let throughWeek = 0;
     for (const cursor = new Date(monthStart); cursor <= monthEnd; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-      if (cursor.getUTCDay() === 0) continue;
+      const date = isoDateFromUtc(cursor);
+      if (cursor.getUTCDay() === 0 || closedDates.has(date)) continue;
       total += 1;
       if (cursor <= today) throughToday += 1;
       if (cursor < today) beforeToday += 1;
@@ -920,10 +1028,19 @@
       weekWorkdays: Math.max(throughWeek - beforeWeek, 0),
       remainingMonthWorkdaysFromWeekStart: Math.max(total - beforeWeek, 0),
       remainingWeekWorkdays: Math.max(throughWeek - beforeToday, 0),
-      todayIsWorkingDay: today.getUTCDay() !== 0,
+      todayIsWorkingDay: today.getUTCDay() !== 0 && !closedDates.has(todayValue),
       weekStart: isoDateFromUtc(weekStart),
       weekEnd: isoDateFromUtc(weekEnd),
     };
+  }
+
+  function morningWorkingDayContext() {
+    return calculateMorningWorkingDayContext(
+      state.morning?.today,
+      state.morning?.weekStart,
+      state.morning?.weekEnd,
+      state.morning?.closedDays,
+    );
   }
 
   function cumulativeGoalCents(goalCents, totalWorkdays, completedWorkdays) {
@@ -1213,6 +1330,33 @@
     </article>`;
   }
 
+  function renderMorningClosedDaysConfig(draft, configurationControlsEnabled) {
+    const closedDays = normalizeMorningClosedDays(draft.closedDays, state.morning?.today);
+    const limits = morningMonthDateLimits(state.morning?.today);
+    const canConfigure = canManageMorningSettings();
+    const capabilityAvailable = state.morning?.closedDaysConfigurationAvailable === true;
+    const canEdit = canConfigure && capabilityAvailable && configurationControlsEnabled;
+    const countLabel = closedDays.length === 1 ? "1 dia" : `${closedDays.length} dias`;
+    const rows = closedDays.map((item) => `<li>
+      <span class="attendance-morning-closed-day-icon" aria-hidden="true"><i class="fa-solid fa-calendar-xmark"></i></span>
+      <div><strong>${escapeHtml(formatMorningClosedDayDate(item.date))}</strong><small>${escapeHtml(item.reason)}</small></div>
+      ${canConfigure && capabilityAvailable ? `<button type="button" data-attendance-action="remove-morning-closed-day" data-closed-date="${escapeHtml(item.date)}" aria-label="Remover ${escapeHtml(formatMorningClosedDayDate(item.date))}" title="Remover dia" ${canEdit ? "" : "disabled"}><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>` : ""}
+    </li>`).join("");
+    return `<section class="attendance-morning-closed-days${capabilityAvailable ? "" : " is-unavailable"}" aria-labelledby="morningClosedDaysTitle">
+      <div class="attendance-morning-closed-days-heading">
+        <div><span aria-hidden="true"><i class="fa-solid fa-calendar-day"></i></span><div><strong id="morningClosedDaysTitle">Dias sem expediente</strong><small id="morningClosedDaysHelp">Feriados e folgas não entram nas metas mensal, semanal ou diária. Domingos já são ignorados.</small></div></div>
+        <b>${escapeHtml(countLabel)}</b>
+      </div>
+      ${!capabilityAvailable ? `<p class="attendance-morning-capability-warning" role="alert"><i class="fa-solid fa-database" aria-hidden="true"></i>Atualize o banco para configurar o calendário. Meta, divisão e fila continuam disponíveis sem alterar os dias já salvos.</p>` : ""}
+      ${canConfigure && capabilityAvailable ? `<div class="attendance-morning-closed-day-editor">
+        <label><span>Data</span><input type="date" name="closed_day_date" min="${escapeHtml(limits.min)}" max="${escapeHtml(limits.max)}" value="${escapeHtml(draft.closedDayDate || "")}" aria-describedby="morningClosedDaysHelp" ${canEdit ? "" : "disabled"} /></label>
+        <label><span>Motivo <em>opcional</em></span><input type="text" name="closed_day_reason" maxlength="${MORNING_CLOSED_DAY_REASON_MAX_LENGTH}" value="${escapeHtml(draft.closedDayReason || "")}" placeholder="Ex.: feriado municipal" aria-describedby="morningClosedDaysHelp" ${canEdit ? "" : "disabled"} /></label>
+        <button class="attendance-secondary-button" type="button" data-attendance-action="add-morning-closed-day" ${canEdit && closedDays.length < MORNING_CLOSED_DAY_LIMIT ? "" : "disabled"}><i class="fa-solid fa-plus" aria-hidden="true"></i>Adicionar</button>
+      </div>` : ""}
+      ${rows ? `<ul class="attendance-morning-closed-day-list">${rows}</ul>` : capabilityAvailable ? `<div class="attendance-morning-closed-day-empty"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span><strong>Mês sem bloqueios</strong><small>As metas consideram todos os dias de segunda a sábado.</small></span></div>` : ""}
+    </section>`;
+  }
+
   function renderMorningConfig() {
     const draft = state.morningDraft;
     if (!state.morningConfigOpen || !draft || !canOpenMorningConfig()) return "";
@@ -1231,7 +1375,7 @@
         ? "Distribuição completa"
         : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
     const headerCopy = canConfigure
-      ? "A participação é salva na hora; meta e ordem são salvas pelo botão abaixo."
+      ? "A participação é salva na hora; meta, calendário e ordem são salvos juntos pelo botão abaixo."
       : "Admin ou loja podem alterar participantes, meta mensal e ordem da vez.";
     return `<div class="attendance-morning-modal" role="presentation" data-morning-backdrop>
       <section class="attendance-morning-dialog" role="dialog" aria-modal="true" aria-labelledby="morningConfigTitle" data-morning-dialog>
@@ -1241,11 +1385,12 @@
             <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" ${configurationControlsEnabled ? "required" : "disabled"} /></span></label>
             <fieldset ${configurationControlsEnabled ? "" : "disabled"}><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
           </div>
+          ${renderMorningClosedDaysConfig(draft, configurationControlsEnabled)}
           <div class="attendance-morning-config-heading"><div><strong>${canConfigure ? "Vendedores e ordem da vez" : "Quem participa desta área"}</strong><small>Quem estiver pausado continua cadastrado na equipe, mas fica fora da fila, das metas e da rotação.</small></div><span data-morning-allocation-status class="${canConfigure ? (balanced ? "is-balanced" : "is-warning") : "is-balanced"}" role="status" aria-live="polite">${escapeHtml(canConfigure ? allocationStatus : `${participants.length} ${participants.length === 1 ? "participante" : "participantes"}`)}</span></div>
           ${!participationControlAvailable ? `<p class="attendance-morning-capability-warning" role="alert"><i class="fa-solid fa-database" aria-hidden="true"></i>A atualização segura do banco ainda precisa ser aplicada para liberar estes switches.</p>` : ""}
           <div class="attendance-morning-seller-list">${draft.professionals.map((professional) => renderMorningSellerConfigRow(professional, participants)).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
           ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
-          <footer><div><span>${canConfigure ? `Total distribuído · ${participants.length} ${participants.length === 1 ? "participante" : "participantes"}` : "Alterações de participação"}</span><strong data-morning-distributed-total>${canConfigure ? escapeHtml(formatCurrency(total)) : "Salvas na hora"}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Fechar</button>${canConfigure ? `<button class="attendance-primary-button" type="submit" ${state.morningSaving || participationBusy || !participants.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar meta e fila"}</button>` : ""}</footer>
+          <footer><div><span>${canConfigure ? `Total distribuído · ${participants.length} ${participants.length === 1 ? "participante" : "participantes"}` : "Alterações de participação"}</span><strong data-morning-distributed-total>${canConfigure ? escapeHtml(formatCurrency(total)) : "Salvas na hora"}</strong></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-morning-config">Fechar</button>${canConfigure ? `<button class="attendance-primary-button" type="submit" ${state.morningSaving || participationBusy || !participants.length || !balanced ? "disabled" : ""}><i class="fa-solid fa-check" aria-hidden="true"></i>${state.morningSaving ? "Salvando" : "Salvar configurações"}</button>` : ""}</footer>
         </form>
       </section>
     </div>`;
@@ -2829,6 +2974,12 @@
     if (canConfigure) {
       state.morningDraft.monthlyGoal = normalizeMoney(form.elements.monthly_goal?.value);
       state.morningDraft.mode = form.querySelector('input[name="allocation_mode"]:checked')?.value === "custom" ? "custom" : "equal";
+      if (form.elements.closed_day_date) {
+        state.morningDraft.closedDayDate = String(form.elements.closed_day_date.value || "");
+      }
+      if (form.elements.closed_day_reason) {
+        state.morningDraft.closedDayReason = String(form.elements.closed_day_reason.value || "");
+      }
     }
     state.morningDraft.professionals.forEach((professional) => {
       const enabledInput = form.querySelector(`[data-morning-seller-enabled="${professional.id}"]`);
@@ -2837,6 +2988,27 @@
       if (canConfigure && professional.enabled !== false && input && !input.disabled) professional.goalAmount = normalizeMoney(input.value);
     });
     if (canConfigure && state.morningDraft.mode === "equal") applyEqualMorningGoals(state.morningDraft);
+  }
+
+  function commitPendingMorningClosedDay({ optional = false } = {}) {
+    if (!state.morningDraft) return { valid: false, error: "As configurações não estão disponíveis." };
+    const date = String(state.morningDraft.closedDayDate || "").trim();
+    const reason = String(state.morningDraft.closedDayReason || "").trim();
+    if (optional && !date && !reason) return { valid: true, added: false };
+    const validation = validateMorningClosedDayEntry(
+      date,
+      reason,
+      state.morningDraft.closedDays,
+      state.morning?.today,
+    );
+    if (!validation.valid) return validation;
+    state.morningDraft.closedDays = normalizeMorningClosedDays([
+      ...(state.morningDraft.closedDays || []),
+      validation.entry,
+    ], state.morning?.today);
+    state.morningDraft.closedDayDate = "";
+    state.morningDraft.closedDayReason = "";
+    return { valid: true, added: true };
   }
 
   function syncMorningConfigPreview() {
@@ -2955,6 +3127,15 @@
       return;
     }
     captureMorningDraftInputs();
+    const closedDaysConfigurationAvailable = state.morning?.closedDaysConfigurationAvailable === true;
+    if (closedDaysConfigurationAvailable) {
+      const pendingClosedDay = commitPendingMorningClosedDay({ optional: true });
+      if (!pendingClosedDay.valid) {
+        state.morningError = pendingClosedDay.error;
+        refreshMorningRegion({ focusSelector: '[name="closed_day_date"]' });
+        return;
+      }
+    }
     const monthlyGoal = normalizeMoney(state.morningDraft.monthlyGoal);
     const participants = morningParticipants(state.morningDraft.professionals);
     const total = morningDraftTotal();
@@ -2992,7 +3173,7 @@
       && state.contextGeneration === saveContext.generation;
     try {
       const participantPositions = new Map(participants.map((professional, index) => [professional.id, index + 1]));
-      const raw = await rpc("morningSave", {
+      const saveArgs = {
         p_store_id: saveContext.storeId,
         p_monthly_goal: monthlyGoal,
         p_allocation_mode: state.morningDraft.mode,
@@ -3004,15 +3185,26 @@
             ? null
             : participantPositions.get(professional.id),
         })),
-      });
+      };
+      if (closedDaysConfigurationAvailable) {
+        saveArgs.p_closed_days = normalizeMorningClosedDays(
+          state.morningDraft.closedDays,
+          state.morning?.today,
+        ).map((item) => ({ date: item.date, reason: item.reason }));
+      }
+      const raw = await rpc(closedDaysConfigurationAvailable ? "morningSave" : "morningSaveLegacy", saveArgs);
       if (!isCurrent()) return;
       state.morning = normalizeMorningWorkspace(raw);
       state.morningConfigOpen = false;
       state.morningConfigGeneration += 1;
       state.morningDraft = null;
-      notify("Meta e fila do Bom Dia Vendedor atualizadas.", "success");
+      notify("Configurações do Bom Dia Vendedor atualizadas.", "success");
     } catch (error) {
-      if (isCurrent()) state.morningError = readableError(error);
+      if (isCurrent()) {
+        state.morningError = closedDaysConfigurationAvailable && isMissingRpcError(error, DEFAULT_RPC.morningSave)
+          ? "A atualização do banco para salvar o calendário ainda não está disponível. Nada foi alterado."
+          : readableError(error);
+      }
     } finally {
       if (isCurrent()) {
         state.morningSaving = false;
@@ -3205,6 +3397,37 @@
     }
     if (action === "close-morning-config") {
       closeMorningConfig();
+      return;
+    }
+    if (action === "add-morning-closed-day") {
+      if (!canManageMorningSettings() || state.morning?.closedDaysConfigurationAvailable !== true) {
+        notify("Atualize o banco antes de configurar dias sem expediente.", "warning");
+        return;
+      }
+      const dialogScrollTop = state.root?.querySelector("[data-morning-dialog]")?.scrollTop ?? 0;
+      captureMorningDraftInputs();
+      const result = commitPendingMorningClosedDay();
+      state.morningError = result.valid ? "" : result.error;
+      refreshMorningRegion({
+        dialogScrollTop,
+        focusSelector: '[data-morning-config-form] input[name="closed_day_date"]',
+      });
+      return;
+    }
+    if (action === "remove-morning-closed-day") {
+      if (!canManageMorningSettings() || state.morning?.closedDaysConfigurationAvailable !== true) return;
+      const dialogScrollTop = state.root?.querySelector("[data-morning-dialog]")?.scrollTop ?? 0;
+      captureMorningDraftInputs();
+      const date = String(button.dataset.closedDate || "");
+      state.morningDraft.closedDays = normalizeMorningClosedDays(
+        (state.morningDraft.closedDays || []).filter((item) => item.date !== date),
+        state.morning?.today,
+      );
+      state.morningError = "";
+      refreshMorningRegion({
+        dialogScrollTop,
+        focusSelector: '[data-morning-config-form] input[name="closed_day_date"]',
+      });
       return;
     }
     if (action === "move-morning-seller-up" || action === "move-morning-seller-down") {
@@ -3414,7 +3637,7 @@
 
   function getIntegrationContract() {
     return {
-      version: 3,
+      version: 4,
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
@@ -3495,6 +3718,8 @@
             can_manage_settings: "boolean (true for Admin or the store account)",
             participation_control_available: "boolean (the participation field exists)",
             participation_update_available: "boolean (the dedicated update RPC exists)",
+            closed_days_configuration_available: "boolean (the atomic calendar RPC v2 exists)",
+            closed_days: "jsonb array sorted by date: { date: YYYY-MM-DD, reason: text }",
             eligible_professional_count: "integer (people currently participating)",
             goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
             daily_goal_strategy: "remaining_team_balance (compatibility marker)",
@@ -3512,8 +3737,13 @@
             p_monthly_goal: "numeric",
             p_allocation_mode: "equal | custom",
             p_allocations: "jsonb array with every active professional: { professional_id, enabled, goal_amount, queue_position }",
+            p_closed_days: "jsonb array with at most 31 current-month Monday-Saturday entries: { date, reason }",
           },
           returns: "same workspace contract",
+        },
+        morningSaveLegacy: {
+          name: DEFAULT_RPC.morningSaveLegacy,
+          compatibility: "Used only while closed_days_configuration_available is false; preserves already saved closed days.",
         },
         morningAdvance: {
           name: DEFAULT_RPC.morningAdvance,
@@ -3538,10 +3768,24 @@
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
         "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
         "Admin e a própria loja configuram metas, divisão, ordem e avanço da rotação.",
+        "Admin e a própria loja configuram dias sem expediente; Agência permanece somente leitura.",
+        "Dias sem expediente aceitam apenas o mês atual, de segunda a sábado, sem duplicatas; motivo vazio vira Sem expediente.",
+        "Meta, divisão, fila e dias sem expediente são salvos atomicamente pela RPC v2; não há fallback silencioso após a capability ser liberada.",
         "A meta semanal nasce do saldo mensal; a meta diária usa o saldo da semana até ontem e redistribui falta ou excesso nos dias seguintes.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };
+  }
+
+  if (global.__ATTENDANCES_TEST_HOOKS__ && typeof global.__ATTENDANCES_TEST_HOOKS__ === "object") {
+    Object.assign(global.__ATTENDANCES_TEST_HOOKS__, {
+      calculateMorningWorkingDayContext,
+      cloneMorningDraft,
+      mergeMorningDraftWithWorkspace,
+      morningMonthDateLimits,
+      normalizeMorningClosedDays,
+      validateMorningClosedDayEntry,
+    });
   }
 
   global.AttendancesModule = Object.freeze({

@@ -2815,6 +2815,246 @@ body.is-dark .attendance-turn-label > span,
   opacity: 0;
 }
 
+.attendance-morning-closed-days {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--att-line));
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, #fbbf24 9%, transparent), transparent 42%),
+    var(--att-panel-soft);
+}
+
+.attendance-morning-closed-days-heading,
+.attendance-morning-closed-days-heading > div,
+.attendance-morning-closed-day-list li,
+.attendance-morning-closed-day-empty {
+  display: flex;
+  align-items: center;
+}
+
+.attendance-morning-closed-days-heading {
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+}
+
+.attendance-morning-closed-days-heading > div {
+  min-width: 0;
+  gap: 10px;
+}
+
+.attendance-morning-closed-days-heading > div > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, #f59e0b 28%, var(--att-line));
+  border-radius: 9px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--att-panel));
+  color: #c56c06;
+}
+
+.attendance-morning-closed-days-heading strong,
+.attendance-morning-closed-days-heading small,
+.attendance-morning-closed-day-list strong,
+.attendance-morning-closed-day-list small,
+.attendance-morning-closed-day-empty strong,
+.attendance-morning-closed-day-empty small {
+  display: block;
+}
+
+.attendance-morning-closed-days-heading strong {
+  color: var(--att-ink);
+  font-size: 0.8rem;
+}
+
+.attendance-morning-closed-days-heading small {
+  margin-top: 2px;
+  color: var(--att-muted);
+  font-size: 0.64rem;
+  font-weight: 650;
+  line-height: 1.38;
+}
+
+.attendance-morning-closed-days-heading > b {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--att-panel));
+  color: color-mix(in srgb, #a95104 85%, var(--att-ink));
+  font-size: 0.63rem;
+  font-weight: 900;
+}
+
+.attendance-morning-closed-days > .attendance-morning-capability-warning {
+  margin: 0 13px 13px;
+}
+
+.attendance-morning-closed-day-editor {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.55fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 9px;
+  padding: 0 13px 13px;
+}
+
+.attendance-morning-closed-day-editor label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.attendance-morning-closed-day-editor label > span {
+  color: var(--att-muted);
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+
+.attendance-morning-closed-day-editor label > span em {
+  font-style: normal;
+  font-weight: 650;
+}
+
+.attendance-morning-closed-day-editor input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--att-input-line);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--att-input-bg);
+  color: var(--att-input-ink);
+  color-scheme: light;
+  font-size: 0.72rem;
+  font-weight: 750;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.attendance-morning-closed-day-editor input:hover {
+  border-color: #6d9c86;
+}
+
+.attendance-morning-closed-day-editor input:focus {
+  border-color: var(--att-emerald);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--att-emerald) 14%, transparent);
+}
+
+.attendance-morning-closed-day-editor input::placeholder {
+  color: var(--att-input-muted);
+  opacity: 1;
+}
+
+.attendance-morning-closed-day-editor .attendance-secondary-button {
+  min-width: 112px;
+  min-height: 42px;
+  margin-top: 0;
+  padding-inline: 13px;
+}
+
+.attendance-morning-closed-day-editor .attendance-secondary-button:disabled,
+.attendance-morning-closed-day-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.attendance-morning-closed-day-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0 13px 13px;
+  list-style: none;
+}
+
+.attendance-morning-closed-day-list li {
+  min-width: 0;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--att-line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--att-panel) 78%, var(--att-panel-soft));
+}
+
+.attendance-morning-closed-day-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, #f59e0b 11%, var(--att-panel));
+  color: #c56c06;
+  font-size: 0.68rem;
+}
+
+.attendance-morning-closed-day-list li > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.attendance-morning-closed-day-list strong,
+.attendance-morning-closed-day-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-morning-closed-day-list strong {
+  color: var(--att-ink);
+  font-size: 0.69rem;
+}
+
+.attendance-morning-closed-day-list small {
+  margin-top: 2px;
+  color: var(--att-muted);
+  font-size: 0.6rem;
+  font-weight: 650;
+}
+
+.attendance-morning-closed-day-list button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 24%, var(--att-line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--att-danger) 7%, var(--att-panel));
+  color: var(--att-danger);
+  font-size: 0.65rem;
+}
+
+.attendance-morning-closed-day-list button:hover:not(:disabled) {
+  border-color: var(--att-danger);
+  background: color-mix(in srgb, var(--att-danger) 12%, var(--att-panel));
+}
+
+.attendance-morning-closed-day-empty {
+  gap: 9px;
+  margin: 0 13px 13px;
+  padding: 9px 11px;
+  border: 1px dashed var(--att-line-strong);
+  border-radius: 9px;
+  color: var(--att-muted);
+}
+
+.attendance-morning-closed-day-empty > i {
+  color: var(--att-emerald);
+}
+
+.attendance-morning-closed-day-empty strong {
+  color: var(--att-ink);
+  font-size: 0.68rem;
+}
+
+.attendance-morning-closed-day-empty small {
+  margin-top: 1px;
+  font-size: 0.6rem;
+  font-weight: 650;
+}
+
 .attendance-morning-config-heading strong,
 .attendance-morning-config-heading small {
   display: block;
@@ -3265,6 +3505,15 @@ body.is-dark .attendance-turn-label > span,
     grid-template-columns: 1fr;
   }
 
+  .attendance-morning-closed-day-editor {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+  }
+
+  .attendance-morning-closed-day-editor .attendance-secondary-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .attendance-morning-seller-list article {
     grid-template-columns: 26px 36px minmax(0, 1fr) 34px;
   }
@@ -3383,6 +3632,19 @@ body.is-dark .attendance-turn-label > span,
     align-items: flex-start;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .attendance-morning-closed-days-heading {
+    align-items: flex-start;
+  }
+
+  .attendance-morning-closed-day-editor,
+  .attendance-morning-closed-day-list {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-morning-closed-day-editor .attendance-secondary-button {
+    grid-column: auto;
   }
 
   .attendance-morning-seller-list article {
