@@ -125,7 +125,7 @@
   }
 
   function canManageMorningSettings() {
-    return isStoreRole()
+    return (isAdminRole() || isStoreRole())
       && selectedStore()?.goodMorningSellerEnabled === true
       && state.morning?.licensed === true
       && state.morning?.canManageSettings === true;
@@ -664,7 +664,7 @@
       canManageSettings: firstDefined(
         payload.can_manage_settings,
         payload.canManageSettings,
-        isStoreRole()
+        isAdminRole() || isStoreRole()
       ) === true,
       participationControlAvailable: firstDefined(
         payload.participation_control_available,
@@ -941,7 +941,7 @@
           <div class="attendance-turn-queue" aria-label="Ordem da vez">${queue.map((professional, index) => `<span class="${index === 0 ? "is-current" : ""}"><b>${index + 1}</b>${escapeHtml(professional.name)}</span>`).join("")}</div>
           ${canConfigure
             ? `<button class="attendance-turn-next" type="button" data-attendance-action="advance-morning-turn" ${state.morningSaving || state.morningParticipationSaving || queue.length < 2 ? "disabled" : ""}><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>${state.morningSaving ? "Atualizando fila" : "Passar para o próximo"}</button>`
-            : `<span class="attendance-turn-owner-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>A loja controla a vez</span>`}
+            : `<span class="attendance-turn-owner-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>Admin ou loja controlam a vez</span>`}
         </article>
         <div class="attendance-morning-goals">
           ${renderMorningGoalCard("today", "Meta de hoje", "fa-calendar-day", "dia")}
@@ -963,16 +963,12 @@
       ? "Nenhum profissional cadastrado"
       : !hasParticipants
       ? "Nenhum vendedor participando"
-      : isAdminRole()
-      ? "Participantes do Bom Dia Vendedor"
       : isNewMonth ? "Comece o novo mês com a meta atualizada" : "Transforme a meta em ritmo diário";
     const setupCopy = !hasTeamProfessionals
       ? "Cadastre a equipe deste cliente antes de configurar metas e montar a rotação da vez."
-      : isAdminRole()
-        ? "Ative somente quem participa desta área. A loja continua responsável pela meta mensal e pela ordem da vez."
       : canConfigure
         ? "Defina a meta mensal, escolha a divisão por vendedor e organize a fila da vez. O sistema calcula automaticamente os objetivos de hoje e desta semana."
-        : "O Admin ou a loja escolhem quem participa. A loja define a meta mensal e organiza a ordem da vez.";
+        : "O Admin ou a loja definem participantes, meta mensal e ordem da vez.";
     return `<section class="attendance-morning-board attendance-morning-board--setup">
       <div class="attendance-morning-setup-icon"><i class="fa-solid fa-sun" aria-hidden="true"></i></div>
       <div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2>${setupTitle}</h2><p>${setupCopy}</p></div>
@@ -1049,7 +1045,7 @@
         : `${difference > 0 ? "Faltam" : "Excedeu"} ${formatCurrency(Math.abs(difference))}`;
     const headerCopy = canConfigure
       ? "A participação é salva na hora; meta e ordem são salvas pelo botão abaixo."
-      : "Ative ou pause quem participa. Meta mensal e ordem da vez continuam sob responsabilidade da loja.";
+      : "Admin ou loja podem alterar participantes, meta mensal e ordem da vez.";
     return `<div class="attendance-morning-modal" role="presentation" data-morning-backdrop>
       <section class="attendance-morning-dialog" role="dialog" aria-modal="true" aria-labelledby="morningConfigTitle" data-morning-dialog>
         <header><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="morningConfigTitle">${canConfigure ? "Meta e fila da equipe" : "Participação da equipe"}</h2><span>${headerCopy}</span></div><button type="button" data-attendance-action="close-morning-config" aria-label="Fechar configurações"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
@@ -2702,12 +2698,7 @@
           : createMorningDraft();
       }
       const stateLabel = enabled ? "ativada" : "desativada";
-      notify(
-        isStoreRole()
-          ? `Participação de ${professionalName} ${stateLabel}. Revise e salve a meta e a fila.`
-          : `Participação de ${professionalName} ${stateLabel}. A loja poderá revisar a meta e a fila.`,
-        "success"
-      );
+      notify(`Participação de ${professionalName} ${stateLabel}. Revise e salve a meta e a fila.`, "success");
     } catch (error) {
       if (!isCurrent()) return;
       if (handleEntitlementLoss(error, updateContext.storeId)) return;
@@ -2734,7 +2725,7 @@
   async function saveMorningSettings(form) {
     if (state.morningSaving || state.morningParticipationSaving || !state.morningDraft || !state.selectedStoreId) return;
     if (!canManageMorningSettings()) {
-      notify("Somente a loja pode configurar metas, divisão e ordem do Bom Dia Vendedor.", "warning");
+      notify("Somente o Admin ou a própria loja podem configurar metas, divisão e ordem do Bom Dia Vendedor.", "warning");
       return;
     }
     captureMorningDraftInputs();
@@ -2807,7 +2798,7 @@
   async function advanceMorningTurn() {
     if (state.morningSaving || state.morningParticipationSaving || !state.selectedStoreId) return;
     if (!canManageMorningSettings()) {
-      notify("Somente a loja pode avançar a rotação do Bom Dia Vendedor.", "warning");
+      notify("Somente o Admin ou a própria loja podem avançar a rotação do Bom Dia Vendedor.", "warning");
       return;
     }
     const advanceContext = {
@@ -3012,7 +3003,7 @@
     }
     if (action === "advance-morning-turn") {
       if (!canManageMorningSettings()) {
-        notify("Somente a loja pode avançar a rotação do Bom Dia Vendedor.", "warning");
+        notify("Somente o Admin ou a própria loja podem avançar a rotação do Bom Dia Vendedor.", "warning");
         return;
       }
       await advanceMorningTurn();
@@ -3272,7 +3263,7 @@
           returns: {
             licensed: "boolean",
             configured: "boolean",
-            can_manage_settings: "boolean (true only for the store account)",
+            can_manage_settings: "boolean (true for Admin or the store account)",
             participation_control_available: "boolean (the participation field exists)",
             participation_update_available: "boolean (the dedicated update RPC exists)",
             eligible_professional_count: "integer (people currently participating)",
@@ -3313,7 +3304,7 @@
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
         "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
-        "Somente a loja configura metas, divisão, ordem e avanço da rotação.",
+        "Admin e a própria loja configuram metas, divisão, ordem e avanço da rotação.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };
