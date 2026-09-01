@@ -6,6 +6,7 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 const source = readFileSync(require.resolve("../attendances.js"), "utf8");
+const styles = readFileSync(require.resolve("../attendances.css"), "utf8");
 const hooks = {};
 const window = { __ATTENDANCES_TEST_HOOKS__: hooks };
 vm.runInNewContext(source, { window }, { filename: "attendances.js" });
@@ -309,4 +310,11 @@ test("contrato e markup expõem edição dedicada sem fallback destrutivo", () =
   assert.match(source, /inert aria-hidden="true"/);
   assert.match(source, /id="attendanceEditError"/);
   assert.match(source, /aria-live="assertive"/);
+});
+
+test("rodapé da edição mantém ações alinhadas, com mesma altura e ícone", () => {
+  assert.match(source, /class="attendance-secondary-button"[^>]*>Cancelar<\/button>/);
+  assert.match(source, /class="attendance-button-idle"><i class="fa-solid fa-check" aria-hidden="true"><\/i>Salvar alterações<\/span>/);
+  assert.match(styles, /\.attendance-edit-footer \.attendance-secondary-button,[\s\S]*?height: 44px;[\s\S]*?min-height: 44px;[\s\S]*?margin: 0;/);
+  assert.match(styles, /\.attendance-edit-footer \.attendance-button-idle \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?gap: 7px;/);
 });

@@ -833,15 +833,115 @@
     return [...unique.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
   }
 
-  function normalizeMorningWorkspace(raw) {
+  function normalizeMorningWorkspace(raw, previousWorkspace = null) {
     const payload = unwrapPayload(raw);
     const goals = payload.goals && typeof payload.goals === "object" ? payload.goals : {};
     const today = String(firstDefined(payload.today, ""));
-    const normalizeGoal = (value) => ({
-      target: normalizeMoney(value?.target),
-      actual: normalizeMoney(value?.actual),
-    });
+    const weekStart = String(firstDefined(payload.week_start, payload.weekStart, ""));
+    const sameDayAsPrevious = Boolean(today && previousWorkspace?.today === today);
+    const sameWeekAsPrevious = Boolean(weekStart && previousWorkspace?.weekStart === weekStart);
+    const sameMonthAsPrevious = Boolean(
+      today.length >= 7
+      && String(previousWorkspace?.today || "").slice(0, 7) === today.slice(0, 7)
+    );
+    const previousActual = (source, period, field) => {
+      if (period === "today" && !sameDayAsPrevious) return undefined;
+      if (period === "week" && !sameWeekAsPrevious) return undefined;
+      if (period === "month" && !sameMonthAsPrevious) return undefined;
+      return source?.[field];
+    };
     const professionals = Array.isArray(payload.professionals) ? payload.professionals : [];
+    const previousProfessionalsById = new Map((previousWorkspace?.professionals || []).map((professional) => (
+      [String(professional.id || ""), professional]
+    )));
+    const normalizedProfessionals = professionals.map((professional, index) => {
+      const id = String(firstDefined(professional.id, professional.professional_id, ""));
+      const previous = previousProfessionalsById.get(id);
+      const goalToday = firstDefined(professional.goal_today, professional.goalToday);
+      const goalWeek = firstDefined(professional.goal_week, professional.goalWeek);
+      const goalMonth = firstDefined(professional.goal_month, professional.goalMonth, professional.goal_amount, professional.goalAmount);
+      return {
+        id,
+        name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
+        active: firstDefined(professional.is_active, professional.active, true) !== false,
+        enabled: firstDefined(
+          professional.good_morning_seller_enabled,
+          professional.goodMorningSellerEnabled,
+          professional.enabled,
+          true
+        ) !== false,
+        goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, goalMonth, 0)),
+        goalToday: normalizeMoney(firstDefined(goalToday, 0)),
+        goalWeek: normalizeMoney(firstDefined(goalWeek, 0)),
+        goalMonth: normalizeMoney(firstDefined(goalMonth, 0)),
+        hasPeriodGoals: goalToday != null && goalWeek != null && goalMonth != null,
+        queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
+        current: firstDefined(professional.is_current, professional.current, false) === true,
+        actualMonth: normalizeMoney(firstDefined(
+          professional.actual_month,
+          professional.actualMonth,
+          previousActual(previous, "month", "actualMonth"),
+          0
+        )),
+        actualWeek: normalizeMoney(firstDefined(
+          professional.actual_week,
+          professional.actualWeek,
+          previousActual(previous, "week", "actualWeek"),
+          0
+        )),
+        actualToday: normalizeMoney(firstDefined(
+          professional.actual_today,
+          professional.actualToday,
+          previousActual(previous, "today", "actualToday"),
+          0
+        )),
+        actualTodayBeforeConfiguration: normalizeMoney(firstDefined(
+          professional.actual_today_before_configuration,
+          professional.actualTodayBeforeConfiguration,
+          previousActual(previous, "today", "actualTodayBeforeConfiguration"),
+          0
+        )),
+        actualMonthAtConfiguration: normalizeMoney(firstDefined(
+          professional.actual_month_at_configuration,
+          professional.actualMonthAtConfiguration,
+          previousActual(previous, "today", "actualMonthAtConfiguration"),
+          0
+        )),
+        actualWeekAtConfiguration: normalizeMoney(firstDefined(
+          professional.actual_week_at_configuration,
+          professional.actualWeekAtConfiguration,
+          previousActual(previous, "today", "actualWeekAtConfiguration"),
+          0
+        )),
+      };
+    }).filter((professional) => professional.id && professional.active)
+      .sort((a, b) => a.queuePosition - b.queuePosition || a.name.localeCompare(b.name, "pt-BR"));
+    const actualFields = {
+      today: ["actual_today", "actualToday"],
+      week: ["actual_week", "actualWeek"],
+      month: ["actual_month", "actualMonth"],
+    };
+    const normalizedActualSum = (period) => normalizedProfessionals.reduce((sum, professional) => (
+      sum + normalizeMoney(professional[period === "today" ? "actualToday" : period === "week" ? "actualWeek" : "actualMonth"])
+    ), 0);
+    const hasProfessionalActual = (period) => professionals.some((professional) => (
+      actualFields[period].some((field) => Object.prototype.hasOwnProperty.call(professional || {}, field))
+    ));
+    const normalizeGoal = (value, period) => ({
+      target: normalizeMoney(firstDefined(
+        value?.target,
+        period === "month" ? firstDefined(payload.monthly_goal, payload.monthlyGoal) : undefined,
+        0
+      )),
+      actual: normalizeMoney(firstDefined(
+        value?.actual,
+        ...actualFields[period].map((field) => payload[field]),
+        previousActual(previousWorkspace?.goals?.[period], period, "actual"),
+        hasProfessionalActual(period) ? normalizedActualSum(period) : undefined,
+        normalizedActualSum(period),
+        0
+      )),
+    });
     const hasParticipationField = professionals.some((professional) => (
       Object.prototype.hasOwnProperty.call(professional || {}, "good_morning_seller_enabled")
       || Object.prototype.hasOwnProperty.call(professional || {}, "goodMorningSellerEnabled")
@@ -880,7 +980,7 @@
       monthlyGoal: normalizeMoney(firstDefined(payload.monthly_goal, payload.monthlyGoal, 0)),
       lastMonthlyGoal: normalizeMoney(firstDefined(payload.last_monthly_goal, payload.lastMonthlyGoal, payload.monthly_goal, 0)),
       today,
-      weekStart: String(firstDefined(payload.week_start, payload.weekStart, "")),
+      weekStart,
       weekEnd: String(firstDefined(payload.week_end, payload.weekEnd, "")),
       workdaysInMonth: Number(firstDefined(payload.workdays_in_month, payload.workdaysInMonth, 0)) || 0,
       workdaysInWeek: Number(firstDefined(payload.workdays_in_week, payload.workdaysInWeek, 0)) || 0,
@@ -909,6 +1009,53 @@
         payload.dailyGoalStrategy,
         "fixed_distribution"
       )),
+      historicalActualsStrategy: String(firstDefined(
+        payload.historical_actuals_strategy,
+        payload.historicalActualsStrategy,
+        previousWorkspace?.historicalActualsStrategy,
+        ""
+      )),
+      configurationActualSnapshotStrategy: String(firstDefined(
+        payload.configuration_actual_snapshot_strategy,
+        payload.configurationActualSnapshotStrategy,
+        previousWorkspace?.configurationActualSnapshotStrategy,
+        ""
+      )),
+      configurationActualSnapshotActive: firstDefined(
+        payload.configuration_actual_snapshot_active,
+        payload.configurationActualSnapshotActive,
+        sameDayAsPrevious ? previousWorkspace?.configurationActualSnapshotActive : undefined,
+        false
+      ) === true,
+      actualMonthAtConfiguration: normalizeMoney(firstDefined(
+        payload.actual_month_at_configuration,
+        payload.actualMonthAtConfiguration,
+        sameDayAsPrevious ? previousWorkspace?.actualMonthAtConfiguration : undefined,
+        0
+      )),
+      actualWeekAtConfiguration: normalizeMoney(firstDefined(
+        payload.actual_week_at_configuration,
+        payload.actualWeekAtConfiguration,
+        sameDayAsPrevious ? previousWorkspace?.actualWeekAtConfiguration : undefined,
+        0
+      )),
+      actualTodayBeforeConfiguration: normalizeMoney(firstDefined(
+        payload.actual_today_before_configuration,
+        payload.actualTodayBeforeConfiguration,
+        payload.initial_configuration_today_actual,
+        payload.initialConfigurationTodayActual,
+        sameDayAsPrevious ? previousWorkspace?.actualTodayBeforeConfiguration : undefined,
+        normalizedProfessionals.reduce((sum, professional) => (
+          sum + professional.actualTodayBeforeConfiguration
+        ), 0),
+        0
+      )),
+      initialConfigurationCutoffApplied: firstDefined(
+        payload.initial_configuration_cutoff_applied,
+        payload.initialConfigurationCutoffApplied,
+        sameDayAsPrevious ? previousWorkspace?.initialConfigurationCutoffApplied : undefined,
+        false
+      ) === true,
       todayIsWorkingDay: firstDefined(payload.today_is_working_day, payload.todayIsWorkingDay, false) === true,
       teamProfessionalCount: Number(firstDefined(
         payload.team_professional_count,
@@ -926,38 +1073,12 @@
         ) !== false).length
       )) || 0,
       goals: {
-        today: normalizeGoal(goals.today),
-        week: normalizeGoal(goals.week),
-        month: normalizeGoal(goals.month),
+        today: normalizeGoal(goals.today, "today"),
+        week: normalizeGoal(goals.week, "week"),
+        month: normalizeGoal(goals.month, "month"),
       },
       currentProfessionalId: String(firstDefined(payload.current_professional_id, payload.currentProfessionalId, "")),
-      professionals: professionals.map((professional, index) => {
-        const goalToday = firstDefined(professional.goal_today, professional.goalToday);
-        const goalWeek = firstDefined(professional.goal_week, professional.goalWeek);
-        const goalMonth = firstDefined(professional.goal_month, professional.goalMonth, professional.goal_amount, professional.goalAmount);
-        return {
-          id: String(firstDefined(professional.id, professional.professional_id, "")),
-          name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
-          active: firstDefined(professional.is_active, professional.active, true) !== false,
-          enabled: firstDefined(
-            professional.good_morning_seller_enabled,
-            professional.goodMorningSellerEnabled,
-            professional.enabled,
-            true
-          ) !== false,
-          goalAmount: normalizeMoney(firstDefined(professional.goal_amount, professional.goalAmount, goalMonth, 0)),
-          goalToday: normalizeMoney(firstDefined(goalToday, 0)),
-          goalWeek: normalizeMoney(firstDefined(goalWeek, 0)),
-          goalMonth: normalizeMoney(firstDefined(goalMonth, 0)),
-          hasPeriodGoals: goalToday != null && goalWeek != null && goalMonth != null,
-          queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
-          current: firstDefined(professional.is_current, professional.current, false) === true,
-          actualMonth: normalizeMoney(firstDefined(professional.actual_month, professional.actualMonth, 0)),
-          actualWeek: normalizeMoney(firstDefined(professional.actual_week, professional.actualWeek, 0)),
-          actualToday: normalizeMoney(firstDefined(professional.actual_today, professional.actualToday, 0)),
-        };
-      }).filter((professional) => professional.id && professional.active)
-        .sort((a, b) => a.queuePosition - b.queuePosition || a.name.localeCompare(b.name, "pt-BR")),
+      professionals: normalizedProfessionals,
     };
   }
 
@@ -1187,8 +1308,8 @@
     return targets;
   }
 
-  function morningRemainingGoalPlan(context) {
-    const participants = morningParticipants(state.morning?.professionals || []);
+  function calculateMorningRemainingGoalPlan(morning, context) {
+    const participants = morningParticipants(morning?.professionals || []);
     const emptyTargets = () => new Map(participants.map((professional) => [professional.id, 0]));
     const emptyPlan = {
       todayTargetCents: 0,
@@ -1203,11 +1324,13 @@
     }
 
     const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
-    const monthGoalCents = toCents(state.morning?.goals?.month?.target || state.morning?.monthlyGoal);
-    const monthActualBeforeWeekCents = Math.max(Math.round((
-      Number(state.morning?.goals?.month?.actual || 0)
-      - Number(state.morning?.goals?.week?.actual || 0)
-    ) * 100), 0);
+    const positiveDifferenceCents = (left, right) => Math.max(toCents(left) - toCents(right), 0);
+    const snapshotActive = morning?.configurationActualSnapshotActive === true;
+    const monthGoalCents = toCents(morning?.goals?.month?.target || morning?.monthlyGoal);
+    const monthActualBeforeWeekCents = positiveDifferenceCents(
+      snapshotActive ? morning?.actualMonthAtConfiguration : morning?.goals?.month?.actual,
+      snapshotActive ? morning?.actualWeekAtConfiguration : morning?.goals?.week?.actual
+    );
     const monthBalanceAtWeekStartCents = Math.max(monthGoalCents - monthActualBeforeWeekCents, 0);
     const weekTargetCents = Math.round(
       monthBalanceAtWeekStartCents
@@ -1216,9 +1339,10 @@
     );
     const weeklyAllocations = participants.map((professional) => {
       const goalCents = toCents(professional.goalAmount || professional.goalMonth);
-      const actualBeforeWeekCents = Math.max(Math.round((
-        Number(professional.actualMonth || 0) - Number(professional.actualWeek || 0)
-      ) * 100), 0);
+      const actualBeforeWeekCents = positiveDifferenceCents(
+        snapshotActive ? professional.actualMonthAtConfiguration : professional.actualMonth,
+        snapshotActive ? professional.actualWeekAtConfiguration : professional.actualWeek
+      );
       return {
         id: professional.id,
         goalCents,
@@ -1234,19 +1358,34 @@
         : totalMonthGoalCents > 0 ? allocation.goalCents : 1,
     })));
 
-    const weekActualBeforeTodayCents = Math.max(Math.round((
-      Number(state.morning?.goals?.week?.actual || 0)
-      - Number(state.morning?.goals?.today?.actual || 0)
-    ) * 100), 0);
+    const todayActualCents = toCents(morning?.goals?.today?.actual);
+    const todayBeforeConfigurationCents = Math.min(toCents(morning?.actualTodayBeforeConfiguration), todayActualCents);
+    const weekActualBeforeTodayCents = snapshotActive
+      ? toCents(morning?.actualWeekAtConfiguration)
+      : Math.max(
+        toCents(morning?.goals?.week?.actual)
+        - todayActualCents
+        + todayBeforeConfigurationCents,
+        0
+      );
     const weekBalanceTodayCents = Math.max(weekTargetCents - weekActualBeforeTodayCents, 0);
     const todayTargetCents = context.todayIsWorkingDay && context.remainingWeekWorkdays
       ? Math.round(weekBalanceTodayCents / context.remainingWeekWorkdays)
       : 0;
     const dailyAllocations = participants.map((professional) => {
       const weekGoalCents = weekTargetsCents.get(professional.id) || 0;
-      const actualWeekBeforeTodayCents = Math.max(Math.round((
-        Number(professional.actualWeek || 0) - Number(professional.actualToday || 0)
-      ) * 100), 0);
+      const professionalTodayActualCents = toCents(professional.actualToday);
+      const professionalTodayBeforeConfigurationCents = Math.min(toCents(
+        professional.actualTodayBeforeConfiguration
+      ), professionalTodayActualCents);
+      const actualWeekBeforeTodayCents = snapshotActive
+        ? toCents(professional.actualWeekAtConfiguration)
+        : Math.max(
+          toCents(professional.actualWeek)
+          - professionalTodayActualCents
+          + professionalTodayBeforeConfigurationCents,
+          0
+        );
       return {
         id: professional.id,
         weekGoalCents,
@@ -1266,6 +1405,10 @@
           : totalConfiguredGoalCents > 0 ? allocation.monthGoalCents : 1,
     })));
     return { todayTargetCents, weekTargetCents, todayTargetsCents, weekTargetsCents };
+  }
+
+  function morningRemainingGoalPlan(context) {
+    return calculateMorningRemainingGoalPlan(state.morning, context);
   }
 
   function morningProfessionalGoal(professional, key, context, goalPlan = null) {
@@ -3575,7 +3718,7 @@
         p_enabled: enabled === true,
       });
       if (!isCurrent()) return;
-      const nextMorning = normalizeMorningWorkspace(raw);
+      const nextMorning = normalizeMorningWorkspace(raw, state.morning);
       state.morning = nextMorning;
       if (state.morningConfigOpen
         && state.morningConfigGeneration === updateContext.configGeneration
@@ -3683,7 +3826,7 @@
       }
       const raw = await rpc(closedDaysConfigurationAvailable ? "morningSave" : "morningSaveLegacy", saveArgs);
       if (!isCurrent()) return;
-      state.morning = normalizeMorningWorkspace(raw);
+      state.morning = normalizeMorningWorkspace(raw, state.morning);
       state.morningConfigOpen = false;
       state.morningConfigGeneration += 1;
       state.morningDraft = null;
@@ -3722,7 +3865,7 @@
     try {
       const raw = await rpc("morningAdvance", { p_store_id: advanceContext.storeId });
       if (!isCurrent()) return;
-      state.morning = normalizeMorningWorkspace(raw);
+      state.morning = normalizeMorningWorkspace(raw, state.morning);
       const current = morningQueue()[0];
       notify(current ? `${current.name} está na vez agora.` : "Fila atualizada.", "success");
     } catch (error) {
@@ -4259,6 +4402,9 @@
             eligible_professional_count: "integer (people currently participating)",
             goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
             daily_goal_strategy: "remaining_team_balance (compatibility marker)",
+            historical_actuals_strategy: "full_operational_month_with_initial_configuration_cutoff_v1",
+            actual_today_before_configuration: "numeric (purchases already registered before the month's first valid configuration)",
+            initial_configuration_cutoff_applied: "boolean",
             remaining_workdays_in_week: "integer (Monday through Saturday, including today)",
             remaining_workdays_in_month: "integer (Monday through Saturday, including today)",
             goals: "object",
@@ -4310,6 +4456,7 @@
         "Dias sem expediente aceitam apenas o mês atual, de segunda a sábado, sem duplicatas; motivo vazio vira Sem expediente.",
         "Meta, divisão, fila e dias sem expediente são salvos atomicamente pela RPC v2; não há fallback silencioso após a capability ser liberada.",
         "A meta semanal nasce do saldo mensal; a meta diária usa o saldo da semana até ontem e redistribui falta ou excesso nos dias seguintes.",
+        "A primeira configuração do mês incorpora atendimentos já registrados, inclusive os do próprio dia; vendas posteriores aparecem no realizado sem mover o alvo durante o expediente.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };
@@ -4320,6 +4467,7 @@
       attendanceRecordDate,
       attendanceUpdateFeedbackMessage,
       attendanceUpdateArgs,
+      calculateMorningRemainingGoalPlan,
       calculateMorningWorkingDayContext,
       cloneMorningDraft,
       createAttendanceEditDraft,
@@ -4332,6 +4480,7 @@
       normalizeRecord,
       normalizeSaveFeedback,
       normalizeMorningClosedDays,
+      normalizeMorningWorkspace,
       parseAttendanceMoney,
       replaceAttendanceRecord,
       validateAttendanceSubmission,

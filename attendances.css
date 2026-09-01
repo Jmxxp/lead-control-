@@ -2850,8 +2850,29 @@ body.is-dark .attendance-turn-label > span,
 .attendance-edit-footer .attendance-secondary-button,
 .attendance-edit-footer .attendance-primary-button {
   width: auto;
+  height: 44px;
   min-width: 124px;
+  min-height: 44px;
+  margin: 0;
   padding-inline: 16px;
+}
+
+.attendance-edit-footer .attendance-button-idle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.attendance-edit-footer .attendance-button-loading {
+  justify-content: center;
+}
+
+.attendance-edit-footer .attendance-button-idle > i {
+  flex: 0 0 14px;
+  width: 14px;
+  line-height: 1;
+  text-align: center;
 }
 
 .attendance-edit-form[aria-busy="true"] {
