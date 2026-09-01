@@ -51,6 +51,8 @@
     morningConfigOpen: false,
     morningConfigGeneration: 0,
     morningDraft: null,
+    morningDayRefreshTimer: 0,
+    morningResumeEventsBound: false,
     legacyAttendanceSaveRequired: false,
     serverMetrics: {},
     feedback: null,
@@ -686,6 +688,16 @@
       weekEnd: String(firstDefined(payload.week_end, payload.weekEnd, "")),
       workdaysInMonth: Number(firstDefined(payload.workdays_in_month, payload.workdaysInMonth, 0)) || 0,
       workdaysInWeek: Number(firstDefined(payload.workdays_in_week, payload.workdaysInWeek, 0)) || 0,
+      remainingWorkdaysInMonth: Number(firstDefined(
+        payload.remaining_workdays_in_month,
+        payload.remainingWorkdaysInMonth,
+        0
+      )) || 0,
+      dailyGoalStrategy: String(firstDefined(
+        payload.daily_goal_strategy,
+        payload.dailyGoalStrategy,
+        "fixed_distribution"
+      )),
       todayIsWorkingDay: firstDefined(payload.today_is_working_day, payload.todayIsWorkingDay, false) === true,
       teamProfessionalCount: Number(firstDefined(
         payload.team_professional_count,
@@ -760,6 +772,10 @@
 
   function morningParticipants(professionals = []) {
     return professionals.filter((professional) => professional.enabled !== false);
+  }
+
+  function morningUsesServerDailyBalance() {
+    return state.morning?.dailyGoalStrategy === "remaining_team_balance";
   }
 
   function applyEqualMorningGoals(draft) {
@@ -865,6 +881,7 @@
       total,
       throughToday,
       beforeToday,
+      remainingWorkdays: Math.max(total - beforeToday, 0),
       beforeWeek,
       throughWeek,
       todayIsWorkingDay: today.getUTCDay() !== 0,
@@ -879,7 +896,71 @@
     return Math.round((goalCents * completedWorkdays) / totalWorkdays);
   }
 
-  function morningProfessionalGoal(professional, key, context) {
+  function morningRemainingDailyPlan(context) {
+    const participants = morningParticipants(state.morning?.professionals || []);
+    const targets = new Map(participants.map((professional) => [professional.id, 0]));
+    if (!context?.todayIsWorkingDay || !context.remainingWorkdays || !participants.length) {
+      return { target: 0, targets };
+    }
+
+    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
+    const monthGoalCents = toCents(state.morning?.goals?.month?.target || state.morning?.monthlyGoal);
+    const actualBeforeTodayCents = Math.max(Math.round((
+      Number(state.morning?.goals?.month?.actual || 0)
+      - Number(state.morning?.goals?.today?.actual || 0)
+    ) * 100), 0);
+    const remainingCents = Math.max(monthGoalCents - actualBeforeTodayCents, 0);
+    const targetCents = Math.round(remainingCents / context.remainingWorkdays);
+    if (!targetCents) return { target: 0, targets };
+
+    const allocations = participants.map((professional, index) => {
+      const goalCents = toCents(professional.goalAmount || professional.goalMonth);
+      const professionalActualBeforeTodayCents = Math.max(Math.round((
+        Number(professional.actualMonth || 0) - Number(professional.actualToday || 0)
+      ) * 100), 0);
+      return {
+        id: professional.id,
+        index,
+        goalCents,
+        gapCents: Math.max(goalCents - professionalActualBeforeTodayCents, 0),
+        weightCents: 0,
+        baseCents: 0n,
+        remainder: 0n,
+      };
+    });
+    const totalGapCents = allocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
+    const totalGoalCents = allocations.reduce((sum, allocation) => sum + allocation.goalCents, 0);
+    allocations.forEach((allocation) => {
+      allocation.weightCents = totalGapCents > 0
+        ? allocation.gapCents
+        : totalGoalCents > 0 ? allocation.goalCents : 1;
+    });
+
+    const totalWeight = allocations.reduce((sum, allocation) => sum + BigInt(allocation.weightCents), 0n);
+    const targetBigInt = BigInt(targetCents);
+    allocations.forEach((allocation) => {
+      const numerator = targetBigInt * BigInt(allocation.weightCents);
+      allocation.baseCents = totalWeight > 0n ? numerator / totalWeight : 0n;
+      allocation.remainder = totalWeight > 0n ? numerator % totalWeight : 0n;
+    });
+    const distributedBase = allocations.reduce((sum, allocation) => sum + allocation.baseCents, 0n);
+    const leftover = targetBigInt - distributedBase;
+    [...allocations]
+      .sort((a, b) => {
+        if (a.remainder === b.remainder) return a.index - b.index;
+        return a.remainder > b.remainder ? -1 : 1;
+      })
+      .forEach((allocation, index) => {
+        const cents = allocation.baseCents + (BigInt(index) < leftover ? 1n : 0n);
+        targets.set(allocation.id, Number(cents) / 100);
+      });
+    return { target: targetCents / 100, targets };
+  }
+
+  function morningProfessionalGoal(professional, key, context, dailyPlan = null) {
+    if (key === "today" && !morningUsesServerDailyBalance()) {
+      return (dailyPlan || morningRemainingDailyPlan(context)).targets.get(professional.id) || 0;
+    }
     if (professional.hasPeriodGoals) {
       if (key === "today") return professional.goalToday;
       if (key === "week") return professional.goalWeek;
@@ -901,15 +982,28 @@
     ) / 100;
   }
 
-  function renderMorningIndividualGoals(key) {
+  function renderMorningIndividualGoals(key, dailyPlan = null) {
     const context = morningWorkingDayContext();
     const professionals = morningQueue();
     if (!professionals.length) return "";
-    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context)))}</strong></p>`).join("")}</div></div>`;
+    const resolvedDailyPlan = key === "today" && !morningUsesServerDailyBalance()
+      ? dailyPlan || morningRemainingDailyPlan(context)
+      : null;
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context, resolvedDailyPlan)))}</strong></p>`).join("")}</div></div>`;
   }
 
   function renderMorningGoalCard(key, label, icon, helper) {
-    const goal = state.morning?.goals?.[key] || { target: 0, actual: 0 };
+    const storedGoal = state.morning?.goals?.[key] || { target: 0, actual: 0 };
+    let goal = storedGoal;
+    let dailyPlan = null;
+    if (key === "today" && !morningUsesServerDailyBalance()) {
+      const context = morningWorkingDayContext();
+      dailyPlan = morningRemainingDailyPlan(context);
+      goal = {
+        ...storedGoal,
+        target: dailyPlan.target,
+      };
+    }
     const progress = goalProgress(goal.actual, goal.target);
     return `<article class="attendance-morning-goal is-${key}">
       <header><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><b>${progress}%</b></header>
@@ -917,7 +1011,7 @@
       <strong>${escapeHtml(formatCurrency(goal.target))}</strong>
       <small>${escapeHtml(formatCurrency(goal.actual))} realizado${helper ? ` · ${escapeHtml(helper)}` : ""}</small>
       <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${progress}%"></b></i>
-      ${renderMorningIndividualGoals(key)}
+      ${renderMorningIndividualGoals(key, dailyPlan)}
     </article>`;
   }
 
@@ -1103,6 +1197,7 @@
         state.root?.querySelector('[data-attendance-action="open-morning-config"]')?.focus();
       });
     }
+    void refreshMorningForCurrentDay();
     return true;
   }
 
@@ -2378,6 +2473,43 @@
     }, 260);
   }
 
+  async function refreshMorningForCurrentDay() {
+    if (!state.active
+      || state.morningLoading
+      || state.morningSaving
+      || state.morningParticipationSaving
+      || state.morningConfigOpen
+      || !selectedStore()?.goodMorningSellerEnabled) return;
+    if (!state.morning?.today && !state.morningError) return;
+    if (state.morning?.today === embeddedDateInput(new Date())) return;
+    await loadMorningWorkspace({ quiet: true });
+  }
+
+  function handleMorningDayResume() {
+    if (global.document?.visibilityState === "hidden") return;
+    void refreshMorningForCurrentDay();
+  }
+
+  function startMorningDayRefresh() {
+    if (state.morningDayRefreshTimer) global.clearInterval(state.morningDayRefreshTimer);
+    state.morningDayRefreshTimer = global.setInterval(handleMorningDayResume, 60000);
+    if (!state.morningResumeEventsBound) {
+      global.document?.addEventListener("visibilitychange", handleMorningDayResume);
+      global.addEventListener("focus", handleMorningDayResume);
+      state.morningResumeEventsBound = true;
+    }
+  }
+
+  function stopMorningDayRefresh() {
+    if (state.morningDayRefreshTimer) global.clearInterval(state.morningDayRefreshTimer);
+    state.morningDayRefreshTimer = 0;
+    if (state.morningResumeEventsBound) {
+      global.document?.removeEventListener("visibilitychange", handleMorningDayResume);
+      global.removeEventListener("focus", handleMorningDayResume);
+      state.morningResumeEventsBound = false;
+    }
+  }
+
   async function loadMorningWorkspace({ quiet = false } = {}) {
     const store = selectedStore();
     if (!state.active || !store?.id || !store.goodMorningSellerEnabled) {
@@ -2389,6 +2521,7 @@
     if (state.morningSaving || state.morningParticipationSaving) return;
 
     const storeId = store.id;
+    const previousMorning = state.morning;
     const contextGeneration = state.contextGeneration;
     const requestGeneration = ++state.morningGeneration;
     state.morningLoading = true;
@@ -2423,7 +2556,7 @@
         || requestGeneration !== state.morningGeneration
         || storeId !== state.selectedStoreId) return;
       state.morningLoading = false;
-      state.morning = null;
+      state.morning = quiet && previousMorning && !isEntitlementError(error) ? previousMorning : null;
       state.morningConfigOpen = false;
       state.morningConfigGeneration += 1;
       state.morningDraft = null;
@@ -3104,6 +3237,7 @@
     if (!mount(nextBridge.root || nextBridge.mountTarget)) {
       throw new Error("Área visual de Atendimentos não encontrada.");
     }
+    startMorningDayRefresh();
     await loadWorkspace();
   }
 
@@ -3116,12 +3250,14 @@
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
+    stopMorningDayRefresh();
     clearMorningState();
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
     state.listSearchTimer = 0;
   }
 
   function resetSession() {
+    stopMorningDayRefresh();
     state.active = false;
     state.loading = false;
     state.saving = false;
@@ -3267,6 +3403,8 @@
             participation_control_available: "boolean (the participation field exists)",
             participation_update_available: "boolean (the dedicated update RPC exists)",
             eligible_professional_count: "integer (people currently participating)",
+            daily_goal_strategy: "remaining_team_balance",
+            remaining_workdays_in_month: "integer (Monday through Saturday, including today)",
             goals: "object",
             professionals: "array",
             queue: "array",
@@ -3305,6 +3443,7 @@
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
         "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
         "Admin e a própria loja configuram metas, divisão, ordem e avanço da rotação.",
+        "A meta diária usa o saldo geral da equipe até ontem, distribui exatamente os centavos entre os participantes e permanece fixa durante o dia.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };
