@@ -1688,7 +1688,7 @@ body.is-dark .prospection-config-row {
 
 #appView > .topbar {
   display: grid;
-  grid-template-columns: minmax(250px, 1fr) auto minmax(250px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, max-content) minmax(max-content, 1fr);
   align-items: center;
   gap: 16px;
   min-height: 82px;
@@ -1699,12 +1699,13 @@ body.is-dark .prospection-config-row {
 }
 
 #appView > .topbar:has(> .module-switcher[hidden]) {
-  grid-template-columns: minmax(250px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) max-content;
 }
 
 #appView > .topbar:has(> .module-switcher[hidden]) > .topbar-actions,
 #appView > .topbar > .topbar-actions {
   justify-self: end;
+  min-width: max-content;
 }
 
 #appView .topbar-identity {
@@ -1774,6 +1775,13 @@ body.is-dark-mode.is-prospections-module #appView > .topbar h1 {
   padding: 0 12px;
   border-radius: 7px;
   font-size: 0.74rem;
+}
+
+#appView .module-switcher-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #appView .module-switcher-button.is-active {
@@ -2397,17 +2405,20 @@ body.is-dark .prospection-today-counter {
   background: rgba(255, 255, 255, 0.045);
 }
 
-@media (max-width: 1160px) {
+@media (max-width: 1480px) {
   #appView > .topbar {
-    grid-template-columns: minmax(250px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
   }
 
   #appView .module-switcher {
     grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
+    min-width: 0;
   }
+}
 
+@media (max-width: 1160px) {
   .prospection-config-columns {
     grid-template-columns: 1fr;
   }

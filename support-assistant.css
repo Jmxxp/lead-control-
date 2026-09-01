@@ -371,13 +371,13 @@
 
   #appView > .topbar > .topbar-identity {
     min-height: 68px;
-    padding-right: min(48vw, 180px);
+    padding-right: min(68vw, 236px);
   }
 
   #appView > .topbar > .topbar-actions {
     position: absolute;
     top: 9px;
-    right: 9px;
+    right: 66px;
     z-index: 2;
   }
 
@@ -462,6 +462,31 @@
   }
 }
 
+@media (max-width: 480px) {
+  #appView > .topbar {
+    grid-template-areas:
+      "identity"
+      "actions"
+      "modules";
+  }
+
+  #appView > .topbar:has(> .module-switcher[hidden]) {
+    grid-template-areas:
+      "identity"
+      "actions";
+  }
+
+  #appView > .topbar > .topbar-identity {
+    padding-right: 58px;
+  }
+
+  #appView > .topbar > .topbar-actions {
+    position: static;
+    grid-area: actions;
+    justify-self: end;
+  }
+}
+
 @media (max-width: 390px) {
   .support-assistant-mark {
     width: 38px;
@@ -480,7 +505,7 @@
     grid-template-columns: repeat(5, 28px);
   }
 
-  #appView .topbar-actions:has(#supportAssistantToggle:not([hidden])) > .topbar-button {
+  #appView .topbar-actions:has(#supportAssistantToggle:not([hidden])) > .topbar-button:not(#supportAssistantToggle) {
     width: 28px;
     min-width: 28px;
     height: 30px;
