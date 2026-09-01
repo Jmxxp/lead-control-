@@ -693,6 +693,21 @@
         payload.remainingWorkdaysInMonth,
         0
       )) || 0,
+      remainingWorkdaysInWeek: Number(firstDefined(
+        payload.remaining_workdays_in_week,
+        payload.remainingWorkdaysInWeek,
+        0
+      )) || 0,
+      workdaysInMonthFromWeekStart: Number(firstDefined(
+        payload.workdays_in_month_from_week_start,
+        payload.workdaysInMonthFromWeekStart,
+        0
+      )) || 0,
+      goalStrategy: String(firstDefined(
+        payload.goal_strategy,
+        payload.goalStrategy,
+        ""
+      )),
       dailyGoalStrategy: String(firstDefined(
         payload.daily_goal_strategy,
         payload.dailyGoalStrategy,
@@ -774,8 +789,18 @@
     return professionals.filter((professional) => professional.enabled !== false);
   }
 
-  function morningUsesServerDailyBalance() {
-    return state.morning?.dailyGoalStrategy === "remaining_team_balance";
+  function morningUsesServerGoalBalance() {
+    if (state.morning?.goalStrategy !== "hierarchical_weekly_daily_team_balance_v1") return false;
+    const participants = morningParticipants(state.morning?.professionals || []);
+    if (!participants.every((professional) => professional.hasPeriodGoals)) return false;
+    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
+    return ["today", "week"].every((key) => {
+      const field = key === "today" ? "goalToday" : "goalWeek";
+      const individualCents = participants.reduce((sum, professional) => (
+        sum + toCents(professional[field])
+      ), 0);
+      return individualCents === toCents(state.morning?.goals?.[key]?.target);
+    });
   }
 
   function applyEqualMorningGoals(draft) {
@@ -862,8 +887,16 @@
     isoWeekStart.setUTCDate(today.getUTCDate() - isoWeekday + 1);
     const isoWeekEnd = new Date(isoWeekStart);
     isoWeekEnd.setUTCDate(isoWeekStart.getUTCDate() + 6);
-    const weekStart = isoWeekStart < monthStart ? monthStart : isoWeekStart;
-    const weekEnd = isoWeekEnd > monthEnd ? monthEnd : isoWeekEnd;
+    const fallbackWeekStart = isoWeekStart < monthStart ? monthStart : isoWeekStart;
+    const fallbackWeekEnd = isoWeekEnd > monthEnd ? monthEnd : isoWeekEnd;
+    const parsedWeekStart = parseIsoDateParts(state.morning?.weekStart)?.date;
+    const parsedWeekEnd = parseIsoDateParts(state.morning?.weekEnd)?.date;
+    const weekStart = parsedWeekStart && parsedWeekStart >= monthStart && parsedWeekStart <= monthEnd
+      ? parsedWeekStart
+      : fallbackWeekStart;
+    const weekEnd = parsedWeekEnd && parsedWeekEnd >= weekStart && parsedWeekEnd <= monthEnd
+      ? parsedWeekEnd
+      : fallbackWeekEnd;
     let total = 0;
     let throughToday = 0;
     let beforeToday = 0;
@@ -884,6 +917,9 @@
       remainingWorkdays: Math.max(total - beforeToday, 0),
       beforeWeek,
       throughWeek,
+      weekWorkdays: Math.max(throughWeek - beforeWeek, 0),
+      remainingMonthWorkdaysFromWeekStart: Math.max(total - beforeWeek, 0),
+      remainingWeekWorkdays: Math.max(throughWeek - beforeToday, 0),
       todayIsWorkingDay: today.getUTCDay() !== 0,
       weekStart: isoDateFromUtc(weekStart),
       weekEnd: isoDateFromUtc(weekEnd),
@@ -896,70 +932,127 @@
     return Math.round((goalCents * completedWorkdays) / totalWorkdays);
   }
 
-  function morningRemainingDailyPlan(context) {
-    const participants = morningParticipants(state.morning?.professionals || []);
-    const targets = new Map(participants.map((professional) => [professional.id, 0]));
-    if (!context?.todayIsWorkingDay || !context.remainingWorkdays || !participants.length) {
-      return { target: 0, targets };
+  function morningApportionGoalCents(targetCents, weightedItems) {
+    const items = weightedItems.map((item, index) => ({
+      ...item,
+      index,
+      weightCents: Math.max(Math.round(Number(item.weightCents || 0)), 0),
+      baseCents: 0n,
+      remainder: 0n,
+    }));
+    const targets = new Map(items.map((item) => [item.id, 0]));
+    const normalizedTargetCents = Math.max(Math.round(Number(targetCents || 0)), 0);
+    if (!items.length || !normalizedTargetCents) return targets;
+    if (!items.some((item) => item.weightCents > 0)) {
+      items.forEach((item) => { item.weightCents = 1; });
     }
 
-    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
-    const monthGoalCents = toCents(state.morning?.goals?.month?.target || state.morning?.monthlyGoal);
-    const actualBeforeTodayCents = Math.max(Math.round((
-      Number(state.morning?.goals?.month?.actual || 0)
-      - Number(state.morning?.goals?.today?.actual || 0)
-    ) * 100), 0);
-    const remainingCents = Math.max(monthGoalCents - actualBeforeTodayCents, 0);
-    const targetCents = Math.round(remainingCents / context.remainingWorkdays);
-    if (!targetCents) return { target: 0, targets };
-
-    const allocations = participants.map((professional, index) => {
-      const goalCents = toCents(professional.goalAmount || professional.goalMonth);
-      const professionalActualBeforeTodayCents = Math.max(Math.round((
-        Number(professional.actualMonth || 0) - Number(professional.actualToday || 0)
-      ) * 100), 0);
-      return {
-        id: professional.id,
-        index,
-        goalCents,
-        gapCents: Math.max(goalCents - professionalActualBeforeTodayCents, 0),
-        weightCents: 0,
-        baseCents: 0n,
-        remainder: 0n,
-      };
+    const totalWeight = items.reduce((sum, item) => sum + BigInt(item.weightCents), 0n);
+    const targetBigInt = BigInt(normalizedTargetCents);
+    items.forEach((item) => {
+      const numerator = targetBigInt * BigInt(item.weightCents);
+      item.baseCents = numerator / totalWeight;
+      item.remainder = numerator % totalWeight;
     });
-    const totalGapCents = allocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
-    const totalGoalCents = allocations.reduce((sum, allocation) => sum + allocation.goalCents, 0);
-    allocations.forEach((allocation) => {
-      allocation.weightCents = totalGapCents > 0
-        ? allocation.gapCents
-        : totalGoalCents > 0 ? allocation.goalCents : 1;
-    });
-
-    const totalWeight = allocations.reduce((sum, allocation) => sum + BigInt(allocation.weightCents), 0n);
-    const targetBigInt = BigInt(targetCents);
-    allocations.forEach((allocation) => {
-      const numerator = targetBigInt * BigInt(allocation.weightCents);
-      allocation.baseCents = totalWeight > 0n ? numerator / totalWeight : 0n;
-      allocation.remainder = totalWeight > 0n ? numerator % totalWeight : 0n;
-    });
-    const distributedBase = allocations.reduce((sum, allocation) => sum + allocation.baseCents, 0n);
+    const distributedBase = items.reduce((sum, item) => sum + item.baseCents, 0n);
     const leftover = targetBigInt - distributedBase;
-    [...allocations]
+    [...items]
       .sort((a, b) => {
         if (a.remainder === b.remainder) return a.index - b.index;
         return a.remainder > b.remainder ? -1 : 1;
       })
-      .forEach((allocation, index) => {
-        const cents = allocation.baseCents + (BigInt(index) < leftover ? 1n : 0n);
-        targets.set(allocation.id, Number(cents) / 100);
+      .forEach((item, index) => {
+        targets.set(item.id, Number(item.baseCents + (BigInt(index) < leftover ? 1n : 0n)));
       });
-    return { target: targetCents / 100, targets };
+    return targets;
   }
 
-  function morningProfessionalGoal(professional, key, context, dailyPlan = null) {
-    if (key === "today" && !morningUsesServerDailyBalance()) {
-      return (dailyPlan || morningRemainingDailyPlan(context)).targets.get(professional.id) || 0;
+  function morningRemainingGoalPlan(context) {
+    const participants = morningParticipants(state.morning?.professionals || []);
+    const emptyTargets = () => new Map(participants.map((professional) => [professional.id, 0]));
+    const emptyPlan = {
+      todayTargetCents: 0,
+      weekTargetCents: 0,
+      todayTargetsCents: emptyTargets(),
+      weekTargetsCents: emptyTargets(),
+    };
+    if (!participants.length
+      || !context?.weekWorkdays
+      || !context.remainingMonthWorkdaysFromWeekStart) {
+      return emptyPlan;
+    }
+
+    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
+    const monthGoalCents = toCents(state.morning?.goals?.month?.target || state.morning?.monthlyGoal);
+    const monthActualBeforeWeekCents = Math.max(Math.round((
+      Number(state.morning?.goals?.month?.actual || 0)
+      - Number(state.morning?.goals?.week?.actual || 0)
+    ) * 100), 0);
+    const monthBalanceAtWeekStartCents = Math.max(monthGoalCents - monthActualBeforeWeekCents, 0);
+    const weekTargetCents = Math.round(
+      monthBalanceAtWeekStartCents
+      * context.weekWorkdays
+      / context.remainingMonthWorkdaysFromWeekStart
+    );
+    const weeklyAllocations = participants.map((professional) => {
+      const goalCents = toCents(professional.goalAmount || professional.goalMonth);
+      const actualBeforeWeekCents = Math.max(Math.round((
+        Number(professional.actualMonth || 0) - Number(professional.actualWeek || 0)
+      ) * 100), 0);
+      return {
+        id: professional.id,
+        goalCents,
+        gapCents: Math.max(goalCents - actualBeforeWeekCents, 0),
+      };
+    });
+    const totalMonthGapCents = weeklyAllocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
+    const totalMonthGoalCents = weeklyAllocations.reduce((sum, allocation) => sum + allocation.goalCents, 0);
+    const weekTargetsCents = morningApportionGoalCents(weekTargetCents, weeklyAllocations.map((allocation) => ({
+      id: allocation.id,
+      weightCents: totalMonthGapCents > 0
+        ? allocation.gapCents
+        : totalMonthGoalCents > 0 ? allocation.goalCents : 1,
+    })));
+
+    const weekActualBeforeTodayCents = Math.max(Math.round((
+      Number(state.morning?.goals?.week?.actual || 0)
+      - Number(state.morning?.goals?.today?.actual || 0)
+    ) * 100), 0);
+    const weekBalanceTodayCents = Math.max(weekTargetCents - weekActualBeforeTodayCents, 0);
+    const todayTargetCents = context.todayIsWorkingDay && context.remainingWeekWorkdays
+      ? Math.round(weekBalanceTodayCents / context.remainingWeekWorkdays)
+      : 0;
+    const dailyAllocations = participants.map((professional) => {
+      const weekGoalCents = weekTargetsCents.get(professional.id) || 0;
+      const actualWeekBeforeTodayCents = Math.max(Math.round((
+        Number(professional.actualWeek || 0) - Number(professional.actualToday || 0)
+      ) * 100), 0);
+      return {
+        id: professional.id,
+        weekGoalCents,
+        monthGoalCents: toCents(professional.goalAmount || professional.goalMonth),
+        gapCents: Math.max(weekGoalCents - actualWeekBeforeTodayCents, 0),
+      };
+    });
+    const totalWeekGapCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
+    const totalWeekGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.weekGoalCents, 0);
+    const totalConfiguredGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.monthGoalCents, 0);
+    const todayTargetsCents = morningApportionGoalCents(todayTargetCents, dailyAllocations.map((allocation) => ({
+      id: allocation.id,
+      weightCents: totalWeekGapCents > 0
+        ? allocation.gapCents
+        : totalWeekGoalCents > 0
+          ? allocation.weekGoalCents
+          : totalConfiguredGoalCents > 0 ? allocation.monthGoalCents : 1,
+    })));
+    return { todayTargetCents, weekTargetCents, todayTargetsCents, weekTargetsCents };
+  }
+
+  function morningProfessionalGoal(professional, key, context, goalPlan = null) {
+    if (["today", "week"].includes(key) && !morningUsesServerGoalBalance()) {
+      const resolvedPlan = goalPlan || morningRemainingGoalPlan(context);
+      const targets = key === "today" ? resolvedPlan.todayTargetsCents : resolvedPlan.weekTargetsCents;
+      return (targets.get(professional.id) || 0) / 100;
     }
     if (professional.hasPeriodGoals) {
       if (key === "today") return professional.goalToday;
@@ -982,26 +1075,24 @@
     ) / 100;
   }
 
-  function renderMorningIndividualGoals(key, dailyPlan = null) {
-    const context = morningWorkingDayContext();
+  function renderMorningIndividualGoals(key, goalPlan = null, context = morningWorkingDayContext()) {
     const professionals = morningQueue();
     if (!professionals.length) return "";
-    const resolvedDailyPlan = key === "today" && !morningUsesServerDailyBalance()
-      ? dailyPlan || morningRemainingDailyPlan(context)
+    const resolvedGoalPlan = ["today", "week"].includes(key) && !morningUsesServerGoalBalance()
+      ? goalPlan || morningRemainingGoalPlan(context)
       : null;
-    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context, resolvedDailyPlan)))}</strong></p>`).join("")}</div></div>`;
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context, resolvedGoalPlan)))}</strong></p>`).join("")}</div></div>`;
   }
 
-  function renderMorningGoalCard(key, label, icon, helper) {
+  function renderMorningGoalCard(key, label, icon, helper, goalPlan = null, context = morningWorkingDayContext()) {
     const storedGoal = state.morning?.goals?.[key] || { target: 0, actual: 0 };
     let goal = storedGoal;
-    let dailyPlan = null;
-    if (key === "today" && !morningUsesServerDailyBalance()) {
-      const context = morningWorkingDayContext();
-      dailyPlan = morningRemainingDailyPlan(context);
+    let resolvedGoalPlan = goalPlan;
+    if (["today", "week"].includes(key) && !morningUsesServerGoalBalance()) {
+      resolvedGoalPlan = goalPlan || morningRemainingGoalPlan(context);
       goal = {
         ...storedGoal,
-        target: dailyPlan.target,
+        target: (key === "today" ? resolvedGoalPlan.todayTargetCents : resolvedGoalPlan.weekTargetCents) / 100,
       };
     }
     const progress = goalProgress(goal.actual, goal.target);
@@ -1011,7 +1102,7 @@
       <strong>${escapeHtml(formatCurrency(goal.target))}</strong>
       <small>${escapeHtml(formatCurrency(goal.actual))} realizado${helper ? ` · ${escapeHtml(helper)}` : ""}</small>
       <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${progress}%"></b></i>
-      ${renderMorningIndividualGoals(key, dailyPlan)}
+      ${renderMorningIndividualGoals(key, resolvedGoalPlan, context)}
     </article>`;
   }
 
@@ -1021,6 +1112,8 @@
     const canConfigure = canManageMorningSettings();
     const canOpenConfig = canOpenMorningConfig();
     const weeklyPeriod = [formatShortDate(state.morning.weekStart), formatShortDate(state.morning.weekEnd)].filter(Boolean).join("–");
+    const goalContext = morningWorkingDayContext();
+    const goalPlan = morningUsesServerGoalBalance() ? null : morningRemainingGoalPlan(goalContext);
     return `<section class="attendance-morning-board" aria-labelledby="goodMorningSellerTitle">
       <header class="attendance-morning-heading">
         <div class="attendance-morning-brand"><span><i class="fa-solid fa-sun" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Bom Dia Vendedor</p><h2 id="goodMorningSellerTitle">Ritmo comercial de hoje</h2><small>Metas proporcionais aos dias do mês · compras registradas em Atendimentos</small></div></div>
@@ -1038,9 +1131,9 @@
             : `<span class="attendance-turn-owner-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>Admin ou loja controlam a vez</span>`}
         </article>
         <div class="attendance-morning-goals">
-          ${renderMorningGoalCard("today", "Meta de hoje", "fa-calendar-day", "dia")}
-          ${renderMorningGoalCard("week", "Meta da semana", "fa-calendar-week", weeklyPeriod)}
-          ${renderMorningGoalCard("month", "Meta do mês", "fa-bullseye", "equipe")}
+          ${renderMorningGoalCard("today", "Meta de hoje", "fa-calendar-day", "dia", goalPlan, goalContext)}
+          ${renderMorningGoalCard("week", "Meta da semana", "fa-calendar-week", weeklyPeriod, goalPlan, goalContext)}
+          ${renderMorningGoalCard("month", "Meta do mês", "fa-bullseye", "equipe", goalPlan, goalContext)}
         </div>
       </div>
     </section>`;
@@ -2481,7 +2574,7 @@
       || state.morningConfigOpen
       || !selectedStore()?.goodMorningSellerEnabled) return;
     if (!state.morning?.today && !state.morningError) return;
-    if (state.morning?.today === embeddedDateInput(new Date())) return;
+    if (state.morning?.today === embeddedDateInput(new Date()) && !state.morningError) return;
     await loadMorningWorkspace({ quiet: true });
   }
 
@@ -3403,7 +3496,9 @@
             participation_control_available: "boolean (the participation field exists)",
             participation_update_available: "boolean (the dedicated update RPC exists)",
             eligible_professional_count: "integer (people currently participating)",
-            daily_goal_strategy: "remaining_team_balance",
+            goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
+            daily_goal_strategy: "remaining_team_balance (compatibility marker)",
+            remaining_workdays_in_week: "integer (Monday through Saturday, including today)",
             remaining_workdays_in_month: "integer (Monday through Saturday, including today)",
             goals: "object",
             professionals: "array",
@@ -3443,7 +3538,7 @@
         "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
         "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
         "Admin e a própria loja configuram metas, divisão, ordem e avanço da rotação.",
-        "A meta diária usa o saldo geral da equipe até ontem, distribui exatamente os centavos entre os participantes e permanece fixa durante o dia.",
+        "A meta semanal nasce do saldo mensal; a meta diária usa o saldo da semana até ontem e redistribui falta ou excesso nos dias seguintes.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
     };
