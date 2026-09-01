@@ -5,6 +5,7 @@
     workspace: "lc_get_attendance_workspace",
     save: "lc_upsert_attendance_v3",
     saveLegacy: "lc_upsert_attendance_v2",
+    update: "lc_update_attendance_v1",
     list: "lc_list_attendances_v3",
     analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
@@ -31,6 +32,11 @@
     listGeneration: 0,
     contextGeneration: 0,
     pendingSave: null,
+    editingRecordId: "",
+    editDraft: null,
+    editSaving: false,
+    editError: "",
+    editGeneration: 0,
     selectedStoreId: "",
     stores: [],
     records: [],
@@ -112,6 +118,14 @@
   }
 
   const firstDefined = (...values) => values.find((value) => value !== undefined && value !== null);
+
+  function firstPresentProperty(source, names = [], fallback = undefined) {
+    if (!source || typeof source !== "object") return fallback;
+    for (const name of names) {
+      if (Object.prototype.hasOwnProperty.call(source, name) && source[name] !== undefined) return source[name];
+    }
+    return fallback;
+  }
 
   function getRole() {
     return normalizeText(state.bridge?.profile?.role);
@@ -199,6 +213,7 @@
     state.loading = false;
     state.saving = false;
     state.pendingSave = null;
+    clearAttendanceEditState();
     state.records = [];
     state.listRecords = [];
     state.listTotal = 0;
@@ -233,6 +248,49 @@
     return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
   }
 
+  function attendanceValidationError(message, fieldName = "") {
+    const error = new Error(message);
+    error.attendanceFieldName = String(fieldName || "");
+    return error;
+  }
+
+  function parseAttendanceMoney(value, { required = false, fieldName = "", label = "valor" } = {}) {
+    if (value === null || value === undefined || String(value).trim() === "") {
+      if (required) throw attendanceValidationError(`Informe o ${label}.`, fieldName);
+      return null;
+    }
+
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) {
+        throw attendanceValidationError(`Informe o ${label} no formato brasileiro (ex.: 1.234,56) ou como número inteiro.`, fieldName);
+      }
+      if (Math.abs(value) > 999999999999.99) {
+        throw attendanceValidationError(`O ${label} excede o limite permitido.`, fieldName);
+      }
+      const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
+      return Object.is(rounded, -0) ? 0 : rounded;
+    }
+
+    const source = String(value)
+      .trim()
+      .replace(/^R\$\s*/i, "")
+      .replace(/\s+/g, "");
+    const brazilianMoney = /^-?(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/;
+    if (!brazilianMoney.test(source)) {
+      throw attendanceValidationError(`Informe o ${label} no formato brasileiro (ex.: 1.234,56) ou como número inteiro.`, fieldName);
+    }
+
+    const parsed = Number(source.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(parsed)) {
+      throw attendanceValidationError(`Informe o ${label} no formato brasileiro (ex.: 1.234,56) ou como número inteiro.`, fieldName);
+    }
+    if (Math.abs(parsed) > 999999999999.99) {
+      throw attendanceValidationError(`O ${label} excede o limite permitido.`, fieldName);
+    }
+    const rounded = Math.round((parsed + Number.EPSILON) * 100) / 100;
+    return Object.is(rounded, -0) ? 0 : rounded;
+  }
+
   function formatCurrency(value) {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -252,6 +310,15 @@
 
   function formatDateTime(value) {
     if (!value) return "Data não informada";
+    const dateOnly = parseIsoDateParts(value);
+    if (dateOnly) {
+      return new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(dateOnly.date).replace(" de ", " ");
+    }
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "Data não informada";
     return new Intl.DateTimeFormat("pt-BR", {
@@ -259,6 +326,7 @@
       month: "short",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
     }).format(date).replace(" de ", " ");
   }
 
@@ -390,6 +458,25 @@
       && (!limits.today || date <= limits.today);
   }
 
+  function attendanceRecordDate(record = {}) {
+    const explicitDate = String(firstDefined(record.attendedOn, record.attended_on, "") || "").trim();
+    if (parseIsoDateParts(explicitDate)) return explicitDate;
+    const attendedAt = String(firstDefined(record.createdAt, record.attendedAt, record.attended_at, "") || "").trim();
+    if (parseIsoDateParts(attendedAt)) return attendedAt;
+    if (!attendedAt) return "";
+    const parsed = new Date(attendedAt);
+    return Number.isNaN(parsed.getTime()) ? "" : embeddedDateInput(parsed);
+  }
+
+  function formatMoneyInput(value) {
+    if (value === null || value === undefined || String(value).trim() === "") return "";
+    const amount = normalizeMoney(value);
+    return new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  }
+
   function attendanceRetroactiveDatesGranted() {
     return state.legacyAttendanceSaveRequired !== true
       && state.bridge?.attendanceRetroactiveDatesGranted !== false;
@@ -464,7 +551,19 @@
     const lead = normalizeLink(source, "lead");
     const prospection = normalizeLink(source, "prospection");
     const links = source.links && typeof source.links === "object" ? source.links : {};
-    const createdAt = firstDefined(source.attended_at, source.attendedAt, source.created_at, source.createdAt, source.registered_at, source.registeredAt, source.date);
+    const serviceValueSource = firstPresentProperty(
+      source,
+      ["service_value", "serviceValue", "value", "attendance_value"],
+      null,
+    );
+    const purchaseValueSource = firstPresentProperty(
+      source,
+      ["purchase_value", "purchaseValue", "sale_value", "saleValue"],
+      null,
+    );
+    const attendedOn = firstDefined(source.attended_on, source.attendedOn, "");
+    const registeredAt = firstDefined(source.created_at, source.registered_at, source.registeredAt, source.createdAt, "");
+    const createdAt = firstDefined(source.attended_at, source.attendedAt, attendedOn, registeredAt, source.date);
     return {
       id: String(firstDefined(source.id, source.attendance_id, source.attendanceId, `${createdAt || "attendance"}-${index}`)),
       storeId: String(firstDefined(source.store_id, source.storeId, state.selectedStoreId, "")),
@@ -475,10 +574,14 @@
       cpf: formatCpf(firstDefined(source.customer_cpf, source.cpf, source.customerCpf, "")),
       description: String(firstDefined(source.description, source.notes, source.observation, source.observations, "")),
       tag: normalizeTag(firstDefined(source.tag, source.attendance_tag, source.type, source.kind)),
-      serviceValue: normalizeMoney(firstDefined(source.service_value, source.serviceValue, source.value, source.attendance_value, 0)),
-      purchaseValue: normalizeMoney(firstDefined(source.purchase_value, source.purchaseValue, source.sale_value, source.saleValue, 0)),
+      serviceValue: serviceValueSource === null || serviceValueSource === "" ? null : normalizeMoney(serviceValueSource),
+      purchaseValue: purchaseValueSource === null || purchaseValueSource === "" ? null : normalizeMoney(purchaseValueSource),
       serviceOrder: String(firstDefined(source.service_order, source.serviceOrder, source.os, source.order_number, "")),
+      attendedOn: String(attendedOn || ""),
       createdAt: createdAt || "",
+      registeredAt: registeredAt || "",
+      updatedAt: String(firstDefined(source.expected_updated_at, source.expectedUpdatedAt, source.updated_at, source.updatedAt, source.modified_at, source.modifiedAt, "") || ""),
+      editCount: Math.max(0, Number(firstDefined(source.edit_count, source.editCount, 0)) || 0),
       linkedLead: lead,
       linkedProspection: prospection,
       ambiguous: normalizeBoolean(firstDefined(source.match_ambiguous, source.matchAmbiguous, links.ambiguous)) === true,
@@ -1456,6 +1559,175 @@
     });
   }
 
+  function createAttendanceEditDraft(record = {}) {
+    return {
+      id: String(record.id || ""),
+      storeId: String(record.storeId || ""),
+      expectedUpdatedAt: String(record.updatedAt || ""),
+      registeredAt: String(record.registeredAt || ""),
+      originalProfessionalName: String(record.professionalName || ""),
+      professionalName: String(record.professionalName || ""),
+      attendedOn: attendanceRecordDate(record),
+      customerName: String(record.customerName || ""),
+      phone: formatPhone(record.phone || ""),
+      cpf: formatCpf(record.cpf || ""),
+      description: String(record.description || ""),
+      serviceValue: formatMoneyInput(record.serviceValue),
+      tag: normalizeTag(record.tag),
+      purchaseValue: formatMoneyInput(record.purchaseValue),
+      serviceOrder: String(record.serviceOrder || ""),
+    };
+  }
+
+  function captureAttendanceEditDraft() {
+    const form = state.root?.querySelector("[data-attendance-edit-form]");
+    if (!form || !state.editDraft || !state.editingRecordId) return;
+    state.editDraft = {
+      ...state.editDraft,
+      professionalName: String(form.elements.professional_name?.value || ""),
+      attendedOn: String(form.elements.attended_on?.value || ""),
+      customerName: String(form.elements.customer_name?.value || ""),
+      phone: String(form.elements.phone?.value || ""),
+      cpf: String(form.elements.cpf?.value || ""),
+      description: String(form.elements.description?.value || ""),
+      serviceValue: String(form.elements.service_value?.value || ""),
+      tag: String(form.querySelector('input[name="tag"]:checked')?.value || "budget"),
+      purchaseValue: String(form.elements.purchase_value?.value || ""),
+      serviceOrder: String(form.elements.service_order?.value || ""),
+    };
+  }
+
+  function clearAttendanceEditState() {
+    state.editGeneration += 1;
+    state.editingRecordId = "";
+    state.editDraft = null;
+    state.editSaving = false;
+    state.editError = "";
+  }
+
+  function editableAttendanceRecord(recordId) {
+    const id = String(recordId || "");
+    const records = [...state.listRecords, ...state.records];
+    const record = records.find((item) => item.id === id) || null;
+    if (!record || !id) return null;
+    if (record.storeId && record.storeId !== state.selectedStoreId) return null;
+    return record;
+  }
+
+  function openAttendanceEdit(recordId) {
+    const record = editableAttendanceRecord(recordId);
+    if (!record || !state.selectedStoreId) {
+      notify("Este atendimento não está mais disponível nesta lista. Atualize os registros e tente novamente.", "warning");
+      return false;
+    }
+    captureDraft();
+    clearAttendanceEditState();
+    state.editingRecordId = record.id;
+    state.editDraft = createAttendanceEditDraft(record);
+    renderWorkspace();
+    requestAnimationFrame(() => {
+      const form = state.root?.querySelector("[data-attendance-edit-form]");
+      (form?.querySelector('select[name="professional_name"]:not(:disabled)')
+        || form?.querySelector('input[name="customer_name"]')
+        || state.root?.querySelector('[data-attendance-action="close-attendance-edit"]'))?.focus();
+    });
+    return true;
+  }
+
+  function closeAttendanceEdit({ restoreFocus = true, force = false } = {}) {
+    const recordId = state.editingRecordId;
+    if (!recordId) return true;
+    if (!force && state.editSaving) {
+      notify("Aguarde a atualização terminar antes de fechar.", "warning");
+      return false;
+    }
+    clearAttendanceEditState();
+    renderWorkspace();
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        [...(state.root?.querySelectorAll('[data-attendance-action="edit-attendance"]') || [])]
+          .find((button) => button.dataset.attendanceId === recordId)
+          ?.focus();
+      });
+    }
+    return true;
+  }
+
+  function renderAttendanceEditModal() {
+    const draft = state.editDraft;
+    if (!state.editingRecordId || !draft || state.view !== "operations") return "";
+    const professionalRecords = registeredProfessionalRecords();
+    const selectedProfessional = professionalRecords.find(
+      (professional) => normalizeText(professional.name) === normalizeText(draft.professionalName),
+    );
+    const missingProfessional = Boolean(draft.professionalName && !selectedProfessional);
+    const hasProfessionals = professionalRecords.length > 0;
+    const dateLimits = attendanceDateLimits();
+    const recordCreatedAt = draft.registeredAt ? formatDateTime(draft.registeredAt) : "Não informado";
+    const shortId = draft.id.length > 12 ? `${draft.id.slice(0, 8)}…${draft.id.slice(-4)}` : draft.id;
+    return `<div class="attendance-edit-modal" role="presentation" data-attendance-edit-backdrop>
+      <section class="attendance-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="attendanceEditTitle" aria-describedby="attendanceEditDescription attendanceEditError" data-attendance-edit-dialog>
+        <header class="attendance-edit-header">
+          <div class="attendance-edit-heading"><span class="attendance-edit-heading-icon"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Editar atendimento</p><h2 id="attendanceEditTitle">${escapeHtml(draft.customerName || "Registro de atendimento")}</h2><span id="attendanceEditDescription">Atualize os dados comerciais sem alterar a identidade ou a auditoria do registro.</span></div></div>
+          <button type="button" data-attendance-action="close-attendance-edit" aria-label="Fechar edição" ${state.editSaving ? "disabled" : ""}><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </header>
+        <form class="attendance-form attendance-edit-form" data-attendance-edit-form data-professionals-ready="${hasProfessionals || missingProfessional ? "true" : "false"}" novalidate aria-busy="${state.editSaving ? "true" : "false"}" aria-describedby="attendanceEditDescription attendanceEditError">
+          <div class="attendance-edit-audit" aria-label="Informações imutáveis do registro"><span><i class="fa-solid fa-fingerprint" aria-hidden="true"></i><small>ID do registro</small><strong title="${escapeHtml(draft.id)}">${escapeHtml(shortId || "Não informado")}</strong></span><span><i class="fa-regular fa-clock" aria-hidden="true"></i><small>Criado em</small><strong>${escapeHtml(recordCreatedAt)}</strong></span></div>
+          <div class="attendance-form-grid">
+            <label class="attendance-field attendance-field--wide">
+              <span>Atendimento realizado por <b>*</b></span>
+              <span class="attendance-input-wrap attendance-input-wrap--select"><i class="fa-solid fa-user-tie" aria-hidden="true"></i><select name="professional_name" required ${hasProfessionals || missingProfessional ? "" : "disabled"}>
+                ${missingProfessional ? `<option value="${escapeHtml(draft.professionalName)}" selected>${escapeHtml(draft.professionalName)} · histórico/arquivado</option>` : `<option value="">${hasProfessionals ? "Selecione o profissional" : "Nenhum profissional cadastrado"}</option>`}
+                ${professionalRecords.map((professional) => `<option value="${escapeHtml(professional.name)}" ${selectedProfessional?.name === professional.name ? "selected" : ""}>${escapeHtml(professional.name)}${professional.active ? "" : " · inativo na equipe"}</option>`).join("")}
+              </select></span>
+              <small class="attendance-professional-source ${hasProfessionals || missingProfessional ? "" : "is-empty"}"><i class="fa-solid ${hasProfessionals || missingProfessional ? "fa-circle-check" : "fa-circle-exclamation"}" aria-hidden="true"></i>${missingProfessional ? "Este nome permanece disponível somente neste histórico; você também pode escolher outro profissional cadastrado." : hasProfessionals ? "Selecione qualquer profissional ainda cadastrado na equipe, inclusive os inativos." : "Cadastre ao menos um profissional na equipe deste cliente para editar o registro."}</small>
+            </label>
+            <label class="attendance-field">
+              <span>Cliente <b>*</b></span>
+              <span class="attendance-input-wrap"><i class="fa-solid fa-user" aria-hidden="true"></i><input name="customer_name" autocomplete="name" placeholder="Nome do cliente" value="${escapeHtml(draft.customerName)}" required /></span>
+            </label>
+            <label class="attendance-field">
+              <span>Data do atendimento <b>*</b></span>
+              <span class="attendance-input-wrap"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i><input name="attended_on" type="date" min="${escapeHtml(dateLimits.min)}" max="${escapeHtml(dateLimits.today)}" value="${escapeHtml(draft.attendedOn)}" required /></span>
+              <small>${attendanceRetroactiveDatesGranted() ? "Hoje ou uma data dos últimos 2 anos." : "Somente hoje. Datas retroativas requerem a atualização do sistema."}</small>
+            </label>
+            <label class="attendance-field">
+              <span>Telefone</span>
+              <span class="attendance-input-wrap"><i class="fa-solid fa-phone" aria-hidden="true"></i><input name="phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${escapeHtml(draft.phone)}" /></span>
+              <small>Informe telefone ou CPF para localizar o cliente.</small>
+            </label>
+            <label class="attendance-field">
+              <span>CPF</span>
+              <span class="attendance-input-wrap"><i class="fa-solid fa-id-card" aria-hidden="true"></i><input name="cpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" value="${escapeHtml(draft.cpf)}" /></span>
+              <small>O CPF também cruza Leads e Prospecções.</small>
+            </label>
+            <label class="attendance-field attendance-field--wide">
+              <span>Descrição do atendimento <b>*</b></span>
+              <span class="attendance-input-wrap attendance-input-wrap--textarea"><i class="fa-solid fa-align-left" aria-hidden="true"></i><textarea name="description" rows="4" placeholder="Conte o que foi realizado, necessidade do cliente e próximo passo" required>${escapeHtml(draft.description)}</textarea></span>
+            </label>
+            <label class="attendance-field attendance-field--wide">
+              <span>Valor do atendimento</span>
+              <span class="attendance-input-wrap"><i class="fa-solid fa-brazilian-real-sign" aria-hidden="true"></i><input name="service_value" inputmode="decimal" placeholder="0,00" value="${escapeHtml(draft.serviceValue)}" /></span>
+            </label>
+          </div>
+          <fieldset class="attendance-tag-fieldset">
+            <legend>Como classificar este atendimento? <b>*</b></legend>
+            <div class="attendance-tag-options">${Object.entries(TAGS).map(([value, config]) => `<label class="attendance-tag-option attendance-tag-option--${config.tone}"><input type="radio" name="tag" value="${value}" ${value === normalizeTag(draft.tag) ? "checked" : ""} /><span><i class="fa-solid ${config.icon}" aria-hidden="true"></i><strong>${config.label}</strong><i class="fa-solid fa-circle-check attendance-tag-check" aria-hidden="true"></i></span></label>`).join("")}</div>
+          </fieldset>
+          <section class="attendance-purchase-fields" data-attendance-purchase-fields hidden>
+            <div class="attendance-purchase-heading"><span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span><div><strong>Dados da compra</strong><small>Obrigatórios somente quando a etiqueta for Compra.</small></div></div>
+            <div class="attendance-form-grid">
+              <label class="attendance-field"><span>Valor da compra <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><input name="purchase_value" inputmode="decimal" placeholder="0,00" value="${escapeHtml(draft.purchaseValue)}" disabled /></span></label>
+              <label class="attendance-field"><span>Ordem de serviço (OS) <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-receipt" aria-hidden="true"></i><input name="service_order" autocomplete="off" placeholder="Ex.: OS-1048" value="${escapeHtml(draft.serviceOrder)}" disabled /></span></label>
+            </div>
+          </section>
+          <div id="attendanceEditError" class="attendance-form-error" data-attendance-edit-error role="alert" aria-live="assertive" aria-atomic="true" ${state.editError ? "" : "hidden"}>${state.editError ? `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(state.editError)}</span>` : ""}</div>
+          <footer class="attendance-edit-footer"><div><strong>Alterações protegidas</strong><small>Se outra sessão modificar este registro, o sistema bloqueará a gravação para evitar perda de dados.</small></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-attendance-edit" ${state.editSaving ? "disabled" : ""}>Cancelar</button><button class="attendance-primary-button" type="submit" data-attendance-edit-save ${state.editSaving || (!hasProfessionals && !missingProfessional) ? "disabled" : ""}><span class="attendance-button-idle"><i class="fa-solid fa-check" aria-hidden="true"></i>Salvar alterações</span><span class="attendance-button-loading"><span class="attendance-mini-spinner" aria-hidden="true"></span>Atualizando com segurança</span></button></footer>
+        </form>
+      </section>
+    </div>`;
+  }
+
   function renderFeedback() {
     if (!state.feedback) return "";
     const feedback = state.feedback;
@@ -1580,19 +1852,17 @@
   function filteredRecords() {
     const query = normalizeText(state.filters.search);
     const range = embeddedAttendanceRange(state.filters.period);
-    const startAt = range.startDate ? new Date(`${range.startDate}T00:00:00`) : null;
-    const endAt = range.endDate ? new Date(`${range.endDate}T23:59:59.999`) : null;
     return state.listRecords.filter((record) => {
       if (state.filters.tag !== "all" && record.tag !== state.filters.tag) return false;
       if (state.filters.professional !== "all" && normalizeText(record.professionalName) !== normalizeText(state.filters.professional)) return false;
       if (state.filters.link === "linked" && !record.linkedLead?.linked && !record.linkedProspection?.linked) return false;
       if (state.filters.link === "standalone" && (record.linkedLead?.linked || record.linkedProspection?.linked || record.ambiguous)) return false;
       if (state.filters.link === "review" && !record.ambiguous) return false;
-      if (startAt || endAt) {
-        const attendedAt = new Date(record.createdAt || 0);
-        if (Number.isNaN(attendedAt.getTime())) return false;
-        if (startAt && attendedAt < startAt) return false;
-        if (endAt && attendedAt > endAt) return false;
+      if (range.startDate || range.endDate) {
+        const attendedOn = attendanceRecordDate(record);
+        if (!attendedOn) return false;
+        if (range.startDate && attendedOn < range.startDate) return false;
+        if (range.endDate && attendedOn > range.endDate) return false;
       }
       if (!query) return true;
       return normalizeText([
@@ -1660,6 +1930,9 @@
       : bonusApplies && record.bonusEligible === false
         ? `<span class="attendance-record-bonus is-negative"><i class="fa-solid fa-circle-minus" aria-hidden="true"></i>Não elegível</span>`
         : "";
+    const editAction = compact
+      ? ""
+      : `<button class="attendance-card-action attendance-card-action--edit" type="button" data-attendance-action="edit-attendance" data-attendance-id="${escapeHtml(record.id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i>Editar</button>`;
     return `<article class="attendance-record${compact ? " is-compact" : ""}">
       <div class="attendance-record-accent attendance-record-accent--${tag.tone}" aria-hidden="true"></div>
       <header>
@@ -1674,7 +1947,7 @@
       </div>
       <footer>
         <div class="attendance-record-summary"><div class="attendance-record-links">${renderRecordOrigins(record)}${record.prospectionProfessionalName ? `<span class="attendance-credit-badge"><i class="fa-solid fa-medal" aria-hidden="true"></i>Crédito: ${escapeHtml(record.prospectionProfessionalName)}</span>` : ""}${bonus}</div><div class="attendance-record-values">${record.serviceValue ? `<span><small>Atendimento</small><b>${escapeHtml(formatCurrency(record.serviceValue))}</b></span>` : ""}${record.tag === "purchase" ? `<span><small>Compra</small><b>${escapeHtml(formatCurrency(record.purchaseValue))}</b></span>` : ""}</div></div>
-        <div class="attendance-record-actions">${phone ? `<a class="attendance-card-action is-primary" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a><button class="attendance-card-action" type="button" data-attendance-copy-phone="${escapeHtml(phone)}"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copiar telefone</button>` : `<span class="attendance-card-action is-disabled"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}</div>
+        <div class="attendance-record-actions">${editAction}${phone ? `<a class="attendance-card-action is-primary" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a><button class="attendance-card-action" type="button" data-attendance-copy-phone="${escapeHtml(phone)}"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copiar telefone</button>` : `<span class="attendance-card-action is-disabled"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}</div>
       </footer>
     </article>`;
   }
@@ -1719,12 +1992,14 @@
 
   function renderWorkspace() {
     if (!state.root) return;
+    captureAttendanceEditDraft();
     const mountedAnalysis = state.root.querySelector("[data-attendance-own-analysis]");
     if (mountedAnalysis) destroyEmbeddedAnalysis(mountedAnalysis);
-    state.root.innerHTML = `<div class="attendance-shell">${renderStoreHeader()}<main class="attendance-module-main">
+    const editModalOpen = Boolean(state.editingRecordId && state.editDraft && state.view === "operations");
+    state.root.innerHTML = `<div class="attendance-shell"${editModalOpen ? ' inert aria-hidden="true"' : ""}>${renderStoreHeader()}<main class="attendance-module-main">
       ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : state.view === "analysis" ? `<div class="attendance-own-analysis" data-attendance-own-analysis></div>` : `${renderGoodMorningSeller()}<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
-    </main></div>`;
-    syncPurchaseFields();
+    </main></div>${renderAttendanceEditModal()}`;
+    state.root.querySelectorAll("[data-attendance-form], [data-attendance-edit-form]").forEach((form) => syncPurchaseFields(form));
     if (state.view === "analysis" && state.selectedStoreId && !state.loading && !state.loadError) {
       const analysisRoot = state.root.querySelector("[data-attendance-own-analysis]");
       if (analysisRoot) {
@@ -2415,9 +2690,7 @@
     return Boolean(embeddedState);
   }
 
-  function syncPurchaseFields() {
-    if (!state.root) return;
-    const form = state.root.querySelector("[data-attendance-form]");
+  function syncPurchaseFields(form = state.root?.querySelector("[data-attendance-form]")) {
     if (!form) return;
     const selected = form.querySelector('input[name="tag"]:checked')?.value || "budget";
     const purchaseArea = form.querySelector("[data-attendance-purchase-fields]");
@@ -2447,45 +2720,154 @@
     if (button) button.disabled = Boolean(busy) || registeredProfessionalOptions().length === 0;
   }
 
+  function setAttendanceEditError(message = "") {
+    state.editError = String(message || "");
+    const element = state.root?.querySelector("[data-attendance-edit-error]");
+    if (!element) return;
+    element.hidden = !state.editError;
+    element.innerHTML = state.editError
+      ? `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(state.editError)}</span>`
+      : "";
+  }
+
+  function setAttendanceEditBusy(busy) {
+    const form = state.root?.querySelector("[data-attendance-edit-form]");
+    if (!form) return;
+    form.setAttribute("aria-busy", String(Boolean(busy)));
+    form.querySelectorAll("button").forEach((button) => { button.disabled = Boolean(busy); });
+    form.querySelectorAll("input, select, textarea").forEach((field) => { field.disabled = Boolean(busy); });
+    if (!busy) syncPurchaseFields(form);
+    const headerClose = state.root?.querySelector('.attendance-edit-header [data-attendance-action="close-attendance-edit"]');
+    if (headerClose) headerClose.disabled = Boolean(busy);
+  }
+
+  function clearAttendanceValidationState(form) {
+    form?.querySelectorAll?.('[aria-invalid="true"]').forEach((field) => field.removeAttribute("aria-invalid"));
+  }
+
+  function focusAttendanceValidationError(form, error) {
+    if (!form) return null;
+    clearAttendanceValidationState(form);
+    const fieldName = String(error?.attendanceFieldName || "");
+    let field = fieldName ? form.elements?.namedItem?.(fieldName) : null;
+    if (field && typeof field.focus !== "function" && typeof field.length === "number") {
+      field = [...field].find((item) => typeof item?.focus === "function") || null;
+    }
+    if (!field || typeof field.focus !== "function") field = form.querySelector?.(":invalid") || null;
+    if (!field || typeof field.focus !== "function") return null;
+    field.setAttribute?.("aria-invalid", "true");
+    field.focus({ preventScroll: true });
+    field.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    return field;
+  }
+
   function createIdempotencyKey() {
     if (global.crypto?.randomUUID) return global.crypto.randomUUID();
     return `attendance-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  function validateForm(form) {
-    const values = Object.fromEntries(new FormData(form).entries());
+  function validateAttendanceSubmission(values = {}, options = {}) {
     const submittedProfessionalName = String(values.professional_name || "").trim();
-    const professionalName = registeredProfessionalOptions().find(
+    const professionalNames = Array.isArray(options.professionalNames)
+      ? options.professionalNames.map(String)
+      : registeredProfessionalOptions();
+    const preservedProfessionalName = String(options.preservedProfessionalName || "").trim();
+    const professionalName = professionalNames.find(
       (name) => normalizeText(name) === normalizeText(submittedProfessionalName),
-    ) || "";
+    ) || (preservedProfessionalName && normalizeText(preservedProfessionalName) === normalizeText(submittedProfessionalName)
+      ? preservedProfessionalName
+      : "");
     const attendedOn = String(values.attended_on || "").trim();
-    const dateLimits = attendanceDateLimits();
+    const dateLimits = options.dateLimits || attendanceDateLimits();
+    const retroactiveDatesGranted = options.retroactiveDatesGranted ?? attendanceRetroactiveDatesGranted();
     const customerName = String(values.customer_name || "").trim();
     const phone = onlyDigits(values.phone).replace(/^55(?=\d{10,11}$)/, "");
     const cpf = formatCpf(values.cpf);
     const description = String(values.description || "").trim();
     const tag = normalizeTag(values.tag);
-    const serviceValue = normalizeMoney(values.service_value);
-    const purchaseValue = normalizeMoney(values.purchase_value);
     const serviceOrder = String(values.service_order || "").trim();
 
-    if (!professionalName) throw new Error("Selecione um profissional cadastrado para esta empresa.");
-    if (!isValidAttendanceDate(attendedOn, dateLimits)) {
-      if (!attendanceRetroactiveDatesGranted()) {
-        throw new Error("Registre apenas atendimentos de hoje. Datas retroativas requerem a atualização do sistema.");
-      }
-      throw new Error(`Informe uma data de atendimento entre ${formatShortDate(dateLimits.min)} e hoje.`);
+    if (!professionalName) {
+      throw attendanceValidationError("Selecione um profissional cadastrado para esta empresa.", "professional_name");
     }
-    if (!customerName) throw new Error("Informe o nome do cliente.");
-    if (!phone && !cpf) throw new Error("Informe o telefone ou o CPF do cliente.");
-    if (phone && ![10, 11].includes(phone.length)) throw new Error("Informe um telefone válido com DDD.");
-    if (cpf && !isValidCpf(cpf)) throw new Error("Informe um CPF válido.");
-    if (!description) throw new Error("Descreva o atendimento realizado.");
-    if (serviceValue < 0) throw new Error("O valor do atendimento não pode ser negativo.");
-    if (tag === "purchase" && purchaseValue <= 0) throw new Error("Informe o valor da compra.");
-    if (tag === "purchase" && !serviceOrder) throw new Error("Informe a ordem de serviço da compra.");
+    if (!isValidAttendanceDate(attendedOn, dateLimits)) {
+      if (!retroactiveDatesGranted) {
+        throw attendanceValidationError("Registre apenas atendimentos de hoje. Datas retroativas requerem a atualização do sistema.", "attended_on");
+      }
+      throw attendanceValidationError(`Informe uma data de atendimento entre ${formatShortDate(dateLimits.min)} e hoje.`, "attended_on");
+    }
+    if (!customerName) throw attendanceValidationError("Informe o nome do cliente.", "customer_name");
+    if (!phone && !cpf) throw attendanceValidationError("Informe o telefone ou o CPF do cliente.", "phone");
+    if (phone && ![10, 11].includes(phone.length)) {
+      throw attendanceValidationError("Informe um telefone válido com DDD.", "phone");
+    }
+    if (cpf && !isValidCpf(cpf)) throw attendanceValidationError("Informe um CPF válido.", "cpf");
+    if (!description) throw attendanceValidationError("Descreva o atendimento realizado.", "description");
+
+    const serviceValue = parseAttendanceMoney(values.service_value, {
+      fieldName: "service_value",
+      label: "valor do atendimento",
+    });
+    if (serviceValue !== null && serviceValue < 0) {
+      throw attendanceValidationError("O valor do atendimento não pode ser negativo.", "service_value");
+    }
+
+    const purchaseValue = tag === "purchase"
+      ? parseAttendanceMoney(values.purchase_value, {
+        required: true,
+        fieldName: "purchase_value",
+        label: "valor da compra",
+      })
+      : null;
+    if (tag === "purchase" && purchaseValue <= 0) {
+      throw attendanceValidationError("Informe o valor da compra (maior que zero).", "purchase_value");
+    }
+    if (tag === "purchase" && !serviceOrder) {
+      throw attendanceValidationError("Informe a ordem de serviço da compra.", "service_order");
+    }
 
     return { attendedOn, professionalName, customerName, phone, cpf, description, tag, serviceValue, purchaseValue, serviceOrder };
+  }
+
+  function validateForm(form, options = {}) {
+    return validateAttendanceSubmission(Object.fromEntries(new FormData(form).entries()), options);
+  }
+
+  function attendanceUpdateArgs(record, submitted) {
+    return {
+      p_attendance_id: String(record?.id || ""),
+      p_store_id: String(record?.storeId || ""),
+      p_expected_updated_at: String(record?.expectedUpdatedAt || record?.updatedAt || "") || null,
+      p_professional_name: submitted.professionalName,
+      p_attended_on: submitted.attendedOn,
+      p_customer_name: submitted.customerName,
+      p_phone: submitted.phone,
+      p_cpf: submitted.cpf || null,
+      p_description: submitted.description,
+      p_tag: submitted.tag,
+      p_service_value: submitted.serviceValue,
+      p_purchase_value: submitted.tag === "purchase" ? submitted.purchaseValue : null,
+      p_service_order: submitted.tag === "purchase" ? submitted.serviceOrder : null,
+    };
+  }
+
+  function replaceAttendanceRecord(records = [], updatedRecord = {}, options = {}) {
+    const source = Array.isArray(records) ? records : [];
+    const recordId = String(options.recordId || updatedRecord?.id || "");
+    const expectedStoreId = String(options.storeId || "");
+    const responseStoreId = String(updatedRecord?.storeId || expectedStoreId);
+    if (!recordId || !updatedRecord || typeof updatedRecord !== "object") return source;
+    if (expectedStoreId && responseStoreId !== expectedStoreId) return source;
+
+    const scopedRecord = { ...updatedRecord, storeId: responseStoreId };
+    let replaced = false;
+    const next = source.map((record) => {
+      if (String(record?.id || "") !== recordId) return record;
+      if (expectedStoreId && record?.storeId && String(record.storeId) !== expectedStoreId) return record;
+      replaced = true;
+      return scopedRecord;
+    });
+    return replaced ? next : source;
   }
 
   function normalizeSaveFeedback(raw, submitted) {
@@ -2559,7 +2941,17 @@
       candidateCounts,
       message: String(firstDefined(payload.message, "")),
       idempotentReplay: normalizeBoolean(firstDefined(payload.idempotent_replay, payload.idempotentReplay)) === true,
+      editReplay: normalizeBoolean(firstDefined(payload.edit_replay, payload.editReplay)) === true,
+      updated: normalizeBoolean(firstDefined(payload.updated, attendanceSource.updated)),
     };
+  }
+
+  function attendanceUpdateFeedbackMessage(feedback = {}) {
+    const backendMessage = String(feedback.message || "").trim();
+    if (backendMessage) return backendMessage;
+    if (feedback.editReplay) return "Esta atualização já havia sido salva; nada foi duplicado.";
+    if (feedback.updated === false) return "Nenhuma alteração foi necessária.";
+    return "Atendimento atualizado e vínculos recalculados com segurança.";
   }
 
   function isMissingRpcError(error, functionName) {
@@ -2601,6 +2993,7 @@
     const custom = state.bridge?.attendances;
     if (operation === "workspace" && typeof custom?.load === "function") return custom.load(args);
     if (operation === "save" && typeof custom?.save === "function") return custom.save(args);
+    if (operation === "update" && typeof custom?.update === "function") return custom.update(args);
     if (operation === "list" && typeof custom?.list === "function") return custom.list(args);
     if (typeof state.bridge?.rpc !== "function") throw new Error("Integração RPC de Atendimentos não configurada.");
     const names = { ...DEFAULT_RPC, ...(state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {}) };
@@ -2806,6 +3199,7 @@
   async function loadWorkspace({ quiet = false } = {}) {
     if (!state.active) return;
     if (!state.selectedStoreId) {
+      clearAttendanceEditState();
       state.listGeneration += 1;
       state.records = [];
       state.listRecords = [];
@@ -2854,7 +3248,7 @@
       if (handleEntitlementLoss(error, storeId)) return;
       state.loading = false;
       if (quiet) {
-        notify(`Atendimento salvo, mas a lista não pôde ser atualizada agora: ${readableError(error)}`, "warning");
+        notify(`Alteração salva, mas a lista não pôde ser atualizada agora: ${readableError(error)}`, "warning");
         renderWorkspace();
         return;
       }
@@ -2866,12 +3260,13 @@
   async function submitAttendance(form) {
     if (state.saving || !state.selectedStoreId) return;
     setFormError("");
+    clearAttendanceValidationState(form);
     let submitted;
     try {
       submitted = validateForm(form);
     } catch (error) {
       setFormError(readableError(error));
-      form.querySelector(":invalid")?.focus();
+      focusAttendanceValidationError(form, error);
       return;
     }
 
@@ -2963,6 +3358,100 @@
     const remainsCurrent = state.active
       && state.selectedStoreId === saveContext.storeId
       && state.contextGeneration === saveContext.generation;
+    if (remainsCurrent) await loadWorkspace({ quiet: true });
+  }
+
+  function isAttendanceEditConflict(error) {
+    const message = normalizeText([error?.message, error?.details, error?.hint].filter(Boolean).join(" "));
+    return /outra sessao|atendimento.*(?:alterad|atualizad).*outra tela|outra tela.*atendimento|registro.*(?:alterad|atualizad)|conflito.*atualiza|expected.updated.at|desatualizad|stale/.test(message);
+  }
+
+  async function updateAttendance(form) {
+    if (state.editSaving || !state.selectedStoreId || !state.editDraft || !state.editingRecordId) return;
+    setAttendanceEditError("");
+    clearAttendanceValidationState(form);
+    let submitted;
+    try {
+      submitted = validateForm(form, { preservedProfessionalName: state.editDraft.originalProfessionalName });
+    } catch (error) {
+      setAttendanceEditError(readableError(error));
+      focusAttendanceValidationError(form, error);
+      return;
+    }
+
+    const updateContext = {
+      id: state.editingRecordId,
+      storeId: state.selectedStoreId,
+      expectedUpdatedAt: state.editDraft.expectedUpdatedAt,
+      contextGeneration: state.contextGeneration,
+      requestGeneration: ++state.editGeneration,
+    };
+    const isCurrent = () => state.active
+      && state.editingRecordId === updateContext.id
+      && state.selectedStoreId === updateContext.storeId
+      && state.contextGeneration === updateContext.contextGeneration
+      && state.editGeneration === updateContext.requestGeneration;
+    state.editSaving = true;
+    setAttendanceEditBusy(true);
+
+    let raw;
+    try {
+      raw = await rpc("update", attendanceUpdateArgs({
+        id: updateContext.id,
+        storeId: updateContext.storeId,
+        expectedUpdatedAt: updateContext.expectedUpdatedAt,
+      }, submitted));
+    } catch (error) {
+      const contextStillCurrent = state.active
+        && state.selectedStoreId === updateContext.storeId
+        && state.contextGeneration === updateContext.contextGeneration;
+      if (!contextStillCurrent) return;
+      if (handleEntitlementLoss(error, updateContext.storeId)) return;
+      if (!isCurrent()) return;
+      state.editSaving = false;
+      setAttendanceEditBusy(false);
+      const configuredNames = state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {};
+      const updateRpcName = configuredNames.update || DEFAULT_RPC.update;
+      const message = isMissingRpcError(error, updateRpcName)
+        ? "A atualização do banco que libera a edição ainda não foi aplicada. Nenhum dado foi alterado."
+        : isAttendanceEditConflict(error)
+          ? "Este atendimento foi alterado em outra sessão. Feche a edição, atualize a lista e abra o registro novamente para não sobrescrever dados mais recentes."
+          : readableError(error);
+      setAttendanceEditError(message);
+      notify(message, isAttendanceEditConflict(error) ? "warning" : "error");
+      return;
+    }
+
+    if (!isCurrent()) return;
+    const feedback = normalizeSaveFeedback(raw, submitted);
+    state.editSaving = false;
+    state.feedback = null;
+    state.generation += 1;
+    state.listGeneration += 1;
+    state.listLoading = false;
+    const returnedAttendance = feedback.attendance;
+    const returnedRecordMatches = String(returnedAttendance?.id || "") === updateContext.id
+      && String(returnedAttendance?.storeId || updateContext.storeId) === updateContext.storeId;
+    if (returnedRecordMatches) {
+      const replaceOptions = { recordId: updateContext.id, storeId: updateContext.storeId };
+      state.records = replaceAttendanceRecord(state.records, returnedAttendance, replaceOptions);
+      state.listRecords = replaceAttendanceRecord(state.listRecords, returnedAttendance, replaceOptions);
+    }
+    clearAttendanceEditState();
+    renderWorkspace();
+    notify(attendanceUpdateFeedbackMessage(feedback), feedback.updated === false ? "info" : "success");
+
+    try {
+      if (typeof state.bridge?.onAttendanceUpdated === "function") {
+        await state.bridge.onAttendanceUpdated(feedback, raw);
+      }
+    } catch (error) {
+      notify(`Atendimento atualizado. Uma atualização secundária falhou: ${readableError(error)}`, "warning");
+    }
+
+    const remainsCurrent = state.active
+      && state.selectedStoreId === updateContext.storeId
+      && state.contextGeneration === updateContext.contextGeneration;
     if (remainsCurrent) await loadWorkspace({ quiet: true });
   }
 
@@ -3278,6 +3767,7 @@
       const nextId = String(target.value || "");
       if (nextId && !state.stores.some((store) => store.id === nextId)) return;
       captureDraft();
+      clearAttendanceEditState();
       const previousId = state.selectedStoreId;
       state.selectedStoreId = nextId;
       state.contextGeneration += 1;
@@ -3312,7 +3802,7 @@
       return;
     }
     if (target.matches('input[name="tag"]')) {
-      syncPurchaseFields();
+      syncPurchaseFields(target.closest("form"));
       return;
     }
     if (target.matches("[data-morning-seller-enabled]")) {
@@ -3347,6 +3837,10 @@
 
   async function onClick(event) {
     if (event.target.closest("[data-attendance-own-analysis]")) return;
+    if (event.target.matches("[data-attendance-edit-backdrop]")) {
+      closeAttendanceEdit();
+      return;
+    }
     if (event.target.matches("[data-morning-backdrop]")) {
       closeMorningConfig();
       return;
@@ -3366,10 +3860,19 @@
     const button = event.target.closest("[data-attendance-action]");
     if (!button) return;
     const action = button.dataset.attendanceAction;
+    if (action === "edit-attendance") {
+      openAttendanceEdit(button.dataset.attendanceId);
+      return;
+    }
+    if (action === "close-attendance-edit") {
+      closeAttendanceEdit();
+      return;
+    }
     if (action === "view-analysis" || action === "view-operations") {
       const nextView = action === "view-analysis" ? "analysis" : "operations";
       if (state.view === nextView) return;
       captureDraft();
+      clearAttendanceEditState();
       state.view = nextView;
       renderWorkspace();
       return;
@@ -3483,6 +3986,12 @@
 
   function onSubmit(event) {
     if (event.target.closest("[data-attendance-own-analysis]")) return;
+    const editForm = event.target.closest("[data-attendance-edit-form]");
+    if (editForm) {
+      event.preventDefault();
+      updateAttendance(editForm);
+      return;
+    }
     const morningForm = event.target.closest("[data-morning-config-form]");
     if (morningForm) {
       event.preventDefault();
@@ -3497,12 +4006,16 @@
   }
 
   function onKeydown(event) {
-    if (!state.morningConfigOpen) return;
-    const dialog = state.root?.querySelector("[data-morning-dialog]");
+    const editOpen = Boolean(state.editingRecordId && state.editDraft);
+    if (!editOpen && !state.morningConfigOpen) return;
+    const dialog = editOpen
+      ? state.root?.querySelector("[data-attendance-edit-dialog]")
+      : state.root?.querySelector("[data-morning-dialog]");
     if (!dialog) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      closeMorningConfig();
+      if (editOpen) closeAttendanceEdit();
+      else closeMorningConfig();
       return;
     }
     if (event.key !== "Tab") return;
@@ -3547,6 +4060,7 @@
     state.view = "operations";
     state.loading = true;
     state.contextGeneration += 1;
+    clearAttendanceEditState();
     clearMorningState();
     state.feedback = null;
     syncContext({ preserveSelection: false });
@@ -3566,6 +4080,7 @@
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
+    clearAttendanceEditState();
     stopMorningDayRefresh();
     clearMorningState();
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
@@ -3581,6 +4096,7 @@
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
+    clearAttendanceEditState();
     state.selectedStoreId = "";
     state.stores = [];
     state.records = [];
@@ -3611,6 +4127,7 @@
 
   async function refreshContext(nextContext = {}) {
     captureDraft();
+    clearAttendanceEditState();
     state.bridge = { ...state.bridge, ...nextContext };
     state.contextGeneration += 1;
     clearMorningState();
@@ -3637,17 +4154,17 @@
 
   function getIntegrationContract() {
     return {
-      version: 4,
+      version: 5,
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.list"],
+        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onAttendanceUpdated", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.update", "attendances.list"],
       },
       rpc: {
         workspace: {
           name: DEFAULT_RPC.workspace,
           args: { p_store_id: "uuid" },
-          returns: { attendances: "array", professionals: "array", metrics: "object (optional)" },
+          returns: { attendances: "array including attended_on, created_at and expected_updated_at/updated_at", professionals: "array", metrics: "object (optional)" },
         },
         save: {
           name: DEFAULT_RPC.save,
@@ -3660,7 +4177,7 @@
             p_cpf: "text | null",
             p_description: "text",
             p_tag: "budget | purchase | other",
-            p_service_value: "numeric",
+            p_service_value: "numeric | null",
             p_purchase_value: "numeric | null",
             p_service_order: "text | null",
             p_idempotency_key: "uuid/text",
@@ -3679,6 +4196,25 @@
           name: DEFAULT_RPC.saveLegacy,
           compatibility: "Somente a data atual; p_attended_on é removido antes da chamada.",
         },
+        update: {
+          name: DEFAULT_RPC.update,
+          args: {
+            p_attendance_id: "uuid",
+            p_store_id: "uuid",
+            p_expected_updated_at: "timestamptz | null (optimistic concurrency token returned by the list/workspace)",
+            p_professional_name: "text (a current professional or the unchanged historical/archived name)",
+            p_attended_on: "date (America/Sao_Paulo; últimos 2 anos até hoje)",
+            p_customer_name: "text",
+            p_phone: "text (digits)",
+            p_cpf: "text | null",
+            p_description: "text",
+            p_tag: "budget | purchase | other",
+            p_service_value: "numeric | null",
+            p_purchase_value: "numeric | null",
+            p_service_order: "text | null",
+          },
+          returns: "updated attendance plus recalculated links/bonus metadata; id and created_at remain immutable",
+        },
         list: {
           name: DEFAULT_RPC.list,
           args: {
@@ -3693,7 +4229,7 @@
             p_limit: 30,
             p_offset: "integer",
           },
-          returns: { items: "array", total: "integer", has_more: "boolean" },
+          returns: { items: "array including updated_at for optimistic editing", total: "integer", has_more: "boolean" },
         },
         analysis: {
           name: DEFAULT_RPC.analysis,
@@ -3762,6 +4298,8 @@
       },
       rules: [
         "A tela nunca consulta mais de um p_store_id por vez.",
+        "A edição envia id, store_id e expected_updated_at; o backend mantém id/created_at imutáveis e rejeita alterações concorrentes.",
+        "Um profissional arquivado permanece selecionável somente no próprio registro histórico, sem entrar nas opções de novos atendimentos.",
         "Lead e Prospecção podem estar vinculados simultaneamente.",
         "attendanceAccessGranted autoriza Atendimentos; prospectionAccessGranted é apenas fallback para bridges antigos.",
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
@@ -3779,11 +4317,24 @@
 
   if (global.__ATTENDANCES_TEST_HOOKS__ && typeof global.__ATTENDANCES_TEST_HOOKS__ === "object") {
     Object.assign(global.__ATTENDANCES_TEST_HOOKS__, {
+      attendanceRecordDate,
+      attendanceUpdateFeedbackMessage,
+      attendanceUpdateArgs,
       calculateMorningWorkingDayContext,
       cloneMorningDraft,
+      createAttendanceEditDraft,
+      focusAttendanceValidationError,
+      formatDateTime,
+      formatMoneyInput,
+      isAttendanceEditConflict,
       mergeMorningDraftWithWorkspace,
       morningMonthDateLimits,
+      normalizeRecord,
+      normalizeSaveFeedback,
       normalizeMorningClosedDays,
+      parseAttendanceMoney,
+      replaceAttendanceRecord,
+      validateAttendanceSubmission,
       validateMorningClosedDayEntry,
     });
   }
