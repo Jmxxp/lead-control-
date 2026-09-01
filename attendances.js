@@ -1009,7 +1009,7 @@
     const escapedName = escapeHtml(professional.name);
     const queueLabel = enabled
       ? (isFirst ? "Primeiro da fila" : `${participantNumber}º na fila`)
-      : "Fora da fila e do rateio";
+      : "Fora da fila e da rotação";
     const visibleGoal = enabled ? professional.goalAmount : 0;
     const goalDisabled = !canConfigure
       || state.morningDraft?.mode === "equal"
@@ -1054,7 +1054,7 @@
             <label><span><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Meta mensal da equipe</span><span class="attendance-morning-money"><b>R$</b><input name="monthly_goal" inputmode="decimal" value="${escapeHtml(String(draft.monthlyGoal || ""))}" placeholder="0,00" ${configurationControlsEnabled ? "required" : "disabled"} /></span></label>
             <fieldset ${configurationControlsEnabled ? "" : "disabled"}><legend><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>Como dividir</legend><label><input type="radio" name="allocation_mode" value="equal" ${draft.mode === "equal" ? "checked" : ""} /><span>Partes iguais</span></label><label><input type="radio" name="allocation_mode" value="custom" ${draft.mode === "custom" ? "checked" : ""} /><span>Personalizada</span></label></fieldset>
           </div>
-          <div class="attendance-morning-config-heading"><div><strong>${canConfigure ? "Vendedores e ordem da vez" : "Quem participa desta área"}</strong><small>Quem estiver pausado continua cadastrado na equipe, mas fica fora da fila, das metas e do rateio.</small></div><span data-morning-allocation-status class="${canConfigure ? (balanced ? "is-balanced" : "is-warning") : "is-balanced"}" role="status" aria-live="polite">${escapeHtml(canConfigure ? allocationStatus : `${participants.length} ${participants.length === 1 ? "participante" : "participantes"}`)}</span></div>
+          <div class="attendance-morning-config-heading"><div><strong>${canConfigure ? "Vendedores e ordem da vez" : "Quem participa desta área"}</strong><small>Quem estiver pausado continua cadastrado na equipe, mas fica fora da fila, das metas e da rotação.</small></div><span data-morning-allocation-status class="${canConfigure ? (balanced ? "is-balanced" : "is-warning") : "is-balanced"}" role="status" aria-live="polite">${escapeHtml(canConfigure ? allocationStatus : `${participants.length} ${participants.length === 1 ? "participante" : "participantes"}`)}</span></div>
           ${!participationControlAvailable ? `<p class="attendance-morning-capability-warning" role="alert"><i class="fa-solid fa-database" aria-hidden="true"></i>A atualização segura do banco ainda precisa ser aplicada para liberar estes switches.</p>` : ""}
           <div class="attendance-morning-seller-list">${draft.professionals.map((professional) => renderMorningSellerConfigRow(professional, participants)).join("") || `<div class="attendance-morning-seller-empty"><span><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><div><strong>Nenhum vendedor ativo</strong><small>Cadastre a equipe deste cliente para dividir a meta e montar a fila.</small></div></div>`}</div>
           ${state.morningError ? `<p class="attendance-morning-form-error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>${escapeHtml(state.morningError)}</p>` : ""}
@@ -2743,7 +2743,7 @@
       return;
     }
     if (!participants.length) {
-      state.morningError = "Ative ao menos um vendedor para participar da fila e do rateio.";
+      state.morningError = "Ative ao menos um vendedor para participar da fila e da rotação.";
       refreshMorningRegion();
       return;
     }
