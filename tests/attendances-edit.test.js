@@ -292,6 +292,95 @@ test("feedback respeita mensagem e marcadores de replay/no-op do backend", () =>
   assert.equal(hooks.attendanceUpdateFeedbackMessage({ updated: false }), "Nenhuma alteração foi necessária.");
 });
 
+test("confirma a resposta autoritativa sem perder precisão de centavos", () => {
+  const submitted = {
+    attendedOn: "2026-08-31",
+    professionalName: "João Silva",
+    tag: "purchase",
+    purchaseValue: 1234.56,
+  };
+  const raw = {
+    attendance: {
+      id: "attendance-authoritative-ok",
+      attended_on: "2026-08-31",
+      professional_name: "  JOAO SILVA  ",
+      tag: "venda",
+      purchase_value: "1234.56",
+    },
+  };
+  const feedback = hooks.normalizeSaveFeedback(raw, submitted);
+  const verification = hooks.verifyAttendanceAuthoritativeResponse(raw, feedback, submitted);
+
+  assert.equal(verification.ok, true);
+  assert.deepEqual(plain(verification.mismatches), []);
+  assert.equal(verification.message, "");
+  assert.equal(verification.attendance.id, "attendance-authoritative-ok");
+});
+
+test("bloqueia sucesso quando o banco devolve data ou dados comerciais diferentes", () => {
+  const submitted = {
+    attendedOn: "2026-08-31",
+    professionalName: "Ana",
+    tag: "purchase",
+    purchaseValue: 1200,
+  };
+  const raw = {
+    attendance: {
+      id: "attendance-authoritative-mismatch",
+      attended_on: "2026-09-01",
+      professional_name: "Bia",
+      tag: "budget",
+      purchase_value: 1200.01,
+    },
+  };
+  const feedback = hooks.normalizeSaveFeedback(raw, submitted);
+  const verification = hooks.verifyAttendanceAuthoritativeResponse(raw, feedback, submitted);
+
+  assert.equal(verification.ok, false);
+  assert.deepEqual(plain(verification.mismatches.map((item) => item.field)), [
+    "attended_on",
+    "professional_name",
+    "tag",
+    "purchase_value",
+  ]);
+  assert.match(verification.message, /data do atendimento/);
+  assert.match(verification.message, /atendente/);
+  assert.match(verification.message, /classificação/);
+  assert.match(verification.message, /valor da compra/);
+  assert.match(verification.message, /tela foi atualizada/i);
+});
+
+test("exige data autoritativa e compara os demais campos somente quando retornados", () => {
+  const submitted = {
+    attendedOn: "2026-08-31",
+    professionalName: "Ana",
+    tag: "purchase",
+    purchaseValue: 500,
+  };
+  const onlyDate = { attendance: { attended_on: "2026-08-31" } };
+  assert.equal(hooks.verifyAttendanceAuthoritativeResponse(
+    onlyDate,
+    hooks.normalizeSaveFeedback(onlyDate, submitted),
+    submitted,
+  ).ok, true);
+
+  const timestampDate = { attendance: { attended_at: "2026-09-01T02:30:00Z" } };
+  assert.equal(hooks.verifyAttendanceAuthoritativeResponse(
+    timestampDate,
+    hooks.normalizeSaveFeedback(timestampDate, submitted),
+    submitted,
+  ).ok, true);
+
+  const missingDate = { attendance: { professional_name: "Ana" } };
+  const missingVerification = hooks.verifyAttendanceAuthoritativeResponse(
+    missingDate,
+    hooks.normalizeSaveFeedback(missingDate, submitted),
+    submitted,
+  );
+  assert.equal(missingVerification.ok, false);
+  assert.deepEqual(plain(missingVerification.mismatches.map((item) => item.field)), ["attended_on"]);
+});
+
 test("conflito otimista reconhece a mensagem exata emitida pelo SQL", () => {
   assert.equal(hooks.isAttendanceEditConflict({
     message: "Este atendimento foi alterado em outra tela. Atualize a listagem antes de tentar novamente.",
@@ -310,6 +399,8 @@ test("contrato e markup expõem edição dedicada sem fallback destrutivo", () =
   assert.match(source, /inert aria-hidden="true"/);
   assert.match(source, /id="attendanceEditError"/);
   assert.match(source, /aria-live="assertive"/);
+  assert.equal((source.match(/const feedback = normalizeSaveFeedback\(raw, submitted\);\s+const authoritativeResponse = verifyAttendanceAuthoritativeResponse\(raw, feedback, submitted\);/g) || []).length, 2);
+  assert.match(source, /if \(!authoritativeResponse\.ok\)[\s\S]*?await loadWorkspace\(\{ quiet: true \}\);/);
 });
 
 test("rodapé da edição mantém ações alinhadas, com mesma altura e ícone", () => {

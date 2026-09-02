@@ -3089,6 +3089,93 @@
     };
   }
 
+  function verifyAttendanceAuthoritativeResponse(raw, feedback = {}, submitted = {}) {
+    const payload = unwrapPayload(raw);
+    const attendanceSource = payload.attendance || payload.record || payload.saved_attendance || payload;
+    const mismatches = [];
+    const authoritativeField = (names) => {
+      for (const source of [attendanceSource, payload]) {
+        if (!source || typeof source !== "object") continue;
+        for (const name of names) {
+          if (Object.prototype.hasOwnProperty.call(source, name) && source[name] !== undefined) {
+            return { present: true, value: source[name] };
+          }
+        }
+      }
+      return { present: false, value: undefined };
+    };
+    const expectedDate = String(submitted.attendedOn || "").trim();
+    const explicitDate = authoritativeField(["attended_on", "attendedOn"]);
+    const attendedAt = authoritativeField(["attended_at", "attendedAt"]);
+    let actualDate = String(explicitDate.value ?? "").trim();
+    if (!parseIsoDateParts(actualDate) && attendedAt.value) {
+      const parsed = new Date(attendedAt.value);
+      actualDate = Number.isNaN(parsed.getTime()) ? "" : embeddedDateInput(parsed);
+    }
+    if (!expectedDate || actualDate !== expectedDate) {
+      mismatches.push({
+        field: "attended_on",
+        label: "data do atendimento",
+        expected: expectedDate,
+        actual: actualDate,
+      });
+    }
+
+    const authoritativeProfessional = authoritativeField([
+      "professional_name", "professionalName", "performed_by", "performedBy",
+    ]);
+    if (authoritativeProfessional.present
+      && normalizeText(authoritativeProfessional.value) !== normalizeText(submitted.professionalName)) {
+      mismatches.push({
+        field: "professional_name",
+        label: "atendente",
+        expected: String(submitted.professionalName || ""),
+        actual: String(authoritativeProfessional.value ?? ""),
+      });
+    }
+
+    const authoritativeTag = authoritativeField([
+      "tag", "attendance_tag", "attendanceTag", "type", "kind",
+    ]);
+    if (authoritativeTag.present && (
+      !String(authoritativeTag.value ?? "").trim()
+      || normalizeTag(authoritativeTag.value) !== normalizeTag(submitted.tag)
+    )) {
+      mismatches.push({
+        field: "tag",
+        label: "classificação",
+        expected: normalizeTag(submitted.tag),
+        actual: authoritativeTag.value == null ? "" : normalizeTag(authoritativeTag.value),
+      });
+    }
+
+    const authoritativePurchaseValue = authoritativeField([
+      "purchase_value", "purchaseValue", "sale_value", "saleValue",
+    ]);
+    if (authoritativePurchaseValue.present) {
+      const expectedCents = Math.round(normalizeMoney(submitted.purchaseValue) * 100);
+      const actualCents = Math.round(normalizeMoney(authoritativePurchaseValue.value) * 100);
+      if (actualCents !== expectedCents) {
+        mismatches.push({
+          field: "purchase_value",
+          label: "valor da compra",
+          expected: expectedCents,
+          actual: actualCents,
+        });
+      }
+    }
+
+    const labels = [...new Set(mismatches.map((mismatch) => mismatch.label))];
+    return {
+      ok: mismatches.length === 0,
+      mismatches,
+      message: mismatches.length
+        ? `O banco devolveu dados diferentes dos enviados (${labels.join(", ")}). A tela foi atualizada para evitar cálculos incorretos. Revise o atendimento antes de tentar novamente.`
+        : "",
+      attendance: feedback.attendance || null,
+    };
+  }
+
   function attendanceUpdateFeedbackMessage(feedback = {}) {
     const backendMessage = String(feedback.message || "").trim();
     if (backendMessage) return backendMessage;
@@ -3469,6 +3556,30 @@
     }
 
     const feedback = normalizeSaveFeedback(raw, submitted);
+    const authoritativeResponse = verifyAttendanceAuthoritativeResponse(raw, feedback, submitted);
+    if (!authoritativeResponse.ok) {
+      state.saving = false;
+      state.pendingSave = null;
+      state.feedback = null;
+      const stillCurrent = state.active
+        && state.selectedStoreId === saveContext.storeId
+        && state.contextGeneration === saveContext.generation;
+      if (stillCurrent) {
+        captureDraft();
+        setFormBusy(false);
+        setFormError(authoritativeResponse.message);
+      }
+      notify(authoritativeResponse.message, "error");
+      if (stillCurrent) {
+        await loadWorkspace({ quiet: true });
+        if (state.active
+          && state.selectedStoreId === saveContext.storeId
+          && state.contextGeneration === saveContext.generation) {
+          setFormError(authoritativeResponse.message);
+        }
+      }
+      return;
+    }
     state.saving = false;
     state.pendingSave = null;
     state.drafts.delete(saveContext.storeId);
@@ -3567,6 +3678,22 @@
 
     if (!isCurrent()) return;
     const feedback = normalizeSaveFeedback(raw, submitted);
+    const authoritativeResponse = verifyAttendanceAuthoritativeResponse(raw, feedback, submitted);
+    if (!authoritativeResponse.ok) {
+      captureAttendanceEditDraft();
+      state.editSaving = false;
+      setAttendanceEditBusy(false);
+      setAttendanceEditError(authoritativeResponse.message);
+      notify(authoritativeResponse.message, "error");
+      await loadWorkspace({ quiet: true });
+      if (isCurrent()) {
+        const authoritativeRecord = editableAttendanceRecord(updateContext.id);
+        if (authoritativeRecord) state.editDraft = createAttendanceEditDraft(authoritativeRecord);
+        state.editError = authoritativeResponse.message;
+        renderWorkspace();
+      }
+      return;
+    }
     state.editSaving = false;
     state.feedback = null;
     state.generation += 1;
@@ -4483,6 +4610,7 @@
       normalizeMorningWorkspace,
       parseAttendanceMoney,
       replaceAttendanceRecord,
+      verifyAttendanceAuthoritativeResponse,
       validateAttendanceSubmission,
       validateMorningClosedDayEntry,
     });
