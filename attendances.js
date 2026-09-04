@@ -68,13 +68,7 @@
     idempotencyFingerprint: "",
     drafts: new Map(),
     filtersOpen: false,
-    filters: {
-      search: "",
-      tag: "all",
-      professional: "all",
-      period: "30d",
-      link: "all",
-    },
+    filters: createOperationalFilters(),
   };
   const embeddedAnalysisStates = new WeakMap();
   const EMBEDDED_ANALYSIS_PAGE_SIZE = 200;
@@ -857,9 +851,46 @@
     const normalizedProfessionals = professionals.map((professional, index) => {
       const id = String(firstDefined(professional.id, professional.professional_id, ""));
       const previous = previousProfessionalsById.get(id);
-      const goalToday = firstDefined(professional.goal_today, professional.goalToday);
-      const goalWeek = firstDefined(professional.goal_week, professional.goalWeek);
-      const goalMonth = firstDefined(professional.goal_month, professional.goalMonth, professional.goal_amount, professional.goalAmount);
+      const moneyFromCents = (value) => {
+        if (value === undefined || value === null || value === "") return undefined;
+        const cents = Number(value);
+        return Number.isFinite(cents) ? cents / 100 : undefined;
+      };
+      const goalToday = firstDefined(
+        professional.goal_today_target,
+        professional.goalTodayTarget,
+        professional.goal_today,
+        professional.goalToday
+      );
+      const goalWeek = firstDefined(
+        professional.goal_week_target,
+        professional.goalWeekTarget,
+        professional.goal_week,
+        professional.goalWeek
+      );
+      const goalMonth = firstDefined(
+        professional.goal_month_target,
+        professional.goalMonthTarget,
+        professional.goal_month,
+        professional.goalMonth,
+        professional.goal_amount,
+        professional.goalAmount
+      );
+      const remainingToday = firstDefined(
+        professional.remaining_today,
+        professional.remainingToday,
+        moneyFromCents(firstDefined(professional.remaining_today_cents, professional.remainingTodayCents))
+      );
+      const remainingWeek = firstDefined(
+        professional.remaining_week,
+        professional.remainingWeek,
+        moneyFromCents(firstDefined(professional.remaining_week_cents, professional.remainingWeekCents))
+      );
+      const remainingMonth = firstDefined(
+        professional.remaining_month,
+        professional.remainingMonth,
+        moneyFromCents(firstDefined(professional.remaining_month_cents, professional.remainingMonthCents))
+      );
       return {
         id,
         name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
@@ -875,6 +906,13 @@
         goalWeek: normalizeMoney(firstDefined(goalWeek, 0)),
         goalMonth: normalizeMoney(firstDefined(goalMonth, 0)),
         hasPeriodGoals: goalToday != null && goalWeek != null && goalMonth != null,
+        remainingToday: normalizeMoney(firstDefined(remainingToday, 0)),
+        remainingWeek: normalizeMoney(firstDefined(remainingWeek, 0)),
+        remainingMonth: normalizeMoney(firstDefined(remainingMonth, 0)),
+        hasRemainingToday: remainingToday != null,
+        hasRemainingWeek: remainingWeek != null,
+        hasRemainingMonth: remainingMonth != null,
+        hasExplicitRemaining: remainingToday != null && remainingWeek != null && remainingMonth != null,
         queuePosition: Number(firstDefined(professional.queue_position, professional.queuePosition, index + 1)) || index + 1,
         current: firstDefined(professional.is_current, professional.current, false) === true,
         actualMonth: normalizeMoney(firstDefined(
@@ -1004,6 +1042,16 @@
         payload.goalStrategy,
         ""
       )),
+      individualGoalStrategy: String(firstDefined(
+        payload.individual_goal_strategy,
+        payload.individualGoalStrategy,
+        ""
+      )),
+      rotationAffectsIndividualGoals: firstDefined(
+        payload.rotation_affects_individual_goals,
+        payload.rotationAffectsIndividualGoals,
+        false
+      ) === true,
       dailyGoalStrategy: String(firstDefined(
         payload.daily_goal_strategy,
         payload.dailyGoalStrategy,
@@ -1106,18 +1154,25 @@
     return professionals.filter((professional) => professional.enabled !== false);
   }
 
-  function morningUsesServerGoalBalance() {
-    if (state.morning?.goalStrategy !== "hierarchical_weekly_daily_team_balance_v1") return false;
-    const participants = morningParticipants(state.morning?.professionals || []);
-    if (!participants.every((professional) => professional.hasPeriodGoals)) return false;
-    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
-    return ["today", "week"].every((key) => {
-      const field = key === "today" ? "goalToday" : "goalWeek";
-      const individualCents = participants.reduce((sum, professional) => (
-        sum + toCents(professional[field])
-      ), 0);
-      return individualCents === toCents(state.morning?.goals?.[key]?.target);
-    });
+  function morningCalculationParticipants(professionals = []) {
+    return [...morningParticipants(professionals)].sort((a, b) => (
+      String(a.id || "").localeCompare(String(b.id || ""))
+      || String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
+    ));
+  }
+
+  function morningMoneyCents(value) {
+    return Math.max(Math.round(normalizeMoney(value) * 100), 0);
+  }
+
+  function morningUsesServerGoalBalance(morning = state.morning) {
+    if (morning?.individualGoalStrategy !== "own_remaining_balance_v2") return false;
+    if (morning?.rotationAffectsIndividualGoals === true) return false;
+    const participants = morningParticipants(morning?.professionals || []);
+    // Alvos individuais são saldos próprios e, após uma pessoa ultrapassar sua
+    // parte, não precisam fechar com o alvo coletivo. Não use essa soma como
+    // condição de confiança: isso reintroduziria a divisão igualitária antiga.
+    return participants.length > 0 && participants.every((professional) => professional.hasPeriodGoals);
   }
 
   function applyEqualMorningGoals(draft) {
@@ -1273,43 +1328,10 @@
     return Math.round((goalCents * completedWorkdays) / totalWorkdays);
   }
 
-  function morningApportionGoalCents(targetCents, weightedItems) {
-    const items = weightedItems.map((item, index) => ({
-      ...item,
-      index,
-      weightCents: Math.max(Math.round(Number(item.weightCents || 0)), 0),
-      baseCents: 0n,
-      remainder: 0n,
-    }));
-    const targets = new Map(items.map((item) => [item.id, 0]));
-    const normalizedTargetCents = Math.max(Math.round(Number(targetCents || 0)), 0);
-    if (!items.length || !normalizedTargetCents) return targets;
-    if (!items.some((item) => item.weightCents > 0)) {
-      items.forEach((item) => { item.weightCents = 1; });
-    }
-
-    const totalWeight = items.reduce((sum, item) => sum + BigInt(item.weightCents), 0n);
-    const targetBigInt = BigInt(normalizedTargetCents);
-    items.forEach((item) => {
-      const numerator = targetBigInt * BigInt(item.weightCents);
-      item.baseCents = numerator / totalWeight;
-      item.remainder = numerator % totalWeight;
-    });
-    const distributedBase = items.reduce((sum, item) => sum + item.baseCents, 0n);
-    const leftover = targetBigInt - distributedBase;
-    [...items]
-      .sort((a, b) => {
-        if (a.remainder === b.remainder) return a.index - b.index;
-        return a.remainder > b.remainder ? -1 : 1;
-      })
-      .forEach((item, index) => {
-        targets.set(item.id, Number(item.baseCents + (BigInt(index) < leftover ? 1n : 0n)));
-      });
-    return targets;
-  }
-
   function calculateMorningRemainingGoalPlan(morning, context) {
-    const participants = morningParticipants(morning?.professionals || []);
+    // A ordem da fila é uma mecânica independente. Usar uma ordem estável por id
+    // impede que qualquer cálculo mude ao avançar a rotação.
+    const participants = morningCalculationParticipants(morning?.professionals || []);
     const emptyTargets = () => new Map(participants.map((professional) => [professional.id, 0]));
     const emptyPlan = {
       todayTargetCents: 0,
@@ -1323,10 +1345,9 @@
       return emptyPlan;
     }
 
-    const toCents = (value) => Math.max(Math.round(Number(value || 0) * 100), 0);
-    const positiveDifferenceCents = (left, right) => Math.max(toCents(left) - toCents(right), 0);
+    const positiveDifferenceCents = (left, right) => Math.max(morningMoneyCents(left) - morningMoneyCents(right), 0);
     const snapshotActive = morning?.configurationActualSnapshotActive === true;
-    const monthGoalCents = toCents(morning?.goals?.month?.target || morning?.monthlyGoal);
+    const monthGoalCents = morningMoneyCents(morning?.goals?.month?.target || morning?.monthlyGoal);
     const monthActualBeforeWeekCents = positiveDifferenceCents(
       snapshotActive ? morning?.actualMonthAtConfiguration : morning?.goals?.month?.actual,
       snapshotActive ? morning?.actualWeekAtConfiguration : morning?.goals?.week?.actual
@@ -1338,7 +1359,7 @@
       / context.remainingMonthWorkdaysFromWeekStart
     );
     const weeklyAllocations = participants.map((professional) => {
-      const goalCents = toCents(professional.goalAmount || professional.goalMonth);
+      const goalCents = morningMoneyCents(professional.goalAmount || professional.goalMonth);
       const actualBeforeWeekCents = positiveDifferenceCents(
         snapshotActive ? professional.actualMonthAtConfiguration : professional.actualMonth,
         snapshotActive ? professional.actualWeekAtConfiguration : professional.actualWeek
@@ -1349,21 +1370,21 @@
         gapCents: Math.max(goalCents - actualBeforeWeekCents, 0),
       };
     });
-    const totalMonthGapCents = weeklyAllocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
-    const totalMonthGoalCents = weeklyAllocations.reduce((sum, allocation) => sum + allocation.goalCents, 0);
-    const weekTargetsCents = morningApportionGoalCents(weekTargetCents, weeklyAllocations.map((allocation) => ({
-      id: allocation.id,
-      weightCents: totalMonthGapCents > 0
-        ? allocation.gapCents
-        : totalMonthGoalCents > 0 ? allocation.goalCents : 1,
-    })));
+    const weekTargetsCents = new Map(weeklyAllocations.map((allocation) => [
+      allocation.id,
+      Math.round(
+        allocation.gapCents
+        * context.weekWorkdays
+        / context.remainingMonthWorkdaysFromWeekStart
+      ),
+    ]));
 
-    const todayActualCents = toCents(morning?.goals?.today?.actual);
-    const todayBeforeConfigurationCents = Math.min(toCents(morning?.actualTodayBeforeConfiguration), todayActualCents);
+    const todayActualCents = morningMoneyCents(morning?.goals?.today?.actual);
+    const todayBeforeConfigurationCents = Math.min(morningMoneyCents(morning?.actualTodayBeforeConfiguration), todayActualCents);
     const weekActualBeforeTodayCents = snapshotActive
-      ? toCents(morning?.actualWeekAtConfiguration)
+      ? morningMoneyCents(morning?.actualWeekAtConfiguration)
       : Math.max(
-        toCents(morning?.goals?.week?.actual)
+        morningMoneyCents(morning?.goals?.week?.actual)
         - todayActualCents
         + todayBeforeConfigurationCents,
         0
@@ -1374,14 +1395,14 @@
       : 0;
     const dailyAllocations = participants.map((professional) => {
       const weekGoalCents = weekTargetsCents.get(professional.id) || 0;
-      const professionalTodayActualCents = toCents(professional.actualToday);
-      const professionalTodayBeforeConfigurationCents = Math.min(toCents(
+      const professionalTodayActualCents = morningMoneyCents(professional.actualToday);
+      const professionalTodayBeforeConfigurationCents = Math.min(morningMoneyCents(
         professional.actualTodayBeforeConfiguration
       ), professionalTodayActualCents);
       const actualWeekBeforeTodayCents = snapshotActive
-        ? toCents(professional.actualWeekAtConfiguration)
+        ? morningMoneyCents(professional.actualWeekAtConfiguration)
         : Math.max(
-          toCents(professional.actualWeek)
+          morningMoneyCents(professional.actualWeek)
           - professionalTodayActualCents
           + professionalTodayBeforeConfigurationCents,
           0
@@ -1389,21 +1410,15 @@
       return {
         id: professional.id,
         weekGoalCents,
-        monthGoalCents: toCents(professional.goalAmount || professional.goalMonth),
         gapCents: Math.max(weekGoalCents - actualWeekBeforeTodayCents, 0),
       };
     });
-    const totalWeekGapCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
-    const totalWeekGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.weekGoalCents, 0);
-    const totalConfiguredGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.monthGoalCents, 0);
-    const todayTargetsCents = morningApportionGoalCents(todayTargetCents, dailyAllocations.map((allocation) => ({
-      id: allocation.id,
-      weightCents: totalWeekGapCents > 0
-        ? allocation.gapCents
-        : totalWeekGoalCents > 0
-          ? allocation.weekGoalCents
-          : totalConfiguredGoalCents > 0 ? allocation.monthGoalCents : 1,
-    })));
+    const todayTargetsCents = new Map(dailyAllocations.map((allocation) => [
+      allocation.id,
+      context.todayIsWorkingDay && context.remainingWeekWorkdays
+        ? Math.round(allocation.gapCents / context.remainingWeekWorkdays)
+        : 0,
+    ]));
     return { todayTargetCents, weekTargetCents, todayTargetsCents, weekTargetsCents };
   }
 
@@ -1411,9 +1426,9 @@
     return calculateMorningRemainingGoalPlan(state.morning, context);
   }
 
-  function morningProfessionalGoal(professional, key, context, goalPlan = null) {
-    if (["today", "week"].includes(key) && !morningUsesServerGoalBalance()) {
-      const resolvedPlan = goalPlan || morningRemainingGoalPlan(context);
+  function morningProfessionalGoal(professional, key, context, goalPlan = null, morning = state.morning) {
+    if (["today", "week"].includes(key) && !morningUsesServerGoalBalance(morning)) {
+      const resolvedPlan = goalPlan || calculateMorningRemainingGoalPlan(morning, context);
       const targets = key === "today" ? resolvedPlan.todayTargetsCents : resolvedPlan.weekTargetsCents;
       return (targets.get(professional.id) || 0) / 100;
     }
@@ -1438,13 +1453,65 @@
     ) / 100;
   }
 
+  function morningProfessionalRemainingCents(professional, key, context, goalPlan = null, morning = state.morning) {
+    const remainingField = key === "today"
+      ? "remainingToday"
+      : key === "week" ? "remainingWeek" : "remainingMonth";
+    const remainingPresenceField = key === "today"
+      ? "hasRemainingToday"
+      : key === "week" ? "hasRemainingWeek" : "hasRemainingMonth";
+    if (professional[remainingPresenceField] === true) return morningMoneyCents(professional[remainingField]);
+
+    const targetCents = morningMoneyCents(
+      morningProfessionalGoal(professional, key, context, goalPlan, morning)
+    );
+    let actualCents = morningMoneyCents(
+      key === "today"
+        ? professional.actualToday
+        : key === "week" ? professional.actualWeek : professional.actualMonth
+    );
+    if (key === "today" && morning?.configurationActualSnapshotActive === true) {
+      // O alvo diário criado no meio do dia já nasce descontando o realizado
+      // anterior à configuração. Só vendas posteriores reduzem esse saldo.
+      actualCents = Math.max(
+        actualCents - Math.min(actualCents, morningMoneyCents(professional.actualTodayBeforeConfiguration)),
+        0
+      );
+    }
+    return Math.max(targetCents - actualCents, 0);
+  }
+
+  function morningProfessionalRemainingAmount(professional, key, context, goalPlan = null, morning = state.morning) {
+    return morningProfessionalRemainingCents(professional, key, context, goalPlan, morning) / 100;
+  }
+
+  function calculateMorningIndividualRemaining(morning, key, context) {
+    const validKey = ["today", "week", "month"].includes(key) ? key : "month";
+    const resolvedContext = context || calculateMorningWorkingDayContext(
+      morning?.today,
+      morning?.weekStart,
+      morning?.weekEnd,
+      morning?.closedDays,
+    );
+    const goalPlan = ["today", "week"].includes(validKey) && !morningUsesServerGoalBalance(morning)
+      ? calculateMorningRemainingGoalPlan(morning, resolvedContext)
+      : null;
+    return new Map(morningParticipants(morning?.professionals || []).map((professional) => [
+      professional.id,
+      morningProfessionalRemainingCents(professional, validKey, resolvedContext, goalPlan, morning),
+    ]));
+  }
+
   function renderMorningIndividualGoals(key, goalPlan = null, context = morningWorkingDayContext()) {
-    const professionals = morningQueue();
+    const professionals = [...morningParticipants(state.morning?.professionals || [])].sort((a, b) => (
+      String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
+      || String(a.id || "").localeCompare(String(b.id || ""))
+    ));
     if (!professionals.length) return "";
     const resolvedGoalPlan = ["today", "week"].includes(key) && !morningUsesServerGoalBalance()
       ? goalPlan || morningRemainingGoalPlan(context)
       : null;
-    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Metas individuais</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalGoal(professional, key, context, resolvedGoalPlan)))}</strong></p>`).join("")}</div></div>`;
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Quanto falta por vendedor</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency(morningProfessionalRemainingAmount(professional, key, context, resolvedGoalPlan)))}</strong></p>`).join("")}</div></div>`;
   }
 
   function renderMorningGoalCard(key, label, icon, helper, goalPlan = null, context = morningWorkingDayContext()) {
@@ -1994,7 +2061,7 @@
 
   function filteredRecords() {
     const query = normalizeText(state.filters.search);
-    const range = embeddedAttendanceRange(state.filters.period);
+    const range = embeddedAttendanceRange(state.filters);
     return state.listRecords.filter((record) => {
       if (state.filters.tag !== "all" && record.tag !== state.filters.tag) return false;
       if (state.filters.professional !== "all" && normalizeText(record.professionalName) !== normalizeText(state.filters.professional)) return false;
@@ -2051,7 +2118,7 @@
   function attendanceFilterCount(filters = state.filters) {
     return Number(filters.tag !== "all")
       + Number(filters.professional !== "all")
-      + Number(filters.period !== "30d")
+      + Number(filters.period !== "today")
       + Number(filters.link !== "all");
   }
 
@@ -2119,11 +2186,14 @@
             <button class="attendance-filter-button${state.filtersOpen || filterCount ? " is-active" : ""}" type="button" data-attendance-action="toggle-filters" aria-expanded="${String(state.filtersOpen)}" aria-controls="attendanceFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Filtros</span><b data-attendance-filter-count ${filterCount ? "" : "hidden"}>${filterCount}</b></button>
           </div>
         </header>
-        <div id="attendanceFilters" class="attendance-filter-panel" ${state.filtersOpen ? "" : "hidden"}>
+        <div id="attendanceFilters" class="attendance-filter-panel attendance-operational-filter-panel" ${state.filtersOpen ? "" : "hidden"}>
           <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-filter="tag"><option value="all" ${state.filters.tag === "all" ? "selected" : ""}>Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${state.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
           <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${state.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
           <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-filter="link"><option value="all" ${state.filters.link === "all" ? "selected" : ""}>Todos os vínculos</option><option value="linked" ${state.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${state.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${state.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
-          <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="currentWeek" ${state.filters.period === "currentWeek" ? "selected" : ""}>Esta semana</option><option value="lastWeek" ${state.filters.period === "lastWeek" ? "selected" : ""}>Semana passada</option><option value="7d" ${state.filters.period === "7d" ? "selected" : ""}>Últimos 7 dias</option><option value="30d" ${state.filters.period === "30d" ? "selected" : ""}>Últimos 30 dias</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+          <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="currentWeek" ${state.filters.period === "currentWeek" ? "selected" : ""}>Esta semana</option><option value="currentMonth" ${state.filters.period === "currentMonth" ? "selected" : ""}>Este mês</option><option value="currentYear" ${state.filters.period === "currentYear" ? "selected" : ""}>Este ano</option><option value="specificDate" ${state.filters.period === "specificDate" ? "selected" : ""}>Data específica</option><option value="custom" ${state.filters.period === "custom" ? "selected" : ""}>Período personalizado</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
+          <label class="attendance-operational-date-input ${state.filters.period === "specificDate" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-day" aria-hidden="true"></i>Data</span><input type="date" data-attendance-filter-date="specific" value="${escapeHtml(state.filters.specificDate)}" max="${escapeHtml(embeddedDateInput(new Date()))}" ${state.filters.period === "specificDate" ? "" : "disabled"} /></label>
+          <label class="attendance-operational-date-input ${state.filters.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>Data inicial</span><input type="date" data-attendance-filter-date="start" value="${escapeHtml(state.filters.startDate)}" max="${escapeHtml(embeddedDateInput(new Date()))}" ${state.filters.period === "custom" ? "" : "disabled"} /></label>
+          <label class="attendance-operational-date-input ${state.filters.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Data final</span><input type="date" data-attendance-filter-date="end" value="${escapeHtml(state.filters.endDate)}" max="${escapeHtml(embeddedDateInput(new Date()))}" ${state.filters.period === "custom" ? "" : "disabled"} /></label>
           <button class="attendance-clear-filters" type="button" data-attendance-action="clear-filters"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar filtros</button>
         </div>
         <div class="attendance-list-status"><span><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${resultCount}</b> exibidos</span><small>${escapeHtml(operationalListCoverage())} · mais recentes primeiro</small></div>
@@ -2233,10 +2303,25 @@
     return `${values.year}-${values.month}-${values.day}`;
   }
 
-  function embeddedAttendanceRange(analysisState) {
-    const period = String(analysisState?.period || analysisState || "30d");
+  function createOperationalFilters() {
+    return {
+      search: "",
+      tag: "all",
+      professional: "all",
+      period: "today",
+      specificDate: "",
+      startDate: "",
+      endDate: "",
+      link: "all",
+    };
+  }
+
+  function embeddedAttendanceRange(analysisState, reference = new Date()) {
+    const period = typeof analysisState === "string"
+      ? analysisState || "today"
+      : String(analysisState?.period || "today");
     if (period === "all") return { startDate: null, endDate: null, label: "Todo o período" };
-    const todayInput = embeddedDateInput(new Date());
+    const todayInput = embeddedDateInput(reference);
     const today = new Date(`${todayInput}T12:00:00Z`);
     const start = new Date(today);
     if (period === "today") return { startDate: embeddedDateInput(today), endDate: embeddedDateInput(today), label: "Hoje" };
@@ -2261,6 +2346,10 @@
       start.setUTCDate(1);
       return { startDate: embeddedDateInput(start), endDate: embeddedDateInput(today), label: "Mês atual" };
     }
+    if (period === "currentYear") {
+      start.setUTCMonth(0, 1);
+      return { startDate: embeddedDateInput(start), endDate: embeddedDateInput(today), label: "Ano atual" };
+    }
     if (period === "previousMonth") {
       const previousEnd = new Date(today);
       previousEnd.setUTCDate(0);
@@ -2268,9 +2357,17 @@
       previousStart.setUTCDate(1);
       return { startDate: embeddedDateInput(previousStart), endDate: embeddedDateInput(previousEnd), label: "Mês anterior" };
     }
+    if (period === "specificDate") {
+      const specificDate = String(analysisState?.specificDate || "");
+      return {
+        startDate: specificDate || null,
+        endDate: specificDate || null,
+        label: specificDate ? formatShortDate(specificDate) : "Data específica",
+      };
+    }
     if (period === "custom") {
-      const startDate = String(analysisState?.customStart || "");
-      const endDate = String(analysisState?.customEnd || "");
+      const startDate = String(analysisState?.customStart || analysisState?.startDate || "");
+      const endDate = String(analysisState?.customEnd || analysisState?.endDate || "");
       return {
         startDate: startDate || null,
         endDate: endDate || null,
@@ -3280,7 +3377,7 @@
     const storeId = state.selectedStoreId;
     const requestGeneration = ++state.listGeneration;
     const offset = append ? state.listRecords.length : 0;
-    const range = embeddedAttendanceRange(state.filters.period);
+    const range = embeddedAttendanceRange(state.filters);
     const linkStatus = state.filters.link === "linked"
       ? "matched"
       : ["standalone", "review"].includes(state.filters.link) ? state.filters.link : null;
@@ -4058,7 +4155,7 @@
       state.idempotencyKey = "";
       state.idempotencyFingerprint = "";
       state.filtersOpen = false;
-      state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
+      state.filters = createOperationalFilters();
       if (typeof state.bridge?.onStoreSelected === "function") {
         try {
           await state.bridge.onStoreSelected(nextId, selectedStore());
@@ -4100,8 +4197,55 @@
     if (target.matches("[data-attendance-filter]")) {
       const key = target.dataset.attendanceFilter;
       if (key && key in state.filters) state.filters[key] = target.value;
-      renderFilteredRegions();
+      if (key === "period") {
+        const today = embeddedDateInput(new Date());
+        if (state.filters.period === "specificDate" && !state.filters.specificDate) {
+          state.filters.specificDate = today;
+        }
+        if (state.filters.period === "custom") {
+          if (!state.filters.startDate) state.filters.startDate = today;
+          if (!state.filters.endDate) state.filters.endDate = today;
+        }
+        state.filtersOpen = true;
+        const overview = state.root?.querySelector(".attendance-overview");
+        if (overview) overview.outerHTML = renderOverview();
+        queueMicrotask(() => {
+          const focusSelector = state.filters.period === "specificDate"
+            ? '[data-attendance-filter-date="specific"]'
+            : state.filters.period === "custom"
+              ? '[data-attendance-filter-date="start"]'
+              : '[data-attendance-filter="period"]';
+          state.root?.querySelector(focusSelector)?.focus();
+        });
+      } else {
+        renderFilteredRegions();
+      }
       await loadOperationalList();
+      return;
+    }
+    if (target.matches("[data-attendance-filter-date]")) {
+      const dateKind = String(target.dataset.attendanceFilterDate || "");
+      if (dateKind === "specific") state.filters.specificDate = target.value;
+      if (dateKind === "start") state.filters.startDate = target.value;
+      if (dateKind === "end") state.filters.endDate = target.value;
+
+      const customRangeInvalid = state.filters.period === "custom"
+        && state.filters.startDate
+        && state.filters.endDate
+        && state.filters.startDate > state.filters.endDate;
+      target.setCustomValidity(customRangeInvalid ? "A data inicial não pode ser posterior à data final." : "");
+      if (customRangeInvalid) {
+        target.reportValidity();
+        return;
+      }
+      state.root?.querySelectorAll("[data-attendance-filter-date]").forEach((input) => {
+        input.setCustomValidity("");
+      });
+      const rangeReady = state.filters.period === "specificDate"
+        ? Boolean(state.filters.specificDate)
+        : Boolean(state.filters.startDate && state.filters.endDate);
+      if (rangeReady) await loadOperationalList();
+      return;
     }
   }
 
@@ -4242,7 +4386,7 @@
       button.setAttribute("aria-expanded", String(state.filtersOpen));
     }
     if (action === "clear-filters") {
-      state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
+      state.filters = createOperationalFilters();
       state.filtersOpen = true;
       const overview = state.root?.querySelector(".attendance-overview");
       if (overview) overview.outerHTML = renderOverview();
@@ -4389,7 +4533,7 @@
     state.idempotencyFingerprint = "";
     state.pendingSave = null;
     state.filtersOpen = false;
-    state.filters = { search: "", tag: "all", professional: "all", period: "30d", link: "all" };
+    state.filters = createOperationalFilters();
     state.drafts.clear();
     state.bridge = {};
     if (state.root) state.root.replaceChildren();
@@ -4528,6 +4672,7 @@
             closed_days: "jsonb array sorted by date: { date: YYYY-MM-DD, reason: text }",
             eligible_professional_count: "integer (people currently participating)",
             goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
+            individual_goal_strategy: "own_remaining_balance_v2",
             daily_goal_strategy: "remaining_team_balance (compatibility marker)",
             historical_actuals_strategy: "full_operational_month_with_initial_configuration_cutoff_v1",
             actual_today_before_configuration: "numeric (purchases already registered before the month's first valid configuration)",
@@ -4535,7 +4680,7 @@
             remaining_workdays_in_week: "integer (Monday through Saturday, including today)",
             remaining_workdays_in_month: "integer (Monday through Saturday, including today)",
             goals: "object",
-            professionals: "array",
+            professionals: "array; each participant includes goal_*_target and remaining_today/week/month (plus exact *_cents fields), calculated only from that professional's goal and sales",
             queue: "array",
           },
         },
@@ -4594,16 +4739,21 @@
       attendanceRecordDate,
       attendanceUpdateFeedbackMessage,
       attendanceUpdateArgs,
+      calculateMorningIndividualRemaining,
       calculateMorningRemainingGoalPlan,
       calculateMorningWorkingDayContext,
       cloneMorningDraft,
+      createOperationalFilters,
       createAttendanceEditDraft,
+      embeddedAttendanceRange,
       focusAttendanceValidationError,
       formatDateTime,
       formatMoneyInput,
       isAttendanceEditConflict,
       mergeMorningDraftWithWorkspace,
       morningMonthDateLimits,
+      morningProfessionalRemainingAmount,
+      morningUsesServerGoalBalance,
       normalizeRecord,
       normalizeSaveFeedback,
       normalizeMorningClosedDays,

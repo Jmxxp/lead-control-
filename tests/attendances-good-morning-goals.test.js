@@ -260,3 +260,229 @@ test("compra de hoje aparece no realizado sem mover a meta; no próximo dia aber
   ]);
   assert.equal(sumTargets(nextOpenDay.todayTargetsCents), nextOpenDay.todayTargetCents);
 });
+
+test("cards exibem quanto falta para cada vendedor e não a meta bruta dividida igualmente", () => {
+  const configured = midMonthConfigurationResponseWithoutActuals(midMonthWorkspaceBeforeConfiguration());
+  const context = hooks.calculateMorningWorkingDayContext(
+    configured.today,
+    configured.weekStart,
+    configured.weekEnd,
+    configured.closedDays,
+  );
+
+  const today = hooks.calculateMorningIndividualRemaining(configured, "today", context);
+  const week = hooks.calculateMorningIndividualRemaining(configured, "week", context);
+  const month = hooks.calculateMorningIndividualRemaining(configured, "month", context);
+
+  // A venda anterior à configuração já formou o alvo diário e não pode ser
+  // descontada duas vezes. Semana e mês descontam o realizado de cada pessoa.
+  assert.deepEqual(plain([...today.entries()]), [
+    ["seller-a", 63095],
+    ["seller-b", 142857],
+  ]);
+  assert.deepEqual(plain([...week.entries()]), [
+    ["seller-a", 189286],
+    ["seller-b", 428571],
+  ]);
+  assert.deepEqual(plain([...month.entries()]), [
+    ["seller-a", 800000],
+    ["seller-b", 1200000],
+  ]);
+});
+
+test("venda reduz apenas o saldo próprio e avançar a rotação não altera nenhum valor", () => {
+  const configured = midMonthConfigurationResponseWithoutActuals(midMonthWorkspaceBeforeConfiguration());
+  configured.goals.month.actual += 400;
+  configured.goals.week.actual += 400;
+  configured.goals.today.actual += 400;
+  configured.professionals[0].actualMonth += 400;
+  configured.professionals[0].actualWeek += 400;
+  configured.professionals[0].actualToday += 400;
+
+  const context = hooks.calculateMorningWorkingDayContext(
+    configured.today,
+    configured.weekStart,
+    configured.weekEnd,
+    configured.closedDays,
+  );
+  const balancesBeforeRotation = Object.fromEntries(
+    ["today", "week", "month"].map((period) => [
+      period,
+      Object.fromEntries(hooks.calculateMorningIndividualRemaining(configured, period, context)),
+    ]),
+  );
+
+  assert.deepEqual(plain(balancesBeforeRotation), {
+    today: { "seller-a": 23095, "seller-b": 142857 },
+    week: { "seller-a": 149286, "seller-b": 428571 },
+    month: { "seller-a": 760000, "seller-b": 1200000 },
+  });
+
+  configured.professionals = [...configured.professionals].reverse().map((professional, index) => ({
+    ...professional,
+    queuePosition: index + 1,
+    current: index === 0,
+  }));
+  configured.currentProfessionalId = "seller-b";
+  const balancesAfterRotation = Object.fromEntries(
+    ["today", "week", "month"].map((period) => [
+      period,
+      Object.fromEntries(hooks.calculateMorningIndividualRemaining(configured, period, context)),
+    ]),
+  );
+
+  assert.deepEqual(plain(balancesAfterRotation), plain(balancesBeforeRotation));
+});
+
+test("frontend prefere os saldos individuais explícitos do contrato v2", () => {
+  const contract = window.AttendancesModule.getIntegrationContract();
+  assert.equal(
+    contract.rpc.morningWorkspace.returns.individual_goal_strategy,
+    "own_remaining_balance_v2",
+  );
+  assert.match(contract.rpc.morningWorkspace.returns.professionals, /remaining_today\/week\/month/);
+
+  const workspace = hooks.normalizeMorningWorkspace({
+    licensed: true,
+    configured: true,
+    today: "2026-09-04",
+    week_start: "2026-08-31",
+    week_end: "2026-09-06",
+    individual_goal_strategy: "own_remaining_balance_v2",
+    rotation_affects_individual_goals: false,
+    monthly_goal: 10000,
+    goals: {
+      today: { target: 500, actual: 250 },
+      week: { target: 2500, actual: 1300 },
+      month: { target: 10000, actual: 4300 },
+    },
+    professionals: [
+      {
+        id: "seller-a",
+        name: "Ana",
+        goal_today: 999,
+        goal_week: 999,
+        goal_month: 5000,
+        goal_today_target: 200,
+        goal_week_target: 1200,
+        goal_month_target: 5000,
+        actual_today: 150,
+        actual_week: 900,
+        actual_month: 3000,
+        remaining_today: 50,
+        remaining_week: 300,
+        remaining_month: 2000,
+      },
+      {
+        id: "seller-b",
+        name: "Bia",
+        goal_today_target: 400,
+        goal_week_target: 1800,
+        goal_month_target: 5000,
+        actual_today: 100,
+        actual_week: 400,
+        actual_month: 1300,
+        remaining_today_cents: 30000,
+        remaining_week_cents: 140000,
+        remaining_month_cents: 370000,
+      },
+    ],
+  });
+
+  assert.equal(workspace.professionals[0].goalToday, 200);
+  assert.equal(workspace.professionals[0].goalWeek, 1200);
+  assert.equal(workspace.rotationAffectsIndividualGoals, false);
+  assert.equal(hooks.morningUsesServerGoalBalance(workspace), true);
+  assert.deepEqual(plain([...hooks.calculateMorningIndividualRemaining(workspace, "today").entries()]), [
+    ["seller-a", 5000],
+    ["seller-b", 30000],
+  ]);
+  assert.deepEqual(plain([...hooks.calculateMorningIndividualRemaining(workspace, "week").entries()]), [
+    ["seller-a", 30000],
+    ["seller-b", 140000],
+  ]);
+  assert.deepEqual(plain([...hooks.calculateMorningIndividualRemaining(workspace, "month").entries()]), [
+    ["seller-a", 200000],
+    ["seller-b", 370000],
+  ]);
+});
+
+test("caso real mantém meta coletiva de hoje separada dos saldos próprios", () => {
+  const workspace = hooks.normalizeMorningWorkspace({
+    licensed: true,
+    configured: true,
+    today: "2026-09-04",
+    week_start: "2026-09-01",
+    week_end: "2026-09-06",
+    monthly_goal: 130800,
+    closed_days: [{ date: "2026-09-30", reason: "Sem expediente" }],
+    goals: {
+      today: { target: 3853, actual: 0 },
+      week: { target: 26160, actual: 18454 },
+      month: { target: 130800, actual: 18454 },
+    },
+    professionals: [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Ana",
+        goal_amount: 65400,
+        actual_month: 14315,
+        actual_week: 14315,
+        actual_today: 0,
+        queue_position: 2,
+        is_current: false,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Kézia",
+        goal_amount: 65400,
+        actual_month: 4139,
+        actual_week: 4139,
+        actual_today: 0,
+        queue_position: 1,
+        is_current: true,
+      },
+    ],
+  });
+  const context = hooks.calculateMorningWorkingDayContext(
+    workspace.today,
+    workspace.weekStart,
+    workspace.weekEnd,
+    workspace.closedDays,
+  );
+  const plan = hooks.calculateMorningRemainingGoalPlan(workspace, context);
+
+  assert.equal(context.total, 25);
+  assert.equal(context.weekWorkdays, 5);
+  assert.equal(context.remainingWeekWorkdays, 2);
+  assert.equal(plan.weekTargetCents, 2616000);
+  assert.equal(plan.todayTargetCents, 385300);
+  assert.deepEqual(plain(Object.fromEntries(hooks.calculateMorningIndividualRemaining(workspace, "week", context))), {
+    "00000000-0000-4000-8000-000000000001": 0,
+    "00000000-0000-4000-8000-000000000002": 894100,
+  });
+  assert.deepEqual(plain(Object.fromEntries(hooks.calculateMorningIndividualRemaining(workspace, "today", context))), {
+    "00000000-0000-4000-8000-000000000001": 0,
+    "00000000-0000-4000-8000-000000000002": 447050,
+  });
+  assert.deepEqual(plain(Object.fromEntries(hooks.calculateMorningIndividualRemaining(workspace, "month", context))), {
+    "00000000-0000-4000-8000-000000000001": 5108500,
+    "00000000-0000-4000-8000-000000000002": 6126100,
+  });
+  const kezia = workspace.professionals.find((professional) => professional.name === "Kézia");
+  assert.equal(
+    hooks.morningProfessionalRemainingAmount(kezia, "today", context, plan, workspace),
+    4470.5,
+    "a camada de apresentação deve converter centavos para reais exatamente uma vez",
+  );
+
+  workspace.currentProfessionalId = "00000000-0000-4000-8000-000000000001";
+  workspace.professionals.forEach((professional) => {
+    professional.current = professional.id === workspace.currentProfessionalId;
+    professional.queuePosition = professional.current ? 1 : 2;
+  });
+  assert.deepEqual(plain(Object.fromEntries(hooks.calculateMorningIndividualRemaining(workspace, "today", context))), {
+    "00000000-0000-4000-8000-000000000001": 0,
+    "00000000-0000-4000-8000-000000000002": 447050,
+  });
+});

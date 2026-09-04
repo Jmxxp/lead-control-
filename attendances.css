@@ -1163,6 +1163,14 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   background: color-mix(in srgb, var(--att-panel-soft) 88%, var(--att-mint-soft));
 }
 
+.attendance-operational-filter-panel {
+  grid-template-columns: repeat(4, minmax(145px, 1fr)) auto;
+}
+
+.attendance-operational-date-input:not(.is-visible) {
+  display: none;
+}
+
 .attendance-filter-panel label {
   display: grid;
   gap: 5px;
