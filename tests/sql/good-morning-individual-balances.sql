@@ -1,6 +1,7 @@
 -- Executar depois de aplicar
--- 20260904123948_personalize_good_morning_individual_balances.sql.
+-- 20260904134151_reconcile_good_morning_individual_balances.sql.
 -- Usa uma sessao administrativa efemera, gira a rotacao e reverte tudo.
+-- Nenhuma informacao de cliente e emitida pelo teste.
 
 begin;
 
@@ -17,6 +18,25 @@ declare
   v_before_current text;
   v_after_current text;
   v_invalid_count integer := 0;
+  v_month_target_cents bigint := 0;
+  v_month_actual_cents bigint := 0;
+  v_week_target_cents bigint := 0;
+  v_week_actual_cents bigint := 0;
+  v_today_target_cents bigint := 0;
+  v_today_actual_cents bigint := 0;
+  v_today_snapshot_cents bigint := 0;
+  v_today_effective_actual_cents bigint := 0;
+  v_expected_month_remaining_cents bigint := 0;
+  v_expected_week_remaining_cents bigint := 0;
+  v_expected_today_remaining_cents bigint := 0;
+  v_reported_month_remaining_cents bigint := 0;
+  v_reported_week_remaining_cents bigint := 0;
+  v_reported_today_remaining_cents bigint := 0;
+  v_sum_month_remaining_cents bigint := 0;
+  v_sum_week_remaining_cents bigint := 0;
+  v_sum_today_remaining_cents bigint := 0;
+  v_cutoff_case jsonb;
+  v_exact_case jsonb;
 begin
   if pg_catalog.to_regprocedure(
        'app_private.personalize_good_morning_individual_balances(jsonb)'
@@ -80,7 +100,7 @@ begin
   );
 
   if v_before->>'individual_goal_strategy'
-       is distinct from 'own_remaining_balance_v2'
+       is distinct from 'team_remaining_personalized_v3'
      or coalesce(
        (v_before->>'rotation_affects_individual_goals')::boolean,
        true
@@ -88,41 +108,228 @@ begin
     raise exception 'Smoke individual: contrato publico novo nao foi retornado.';
   end if;
 
-  -- Valida todas as identidades monetarias diretamente em centavos.
-  select pg_catalog.count(*)::integer
-  into v_invalid_count
-  from pg_catalog.jsonb_array_elements(v_before->'professionals') entry(value)
-  where coalesce(
-          (entry.value->>'good_morning_seller_enabled')::boolean,
-          true
-        )
-    and (
-      (entry.value->>'remaining_month_cents')::bigint is distinct from
-        greatest(
-          (entry.value->>'goal_month_target_cents')::bigint
-            - pg_catalog.round(
-              coalesce((entry.value->>'actual_month')::numeric, 0) * 100
-            )::bigint,
-          0
-        )
-      or (entry.value->>'remaining_week_cents')::bigint is distinct from
-        greatest(
-          (entry.value->>'goal_week_target_cents')::bigint
-            - pg_catalog.round(
-              coalesce((entry.value->>'actual_week')::numeric, 0) * 100
-            )::bigint,
-          0
-        )
-      or (entry.value->>'remaining_today_cents')::bigint is distinct from
-        greatest(
-          (entry.value->>'goal_today_target_cents')::bigint
-            - (entry.value->>'actual_today_against_target_cents')::bigint,
-          0
-        )
-    );
+  v_month_target_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,month,target}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_month_actual_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,month,actual}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_week_target_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,week,target}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_week_actual_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,week,actual}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_today_target_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,today,target}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_today_actual_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before #>> '{goals,today,actual}', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_today_snapshot_cents := greatest(pg_catalog.round(coalesce(
+    nullif(v_before->>'actual_today_before_configuration', '')::numeric,
+    0
+  ) * 100)::bigint, 0);
+  v_today_effective_actual_cents := case
+    when coalesce(
+      nullif(v_before->>'configuration_actual_snapshot_active', '')::boolean,
+      false
+    ) then greatest(v_today_actual_cents - v_today_snapshot_cents, 0)
+    else v_today_actual_cents
+  end;
 
-  if v_invalid_count <> 0 then
-    raise exception 'Smoke individual: alguma identidade de saldo divergiu.';
+  v_expected_month_remaining_cents := greatest(
+    v_month_target_cents - v_month_actual_cents,
+    0
+  );
+  v_expected_week_remaining_cents := greatest(
+    v_week_target_cents - v_week_actual_cents,
+    0
+  );
+  v_expected_today_remaining_cents := greatest(
+    v_today_target_cents - v_today_effective_actual_cents,
+    0
+  );
+
+  v_reported_month_remaining_cents := coalesce(
+    nullif(v_before #>> '{individual_remaining_totals_cents,month}', '')::bigint,
+    -1
+  );
+  v_reported_week_remaining_cents := coalesce(
+    nullif(v_before #>> '{individual_remaining_totals_cents,week}', '')::bigint,
+    -1
+  );
+  v_reported_today_remaining_cents := coalesce(
+    nullif(v_before #>> '{individual_remaining_totals_cents,today}', '')::bigint,
+    -1
+  );
+
+  if v_reported_month_remaining_cents <> v_expected_month_remaining_cents
+     or v_reported_week_remaining_cents <> v_expected_week_remaining_cents
+     or v_reported_today_remaining_cents <> v_expected_today_remaining_cents then
+    raise exception 'Smoke individual: totais publicados divergem do saldo coletivo.';
+  end if;
+
+  -- Valida fechamento, limites e presenca de todos os campos em centavos.
+  select
+    coalesce(pg_catalog.sum(
+      (entry.value->>'remaining_month_cents')::bigint
+    ) filter (
+      where coalesce(
+        (entry.value->>'good_morning_seller_enabled')::boolean,
+        true
+      )
+    ), 0)::bigint,
+    coalesce(pg_catalog.sum(
+      (entry.value->>'remaining_week_cents')::bigint
+    ) filter (
+      where coalesce(
+        (entry.value->>'good_morning_seller_enabled')::boolean,
+        true
+      )
+    ), 0)::bigint,
+    coalesce(pg_catalog.sum(
+      (entry.value->>'remaining_today_cents')::bigint
+    ) filter (
+      where coalesce(
+        (entry.value->>'good_morning_seller_enabled')::boolean,
+        true
+      )
+    ), 0)::bigint,
+    pg_catalog.count(*) filter (
+      where entry.value->>'remaining_month_cents' is null
+         or entry.value->>'remaining_week_cents' is null
+         or entry.value->>'remaining_today_cents' is null
+         or entry.value->>'actual_today_against_target_cents' is null
+         or (entry.value->>'remaining_month_cents')::bigint < 0
+         or (entry.value->>'remaining_week_cents')::bigint < 0
+         or (entry.value->>'remaining_today_cents')::bigint < 0
+         or (entry.value->>'actual_today_against_target_cents')::bigint < 0
+         or (
+           coalesce(
+             (entry.value->>'good_morning_seller_enabled')::boolean,
+             true
+           )
+           and (
+             (entry.value->>'remaining_month_cents')::bigint
+               > v_reported_month_remaining_cents
+             or (entry.value->>'remaining_week_cents')::bigint
+               > v_reported_week_remaining_cents
+             or (entry.value->>'remaining_today_cents')::bigint
+               > v_reported_today_remaining_cents
+           )
+         )
+         or (
+           not coalesce(
+             (entry.value->>'good_morning_seller_enabled')::boolean,
+             true
+           )
+           and (
+             (entry.value->>'remaining_month_cents')::bigint <> 0
+             or (entry.value->>'remaining_week_cents')::bigint <> 0
+             or (entry.value->>'remaining_today_cents')::bigint <> 0
+           )
+         )
+    )::integer
+  into
+    v_sum_month_remaining_cents,
+    v_sum_week_remaining_cents,
+    v_sum_today_remaining_cents,
+    v_invalid_count
+  from pg_catalog.jsonb_array_elements(v_before->'professionals') entry(value)
+  ;
+
+  if v_invalid_count <> 0
+     or v_sum_month_remaining_cents <> v_reported_month_remaining_cents
+     or v_sum_week_remaining_cents <> v_reported_week_remaining_cents
+     or v_sum_today_remaining_cents <> v_reported_today_remaining_cents then
+    raise exception 'Smoke individual: fechamento ou limite individual divergiu.';
+  end if;
+
+  -- Reproduz o incidente real sem nomes nem IDs de clientes. Ambos ainda tem
+  -- deficit mensal; logo nenhum pode zerar enquanto o periodo tem saldo.
+  v_exact_case := app_private.personalize_good_morning_individual_balances(
+    pg_catalog.jsonb_build_object(
+      'configured', true,
+      'goals', pg_catalog.jsonb_build_object(
+        'today', pg_catalog.jsonb_build_object('target', 3853, 'actual', 0),
+        'week', pg_catalog.jsonb_build_object('target', 26160, 'actual', 18454),
+        'month', pg_catalog.jsonb_build_object('target', 130800, 'actual', 18454)
+      ),
+      'professionals', pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000001',
+          'good_morning_seller_enabled', true,
+          'goal_amount', 65400,
+          'actual_month', 14315
+        ),
+        pg_catalog.jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000002',
+          'good_morning_seller_enabled', true,
+          'goal_amount', 65400,
+          'actual_month', 4139
+        )
+      )
+    )
+  );
+
+  if (v_exact_case #>> '{professionals,0,remaining_today_cents}')::bigint <> 175200
+     or (v_exact_case #>> '{professionals,1,remaining_today_cents}')::bigint <> 210100
+     or (v_exact_case #>> '{professionals,0,remaining_week_cents}')::bigint <> 350401
+     or (v_exact_case #>> '{professionals,1,remaining_week_cents}')::bigint <> 420199
+     or (v_exact_case #>> '{professionals,0,remaining_month_cents}')::bigint <> 5108500
+     or (v_exact_case #>> '{professionals,1,remaining_month_cents}')::bigint <> 6126100
+     or (v_exact_case #>> '{individual_remaining_totals_cents,today}')::bigint <> 385300
+     or (v_exact_case #>> '{individual_remaining_totals_cents,week}')::bigint <> 770600
+     or (v_exact_case #>> '{individual_remaining_totals_cents,month}')::bigint <> 11234600 then
+    raise exception 'Smoke individual: regressao no caso financeiro de referencia.';
+  end if;
+
+  -- Uma correcao para baixo em venda anterior ao cutoff nao pode produzir
+  -- realizado negativo nem reabrir saldo acima da meta exibida no card.
+  v_cutoff_case := app_private.personalize_good_morning_individual_balances(
+    pg_catalog.jsonb_build_object(
+      'configured', true,
+      'configuration_actual_snapshot_active', true,
+      'actual_today_before_configuration', 80,
+      'goals', pg_catalog.jsonb_build_object(
+        'today', pg_catalog.jsonb_build_object('target', 100, 'actual', 50),
+        'week', pg_catalog.jsonb_build_object('target', 700, 'actual', 50),
+        'month', pg_catalog.jsonb_build_object('target', 3000, 'actual', 50)
+      ),
+      'professionals', pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000001',
+          'good_morning_seller_enabled', true,
+          'goal_amount', 1500,
+          'actual_month', 25,
+          'actual_today', 25,
+          'actual_today_before_configuration', 40
+        ),
+        pg_catalog.jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000002',
+          'good_morning_seller_enabled', true,
+          'goal_amount', 1500,
+          'actual_month', 25,
+          'actual_today', 25,
+          'actual_today_before_configuration', 40
+        )
+      )
+    )
+  );
+
+  if (v_cutoff_case #>> '{individual_remaining_totals_cents,today}')::bigint <> 10000
+     or (v_cutoff_case #>> '{professionals,0,remaining_today_cents}')::bigint <> 5000
+     or (v_cutoff_case #>> '{professionals,1,remaining_today_cents}')::bigint <> 5000
+     or (v_cutoff_case #>> '{professionals,0,actual_today_against_target_cents}')::bigint <> 0
+     or (v_cutoff_case #>> '{professionals,1,actual_today_against_target_cents}')::bigint <> 0 then
+    raise exception 'Smoke individual: cutoff criou saldo acima da meta ou realizado negativo.';
   end if;
 
   select pg_catalog.jsonb_object_agg(
@@ -162,6 +369,10 @@ begin
 
   if v_after_current is not distinct from v_before_current then
     raise exception 'Smoke individual: a rotacao nao avancou no cenario de teste.';
+  end if;
+  if v_after->>'individual_goal_strategy'
+       is distinct from 'team_remaining_personalized_v3' then
+    raise exception 'Smoke individual: contrato v3 se perdeu depois da rotacao.';
   end if;
   if v_after_projection is distinct from v_before_projection then
     raise exception 'Smoke individual: girar a vez alterou metas ou saldos.';
