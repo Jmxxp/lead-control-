@@ -15,6 +15,307 @@
     morningParticipation: "lc_set_good_morning_seller_participation",
   });
 
+  const ATTENDANCE_REALTIME_DEBOUNCE_MS = 260;
+  const ATTENDANCE_REALTIME_UNAVAILABLE_MESSAGE = "A atualização em tempo real foi interrompida. Os dados serão reconciliados quando a conexão voltar.";
+
+  function normalizeAttendanceRealtimePayload(message) {
+    const envelope = message && typeof message === "object" ? message : {};
+    const payload = envelope.payload && typeof envelope.payload === "object" ? envelope.payload : envelope;
+    const storeId = String(payload.storeId ?? payload.store_id ?? "").trim();
+    const rawResources = Array.isArray(payload.resources)
+      ? payload.resources
+      : Array.isArray(payload.scopes)
+        ? payload.scopes
+        : [payload.resource ?? payload.scope ?? payload.table ?? payload.entity ?? ""];
+    const resources = rawResources
+      .map((value) => String(value || "").trim().toLowerCase().replace(/_/g, "-"))
+      .filter(Boolean);
+    return { storeId, resources: resources.length ? resources : ["unknown"] };
+  }
+
+  function attendanceRealtimeScope(resource) {
+    const normalized = String(resource || "").trim().toLowerCase().replace(/_/g, "-");
+    if ([
+      "settings",
+      "allocation",
+      "allocations",
+      "closed-day",
+      "closed-days",
+      "good-morning-seller-settings",
+      "good-morning-seller-allocations",
+      "good-morning-seller-closed-days",
+      "morning",
+    ].includes(normalized)) return "morning";
+    return "workspace";
+  }
+
+  function createAttendanceRealtimeCoordinator({
+    subscribe,
+    attendanceRealtime,
+    refreshWorkspace,
+    refreshMorning,
+    isBusy = () => false,
+    isVisible = () => true,
+    shouldDeferMorning = () => false,
+    onDeferredMorning,
+    setTimeout: scheduleTimeout = global.setTimeout?.bind(global),
+    clearTimeout: cancelTimeout = global.clearTimeout?.bind(global),
+    debounceMs = ATTENDANCE_REALTIME_DEBOUNCE_MS,
+    retryBaseMs = 1000,
+    retryMaxMs = 30000,
+    notify: realtimeNotify,
+  } = {}) {
+    const subscribeToStore = typeof subscribe === "function" ? subscribe : attendanceRealtime?.subscribe;
+    const waitMs = Math.max(0, Number(debounceMs) || ATTENDANCE_REALTIME_DEBOUNCE_MS);
+    const baseRetryMs = Math.max(waitMs, Number(retryBaseMs) || 1000);
+    const maximumRetryMs = Math.max(baseRetryMs, Number(retryMaxMs) || 30000);
+    let storeId = "";
+    let epoch = 0;
+    let cleanup = null;
+    let timer = 0;
+    let retryTimer = 0;
+    let retryAttempt = 0;
+    let retryStoreId = "";
+    let refreshInFlight = false;
+    let pendingWorkspace = false;
+    let pendingMorning = false;
+    let subscribedOnce = false;
+    let reconnectPending = false;
+    let unavailableNotified = false;
+    let deferredMorningNotified = false;
+    let subscriptionState = "idle";
+
+    const safeCleanup = async (candidate) => {
+      try {
+        if (typeof candidate === "function") await candidate();
+        else if (candidate && typeof candidate.unsubscribe === "function") await candidate.unsubscribe();
+      } catch {
+        // Cleanup is best-effort; epoch guards already make late callbacks inert.
+      }
+    };
+
+    const clearTimer = () => {
+      if (timer && typeof cancelTimeout === "function") cancelTimeout(timer);
+      timer = 0;
+    };
+
+    const clearRetryTimer = () => {
+      if (retryTimer && typeof cancelTimeout === "function") cancelTimeout(retryTimer);
+      retryTimer = 0;
+    };
+
+    const resetRetryState = () => {
+      clearRetryTimer();
+      retryAttempt = 0;
+      retryStoreId = "";
+    };
+
+    const scheduleSubscriptionRetry = () => {
+      if (retryTimer
+        || !storeId
+        || retryStoreId !== storeId
+        || subscriptionState !== "failed"
+        || typeof scheduleTimeout !== "function") return;
+      const retryEpoch = epoch;
+      const retryScopedStoreId = storeId;
+      const delay = Math.min(maximumRetryMs, baseRetryMs * (2 ** Math.min(retryAttempt, 8)));
+      retryAttempt += 1;
+      retryTimer = scheduleTimeout(() => {
+        retryTimer = 0;
+        if (retryEpoch !== epoch
+          || retryScopedStoreId !== storeId
+          || retryStoreId !== retryScopedStoreId
+          || subscriptionState !== "failed") return;
+        void start(retryScopedStoreId, { retry: true });
+      }, delay);
+    };
+
+    const markPending = (resource) => {
+      if (attendanceRealtimeScope(resource) === "morning") pendingMorning = true;
+      else pendingWorkspace = true;
+    };
+
+    const scheduleDrain = () => {
+      if (!storeId || typeof scheduleTimeout !== "function") return;
+      clearTimer();
+      if (isVisible() === false) return;
+      timer = scheduleTimeout(() => {
+        timer = 0;
+        void drain();
+      }, waitMs);
+    };
+
+    async function drain() {
+      if (!storeId || (!pendingWorkspace && !pendingMorning)) return false;
+      if (isVisible() === false) return false;
+      if (refreshInFlight) return false;
+      if (isBusy()) {
+        scheduleDrain();
+        return false;
+      }
+
+      const refreshStoreId = storeId;
+      const refreshEpoch = epoch;
+      const runWorkspace = pendingWorkspace;
+      const deferMorning = pendingMorning && shouldDeferMorning();
+      const runMorning = pendingMorning && !runWorkspace && !deferMorning;
+      pendingWorkspace = false;
+      if (runWorkspace && !deferMorning) pendingMorning = false;
+      else if (runMorning) pendingMorning = false;
+
+      if (deferMorning && !deferredMorningNotified) {
+        deferredMorningNotified = true;
+        onDeferredMorning?.({ storeId: refreshStoreId });
+      }
+      if (!runWorkspace && !runMorning) return false;
+
+      refreshInFlight = true;
+      let refreshFailed = false;
+      try {
+        if (runWorkspace && typeof refreshWorkspace === "function") {
+          await refreshWorkspace({ storeId: refreshStoreId });
+        } else if (runMorning && typeof refreshMorning === "function") {
+          await refreshMorning({ storeId: refreshStoreId });
+        }
+        unavailableNotified = false;
+      } catch (error) {
+        refreshFailed = true;
+        if (refreshEpoch === epoch && refreshStoreId === storeId) {
+          if (runWorkspace) pendingWorkspace = true;
+          if (runMorning) pendingMorning = true;
+          if (!unavailableNotified) {
+            unavailableNotified = true;
+            realtimeNotify?.(ATTENDANCE_REALTIME_UNAVAILABLE_MESSAGE, "warning", error);
+          }
+        }
+      } finally {
+        refreshInFlight = false;
+        const failedCurrentRefresh = refreshFailed && refreshEpoch === epoch && refreshStoreId === storeId;
+        if (!failedCurrentRefresh && storeId && (pendingWorkspace || pendingMorning)) {
+          scheduleDrain();
+        }
+      }
+      return true;
+    }
+
+    async function stop() {
+      epoch += 1;
+      storeId = "";
+      clearTimer();
+      resetRetryState();
+      pendingWorkspace = false;
+      pendingMorning = false;
+      subscribedOnce = false;
+      reconnectPending = false;
+      unavailableNotified = false;
+      deferredMorningNotified = false;
+      subscriptionState = "idle";
+      const previousCleanup = cleanup;
+      cleanup = null;
+      await safeCleanup(previousCleanup);
+    }
+
+    async function start(nextStoreId, { retry = false } = {}) {
+      const normalizedStoreId = String(nextStoreId || "").trim();
+      if (normalizedStoreId && normalizedStoreId === storeId && subscriptionState !== "failed") return true;
+      if (!retry) resetRetryState();
+      epoch += 1;
+      const subscriptionEpoch = epoch;
+      const previousCleanup = cleanup;
+      cleanup = null;
+      clearTimer();
+      pendingWorkspace = false;
+      pendingMorning = false;
+      subscribedOnce = false;
+      reconnectPending = false;
+      if (!retry) unavailableNotified = false;
+      deferredMorningNotified = false;
+      storeId = normalizedStoreId;
+      subscriptionState = normalizedStoreId ? "starting" : "idle";
+      await safeCleanup(previousCleanup);
+      if (!normalizedStoreId || typeof subscribeToStore !== "function") return false;
+      const isCurrent = () => subscriptionEpoch === epoch && storeId === normalizedStoreId;
+      if (!isCurrent()) return false;
+      const onEvent = (message) => {
+        if (!isCurrent()) return;
+        const payload = normalizeAttendanceRealtimePayload(message);
+        if (!payload.storeId || payload.storeId !== normalizedStoreId) return;
+        payload.resources.forEach(markPending);
+        scheduleDrain();
+      };
+      const onStatus = (status, error) => {
+        if (!isCurrent()) return;
+        const normalizedStatus = String(status || "").toUpperCase();
+        if (normalizedStatus === "SUBSCRIBED") {
+          const shouldCatchUp = !subscribedOnce || reconnectPending;
+          subscribedOnce = true;
+          reconnectPending = false;
+          resetRetryState();
+          if (shouldCatchUp) {
+            pendingWorkspace = true;
+            scheduleDrain();
+          }
+          return;
+        }
+        if (normalizedStatus === "CLOSED") {
+          reconnectPending = true;
+          subscriptionState = "failed";
+          retryStoreId = normalizedStoreId;
+          epoch += 1;
+          if (!unavailableNotified) {
+            unavailableNotified = true;
+            realtimeNotify?.(ATTENDANCE_REALTIME_UNAVAILABLE_MESSAGE, "warning", error);
+          }
+          scheduleSubscriptionRetry();
+          return;
+        }
+        if (["CHANNEL_ERROR", "TIMED_OUT"].includes(normalizedStatus)) {
+          reconnectPending = true;
+          if (!unavailableNotified) {
+            unavailableNotified = true;
+            realtimeNotify?.(ATTENDANCE_REALTIME_UNAVAILABLE_MESSAGE, "warning", error);
+          }
+        }
+      };
+
+      try {
+        const candidate = await subscribeToStore({ storeId: normalizedStoreId, onEvent, onStatus });
+        if (!isCurrent()) {
+          await safeCleanup(candidate);
+          return false;
+        }
+        cleanup = candidate;
+        subscriptionState = "active";
+        return true;
+      } catch (error) {
+        if (isCurrent()) {
+          subscriptionState = "failed";
+          epoch += 1;
+          storeId = normalizedStoreId;
+          clearTimer();
+          pendingWorkspace = false;
+          pendingMorning = false;
+          if (!unavailableNotified) {
+            unavailableNotified = true;
+            realtimeNotify?.(ATTENDANCE_REALTIME_UNAVAILABLE_MESSAGE, "warning", error);
+          }
+          if (retryStoreId === normalizedStoreId) scheduleSubscriptionRetry();
+        }
+        return false;
+      }
+    }
+
+    async function flush(resource) {
+      if (!storeId) return false;
+      if (resource) markPending(resource);
+      clearTimer();
+      deferredMorningNotified = false;
+      return drain();
+    }
+
+    return Object.freeze({ start, stop, flush });
+  }
+
   const TAGS = Object.freeze({
     budget: { label: "Orçamento", icon: "fa-file-invoice-dollar", tone: "emerald" },
     purchase: { label: "Compra", icon: "fa-bag-shopping", tone: "forest" },
@@ -60,6 +361,11 @@
     morningDraft: null,
     morningDayRefreshTimer: 0,
     morningResumeEventsBound: false,
+    realtimeCoordinator: null,
+    realtimeSubscribe: null,
+    realtimeMorningDeferred: false,
+    realtimeMorningNoticeShown: false,
+    realtimeMutationBusy: false,
     legacyAttendanceSaveRequired: false,
     serverMetrics: {},
     feedback: null,
@@ -171,6 +477,8 @@
     state.morningConfigOpen = false;
     state.morningConfigGeneration += 1;
     state.morningDraft = null;
+    state.realtimeMorningDeferred = false;
+    state.realtimeMorningNoticeShown = false;
   }
 
   function notify(message, type = "info") {
@@ -195,6 +503,7 @@
 
   function handleEntitlementLoss(error, storeId = state.selectedStoreId) {
     if (!isEntitlementError(error)) return false;
+    stopAttendanceRealtimeSubscription();
     const revokedStore = (state.bridge?.stores || []).find((store) => String(firstDefined(store.id, store.store_id, "")) === String(storeId || ""));
     if (revokedStore) {
       revokedStore.attendanceEnabled = false;
@@ -1912,7 +2221,7 @@
         state.root?.querySelector('[data-attendance-action="open-morning-config"]')?.focus();
       });
     }
-    void refreshMorningForCurrentDay();
+    if (!flushDeferredMorningRealtime()) void refreshMorningForCurrentDay();
     return true;
   }
 
@@ -2800,6 +3109,7 @@
       state.searchTimer = 0;
     }
     const requestGeneration = ++state.generation;
+    state.loading = true;
     state.root.setAttribute("aria-busy", "true");
     if (!state.hasLoaded) {
       state.root.innerHTML = `<section class="attendance-workspace-loading" role="status" aria-live="polite"><span class="attendance-spinner" aria-hidden="true"></span><div><strong>Carregando análise de Atendimentos</strong><span>Calculando conversões e resultados de ${escapeHtml(state.store.name)}.</span></div></section>`;
@@ -2841,6 +3151,8 @@
     } catch (error) {
       if (state.destroyed || requestGeneration !== state.generation) return;
       renderEmbeddedAttendanceState(state, isEntitlementError(error) ? "locked" : "error", readableError(error));
+    } finally {
+      if (!state.destroyed && requestGeneration === state.generation) state.loading = false;
     }
   }
 
@@ -2975,9 +3287,11 @@
       accessVerified: false,
       hasLoaded: false,
       exporting: false,
+      loading: false,
       searchTimer: 0,
       generation: 0,
       destroyed: false,
+      realtimeCoordinator: null,
       onClick: null,
       onInput: null,
       onChange: null,
@@ -3071,7 +3385,29 @@
       renderEmbeddedAttendanceState(embeddedState, access.locked ? "locked" : "error", access.reason || "Cliente indisponível.");
       return { storeId: embeddedState.storeId, destroy: () => embeddedAnalysisStates.get(mount) === embeddedState && destroyEmbeddedAnalysis(mount) };
     }
+    const realtimeBridge = embeddedBridge.attendanceRealtime;
+    const usesParentRealtime = Boolean(
+      state.active
+      && state.root?.contains(mount)
+      && state.selectedStoreId === embeddedState.storeId
+    );
+    if (!usesParentRealtime && typeof realtimeBridge?.subscribe === "function") {
+      embeddedState.realtimeCoordinator = createAttendanceRealtimeCoordinator({
+        attendanceRealtime: realtimeBridge,
+        refreshWorkspace: async ({ storeId: refreshStoreId }) => {
+          if (!embeddedState.destroyed && refreshStoreId === embeddedState.storeId) {
+            await loadEmbeddedAttendanceAnalysis(embeddedState);
+          }
+        },
+        refreshMorning: async () => {},
+        isBusy: () => embeddedState.destroyed || embeddedState.loading || embeddedState.exporting,
+        isVisible: () => true,
+        notify: (...args) => embeddedState.bridge?.notify?.(...args),
+      });
+      void embeddedState.realtimeCoordinator.start(embeddedState.storeId);
+    }
     await loadEmbeddedAttendanceAnalysis(embeddedState);
+    void embeddedState.realtimeCoordinator?.flush();
     return { storeId: embeddedState.storeId, destroy: () => embeddedAnalysisStates.get(mount) === embeddedState && destroyEmbeddedAnalysis(mount) };
   }
 
@@ -3082,6 +3418,7 @@
     if (embeddedState) {
       embeddedState.destroyed = true;
       embeddedState.generation += 1;
+      if (embeddedState.realtimeCoordinator) void embeddedState.realtimeCoordinator.stop();
       if (embeddedState.searchTimer) global.clearTimeout(embeddedState.searchTimer);
       if (embeddedState.onClick) mount.removeEventListener("click", embeddedState.onClick);
       if (embeddedState.onInput) mount.removeEventListener("input", embeddedState.onInput);
@@ -3595,6 +3932,86 @@
     }, 260);
   }
 
+  function realtimeRefreshIsBusy() {
+    return Boolean(
+      state.loading
+      || state.listLoading
+      || state.morningLoading
+      || state.saving
+      || state.editSaving
+      || state.morningSaving
+      || state.morningParticipationSaving
+      || state.realtimeMutationBusy
+    );
+  }
+
+  function deferMorningRealtimeRefresh() {
+    captureMorningDraftInputs();
+    state.realtimeMorningDeferred = true;
+    if (state.realtimeMorningNoticeShown) return;
+    state.realtimeMorningNoticeShown = true;
+    notify("Existem dados mais recentes do Bom Dia Vendedor. Suas alterações foram preservadas e a tela será sincronizada ao fechar.", "info");
+  }
+
+  function stopAttendanceRealtimeSubscription() {
+    const coordinator = state.realtimeCoordinator;
+    state.realtimeCoordinator = null;
+    state.realtimeSubscribe = null;
+    state.realtimeMorningDeferred = false;
+    state.realtimeMorningNoticeShown = false;
+    if (coordinator) void coordinator.stop();
+  }
+
+  function syncAttendanceRealtimeSubscription() {
+    const realtimeBridge = state.bridge?.attendanceRealtime;
+    const subscribe = realtimeBridge?.subscribe;
+    if (!state.active || !state.selectedStoreId || typeof subscribe !== "function") {
+      stopAttendanceRealtimeSubscription();
+      return Promise.resolve(false);
+    }
+
+    if (state.realtimeCoordinator && state.realtimeSubscribe !== subscribe) {
+      stopAttendanceRealtimeSubscription();
+    }
+    if (!state.realtimeCoordinator) {
+      state.realtimeSubscribe = subscribe;
+      state.realtimeCoordinator = createAttendanceRealtimeCoordinator({
+        attendanceRealtime: realtimeBridge,
+        refreshWorkspace: async ({ storeId }) => {
+          if (!state.active || storeId !== state.selectedStoreId) return;
+          captureDraft();
+          captureAttendanceEditDraft();
+          const preserveMorningDraft = state.morningConfigOpen;
+          if (preserveMorningDraft) deferMorningRealtimeRefresh();
+          await loadWorkspace({ quiet: true, includeMorning: !preserveMorningDraft });
+        },
+        refreshMorning: async ({ storeId }) => {
+          if (!state.active || storeId !== state.selectedStoreId) return;
+          await loadMorningWorkspace({ quiet: true });
+        },
+        isBusy: realtimeRefreshIsBusy,
+        isVisible: () => global.document?.visibilityState !== "hidden",
+        shouldDeferMorning: () => state.morningConfigOpen,
+        onDeferredMorning: deferMorningRealtimeRefresh,
+        notify,
+      });
+    }
+    return state.realtimeCoordinator.start(state.selectedStoreId);
+  }
+
+  async function flushAttendanceRealtime(resource) {
+    if (!state.realtimeCoordinator) return false;
+    return state.realtimeCoordinator.flush(resource);
+  }
+
+  function flushDeferredMorningRealtime() {
+    if (!state.realtimeMorningDeferred) return false;
+    state.realtimeMorningDeferred = false;
+    state.realtimeMorningNoticeShown = false;
+    void flushAttendanceRealtime("morning");
+    return true;
+  }
+
   async function refreshMorningForCurrentDay() {
     if (!state.active
       || state.morningLoading
@@ -3609,6 +4026,7 @@
 
   function handleMorningDayResume() {
     if (global.document?.visibilityState === "hidden") return;
+    void syncAttendanceRealtimeSubscription().then(() => flushAttendanceRealtime());
     void refreshMorningForCurrentDay();
   }
 
@@ -3687,7 +4105,7 @@
     refreshMorningRegion();
   }
 
-  async function loadWorkspace({ quiet = false } = {}) {
+  async function loadWorkspace({ quiet = false, includeMorning = true } = {}) {
     if (!state.active) return;
     if (!state.selectedStoreId) {
       clearAttendanceEditState();
@@ -3712,7 +4130,9 @@
     const storeId = state.selectedStoreId;
     const requestGeneration = ++state.generation;
     state.loading = !quiet;
-    state.morningLoading = Boolean(selectedStore()?.goodMorningSellerEnabled && !state.morning);
+    if (includeMorning) {
+      state.morningLoading = Boolean(selectedStore()?.goodMorningSellerEnabled && !state.morning);
+    }
     state.loadError = "";
     if (!quiet) renderWorkspace();
     try {
@@ -3733,7 +4153,9 @@
       state.loading = false;
       state.loadError = "";
       renderWorkspace();
-      await Promise.all([loadOperationalList(), loadMorningWorkspace()]);
+      const followUpLoads = [loadOperationalList()];
+      if (includeMorning) followUpLoads.push(loadMorningWorkspace());
+      await Promise.all(followUpLoads);
     } catch (error) {
       if (!state.active || requestGeneration !== state.generation) return;
       if (handleEntitlementLoss(error, storeId)) return;
@@ -3813,6 +4235,7 @@
       if (handleEntitlementLoss(error, saveContext.storeId)) return;
       if (stillCurrent) setFormError(readableError(error));
       notify(readableError(error), "error");
+      void flushAttendanceRealtime();
       return;
     }
 
@@ -3839,6 +4262,7 @@
           setFormError(authoritativeResponse.message);
         }
       }
+      void flushAttendanceRealtime();
       return;
     }
     state.saving = false;
@@ -3862,18 +4286,24 @@
     notify(feedback.idempotentReplay ? "Este atendimento já estava salvo; nenhum registro foi duplicado." : "Atendimento salvo e vínculos verificados.", "success");
 
     if (stillCurrent) {
+      state.realtimeMutationBusy = true;
       try {
         if (typeof state.bridge?.onAttendanceSaved === "function") await state.bridge.onAttendanceSaved(feedback, raw);
         if (typeof state.bridge?.afterSave === "function") await state.bridge.afterSave(feedback, raw);
       } catch (error) {
         notify(`Atendimento salvo. Uma atualização secundária falhou: ${readableError(error)}`, "warning");
+      } finally {
+        state.realtimeMutationBusy = false;
       }
     }
 
     const remainsCurrent = state.active
       && state.selectedStoreId === saveContext.storeId
       && state.contextGeneration === saveContext.generation;
-    if (remainsCurrent) await loadWorkspace({ quiet: true });
+    if (remainsCurrent) {
+      if (state.realtimeCoordinator) await flushAttendanceRealtime("workspace");
+      else await loadWorkspace({ quiet: true });
+    }
   }
 
   function isAttendanceEditConflict(error) {
@@ -3934,6 +4364,7 @@
           : readableError(error);
       setAttendanceEditError(message);
       notify(message, isAttendanceEditConflict(error) ? "warning" : "error");
+      void flushAttendanceRealtime();
       return;
     }
 
@@ -3953,6 +4384,7 @@
         state.editError = authoritativeResponse.message;
         renderWorkspace();
       }
+      void flushAttendanceRealtime();
       return;
     }
     state.editSaving = false;
@@ -3972,18 +4404,24 @@
     renderWorkspace();
     notify(attendanceUpdateFeedbackMessage(feedback), feedback.updated === false ? "info" : "success");
 
+    state.realtimeMutationBusy = true;
     try {
       if (typeof state.bridge?.onAttendanceUpdated === "function") {
         await state.bridge.onAttendanceUpdated(feedback, raw);
       }
     } catch (error) {
       notify(`Atendimento atualizado. Uma atualização secundária falhou: ${readableError(error)}`, "warning");
+    } finally {
+      state.realtimeMutationBusy = false;
     }
 
     const remainsCurrent = state.active
       && state.selectedStoreId === updateContext.storeId
       && state.contextGeneration === updateContext.contextGeneration;
-    if (remainsCurrent) await loadWorkspace({ quiet: true });
+    if (remainsCurrent) {
+      if (state.realtimeCoordinator) await flushAttendanceRealtime("workspace");
+      else await loadWorkspace({ quiet: true });
+    }
   }
 
   function captureMorningDraftInputs({ captureParticipation = true } = {}) {
@@ -4136,6 +4574,7 @@
           dialogScrollTop,
           focusSelector: `[data-morning-seller-enabled="${professionalId}"]`,
         });
+        void flushAttendanceRealtime();
       }
     }
   }
@@ -4229,6 +4668,7 @@
       if (isCurrent()) {
         state.morningSaving = false;
         refreshMorningRegion();
+        if (!flushDeferredMorningRealtime()) void flushAttendanceRealtime();
       }
     }
   }
@@ -4265,6 +4705,7 @@
       if (isCurrent()) {
         state.morningSaving = false;
         refreshMorningRegion();
+        void flushAttendanceRealtime();
       }
     }
   }
@@ -4298,6 +4739,7 @@
       const nextId = String(target.value || "");
       if (nextId && !state.stores.some((store) => store.id === nextId)) return;
       captureDraft();
+      stopAttendanceRealtimeSubscription();
       clearAttendanceEditState();
       const previousId = state.selectedStoreId;
       state.selectedStoreId = nextId;
@@ -4329,6 +4771,7 @@
           notify(readableError(error), "error");
         }
       }
+      void syncAttendanceRealtimeSubscription();
       await loadWorkspace();
       return;
     }
@@ -4635,6 +5078,7 @@
   async function activate(nextBridge = {}) {
     state.bridge = { ...state.bridge, ...nextBridge };
     state.active = true;
+    state.realtimeMutationBusy = false;
     state.view = "operations";
     state.loading = true;
     state.contextGeneration += 1;
@@ -4646,15 +5090,19 @@
       throw new Error("Área visual de Atendimentos não encontrada.");
     }
     startMorningDayRefresh();
+    void syncAttendanceRealtimeSubscription();
     await loadWorkspace();
+    void flushAttendanceRealtime();
   }
 
   function deactivate() {
     captureDraft();
+    stopAttendanceRealtimeSubscription();
     const ownAnalysis = state.root?.querySelector("[data-attendance-own-analysis]");
     if (ownAnalysis) destroyEmbeddedAnalysis(ownAnalysis);
     state.active = false;
     state.loading = false;
+    state.realtimeMutationBusy = false;
     state.generation += 1;
     state.listGeneration += 1;
     state.contextGeneration += 1;
@@ -4666,6 +5114,7 @@
   }
 
   function resetSession() {
+    stopAttendanceRealtimeSubscription();
     stopMorningDayRefresh();
     state.active = false;
     state.loading = false;
@@ -4696,6 +5145,7 @@
     state.idempotencyKey = "";
     state.idempotencyFingerprint = "";
     state.pendingSave = null;
+    state.realtimeMutationBusy = false;
     state.filtersOpen = false;
     state.filters = createOperationalFilters();
     state.drafts.clear();
@@ -4703,14 +5153,17 @@
     if (state.root) state.root.replaceChildren();
   }
 
-  async function refreshContext(nextContext = {}) {
+  async function refreshContext(nextContext = {}, { reload = true } = {}) {
     captureDraft();
-    clearAttendanceEditState();
     state.bridge = { ...state.bridge, ...nextContext };
-    state.contextGeneration += 1;
-    clearMorningState();
+    if (reload) {
+      state.contextGeneration += 1;
+      clearAttendanceEditState();
+      clearMorningState();
+    }
     syncContext({ preserveSelection: true });
-    if (state.active) {
+    void syncAttendanceRealtimeSubscription();
+    if (state.active && reload) {
       state.loading = true;
       mount(nextContext.root || nextContext.mountTarget);
       await loadWorkspace();
@@ -4732,11 +5185,16 @@
 
   function getIntegrationContract() {
     return {
-      version: 5,
+      version: 6,
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "notify", "afterSave", "onAttendanceSaved", "onAttendanceUpdated", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.update", "attendances.list"],
+        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "attendanceRealtime", "notify", "afterSave", "onAttendanceSaved", "onAttendanceUpdated", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.update", "attendances.list"],
+      },
+      realtime: {
+        bridge: "attendanceRealtime.subscribe({ storeId, onEvent, onStatus }) => cleanup | Promise<cleanup>",
+        transport: "Supabase Broadcast privado com topic/event obtidos por capability autenticada; o módulo nunca constrói o tópico.",
+        payload: "{ storeId, resources: ['attendance' | 'morning'], version: 1 }; attendance atualiza o workspace inteiro e morning somente o Bom Dia Vendedor.",
       },
       rpc: {
         workspace: {
@@ -4910,6 +5368,7 @@
       cloneMorningDraft,
       createOperationalFilters,
       createAttendanceEditDraft,
+      createAttendanceRealtimeCoordinator,
       embeddedAttendanceRange,
       focusAttendanceValidationError,
       formatDateTime,

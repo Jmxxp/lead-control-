@@ -138,7 +138,7 @@ test("rascunho preserva calendário e campos pendentes após clone e merge de pa
 
 test("contrato público exige RPC v2 atômica e mantém a v1 apenas para rollout", () => {
   const contract = window.AttendancesModule.getIntegrationContract();
-  assert.equal(contract.version, 5);
+  assert.equal(contract.version, 6);
   assert.equal(contract.rpc.morningSave.name, "lc_save_good_morning_seller_settings_v2");
   assert.ok(contract.rpc.morningSave.args.p_closed_days);
   assert.equal(contract.rpc.morningSaveLegacy.name, "lc_save_good_morning_seller_settings");

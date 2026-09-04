@@ -10,6 +10,7 @@ const BACKUP_MANIFEST_STORE = "backup-manifests";
 const BACKUP_ROOT_FOLDER = "Controle de Leads";
 const BACKUP_SCHEDULE_HOUR = 20;
 const SYSTEM_MODULE_STORAGE_PREFIX = "lead-control-module";
+const ATTENDANCE_REALTIME_SUBSCRIPTION_RPC = "lc_get_attendance_realtime_subscription_v1";
 
 const LEGACY_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
 const LEGACY_MULTI_STORE_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
@@ -81,6 +82,8 @@ let legalSignatureHasInk = false;
 let legalSignatureDrawing = false;
 let currentLegalDocument = null;
 let pendingUnsavedAction = null;
+const attendanceRealtimeChannels = new Map();
+const attendanceRealtime = Object.freeze({ subscribe: subscribeAttendanceRealtime });
 const dirtyOptionKeys = new Set();
 const dirtyOptionValues = new Map();
 const dirtyGroupLabels = new Map();
@@ -1378,6 +1381,8 @@ async function handleLogout() {
     const canLeave = await window.ProspectionsModule?.requestDeactivate?.();
     if (canLeave === false) return;
   }
+  window.AttendancesModule?.deactivate?.();
+  await clearAttendanceRealtimeChannels();
   try {
     if (currentProfile?.sessionToken) {
       await rpc("lc_logout", { p_session_token: currentProfile.sessionToken });
@@ -1428,6 +1433,7 @@ function showAuth() {
   closeAiChat();
   window.ProspectionsModule?.deactivate?.();
   window.AttendancesModule?.resetSession?.();
+  void clearAttendanceRealtimeChannels();
   activeSystemModule = "leads";
   setProspectionVisualMode(false);
   setAttendanceVisualMode(false);
@@ -1648,6 +1654,38 @@ function attendanceCompatibilityBridge() {
   };
 }
 
+async function reconcileAttendanceAppState() {
+  await refreshRemoteState();
+  if (activeSystemModule === "leads") {
+    renderAll();
+    return;
+  }
+  if (activeSystemModule !== "attendances") return;
+  if (!canUseAttendances()) {
+    await setSystemModule(resolveAvailableSystemModule("attendances") || "none", {
+      persist: false,
+      force: true,
+    });
+    return;
+  }
+  await window.AttendancesModule?.refreshContext?.({
+    stores: getOperationalModuleStores(),
+    agencies: technicians.map((technician) => ({ ...technician })),
+    attendanceAccessGranted: canUseAttendances(),
+    prospectionAccessGranted: canUseProspections(),
+    attendanceRealtime,
+    ...attendanceCompatibilityBridge(),
+  }, { reload: false });
+  renderAll();
+  adminView.hidden = true;
+  storeView.hidden = true;
+  attendanceView.hidden = false;
+  appointmentMonitorToggle.hidden = true;
+  appointmentMonitorPanel.hidden = true;
+  syncBackAdminButton();
+  settingsButton.hidden = true;
+}
+
 function captureLeadModuleSnapshot() {
   return {
     adminViewHidden: adminView.hidden,
@@ -1784,6 +1822,7 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
         initialStoreId: activeStoreContext?.id || currentProfile.storeId || attendanceStoreSelectionId || "",
         initialAgencyId: activeTechnicianContext?.id || (currentProfile.role === "technician" ? currentProfile.id : ""),
         rpc: authenticatedRpc,
+        attendanceRealtime,
         notify: showAppNotification,
         onAccessRevoked: (storeId) => {
           const store = stores.find((item) => item.id === storeId);
@@ -1805,36 +1844,8 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
         onStoreSelected: (storeId) => {
           attendanceStoreSelectionId = storeId || "";
         },
-        afterSave: async () => {
-          await refreshRemoteState();
-          if (activeSystemModule === "leads") {
-            renderAll();
-            return;
-          }
-          if (activeSystemModule !== "attendances") return;
-          if (!canUseAttendances()) {
-            await setSystemModule(resolveAvailableSystemModule("attendances") || "none", {
-              persist: false,
-              force: true,
-            });
-            return;
-          }
-          await window.AttendancesModule?.refreshContext?.({
-            stores: getOperationalModuleStores(),
-            agencies: technicians.map((technician) => ({ ...technician })),
-            attendanceAccessGranted: canUseAttendances(),
-            prospectionAccessGranted: canUseProspections(),
-            ...attendanceCompatibilityBridge(),
-          });
-          renderAll();
-          adminView.hidden = true;
-          storeView.hidden = true;
-          attendanceView.hidden = false;
-          appointmentMonitorToggle.hidden = true;
-          appointmentMonitorPanel.hidden = true;
-          syncBackAdminButton();
-          settingsButton.hidden = true;
-        },
+        afterSave: reconcileAttendanceAppState,
+        onAttendanceUpdated: reconcileAttendanceAppState,
         openLeadsForStore: async (storeId) => {
           const targetStore = stores.find((store) => store.id === (storeId || activeStoreContext?.id || currentProfile.storeId));
           if (!targetStore?.leadEnabled) {
@@ -2295,6 +2306,7 @@ async function deleteManagedAccount(type, id) {
         agencies: technicians.map((technician) => ({ ...technician })),
         attendanceAccessGranted: canUseAttendances(),
         prospectionAccessGranted: canUseProspections(),
+        attendanceRealtime,
         ...attendanceCompatibilityBridge(),
       });
     }
@@ -2774,6 +2786,7 @@ async function handleManagedAccountSubmit(event) {
         agencies: technicians.map((technician) => ({ ...technician })),
         attendanceAccessGranted: canUseAttendances(),
         prospectionAccessGranted: canUseProspections(),
+        attendanceRealtime,
         ...attendanceCompatibilityBridge(),
       });
     }
@@ -3803,6 +3816,7 @@ function scheduleEmbeddedAnalysis(module, root, store) {
           prospectionAccessGranted: Boolean(store.prospectionEnabled),
           attendanceAccessGranted: Boolean(store.attendanceEnabled),
           rpc: authenticatedRpc,
+          ...(module === "attendances" ? { attendanceRealtime } : {}),
           notify: showAppNotification,
         },
       });
@@ -9146,6 +9160,237 @@ async function authenticatedRpc(functionName, args = {}) {
     p_session_token: currentProfile.sessionToken,
     ...args,
   });
+}
+
+async function subscribeAttendanceRealtime({ storeId, onEvent, onStatus } = {}) {
+  const scopedStoreId = String(storeId || "").trim();
+  const client = supabaseClient;
+  const sessionToken = currentProfile?.sessionToken;
+  if (!scopedStoreId
+    || !client?.channel
+    || !client?.removeChannel
+    || !client?.getChannels
+    || !client?.realtime?.setAuth
+    || !sessionToken) {
+    throw new Error("Sincronização em tempo real indisponível para esta sessão.");
+  }
+
+  const capability = firstRow(await authenticatedRpc(ATTENDANCE_REALTIME_SUBSCRIPTION_RPC, {
+    p_store_id: scopedStoreId,
+  }));
+  if (currentProfile?.sessionToken !== sessionToken || supabaseClient !== client) {
+    throw new Error("A sessão mudou durante a abertura da sincronização em tempo real.");
+  }
+
+  const transport = String(capability?.transport || "");
+  const capabilityStoreId = String(capability?.store_id || "");
+  const topic = String(capability?.topic || "").trim();
+  const event = String(capability?.event || "").trim();
+  const expiresAt = String(capability?.expires_at || "").trim();
+  const expiresAtTime = Date.parse(expiresAt);
+  if (transport !== "broadcast"
+    || capabilityStoreId !== scopedStoreId
+    || !/^lc:attendance:[0-9a-f]{64}$/.test(topic)
+    || event !== "invalidate"
+    || capability?.private !== true
+    || capability?.payload_version !== 1
+    || !Number.isFinite(expiresAtTime)
+    || expiresAtTime <= Date.now()) {
+    throw new Error("O servidor retornou uma capability de Realtime inválida.");
+  }
+
+  // Garante que o JWT publico atual esteja no payload de join antes da policy
+  // de realtime.messages autorizar o canal privado.
+  await client.realtime.setAuth();
+  if (currentProfile?.sessionToken !== sessionToken || supabaseClient !== client) {
+    throw new Error("A sessão mudou durante a abertura da sincronização em tempo real.");
+  }
+
+  const listener = { onEvent, onStatus };
+  while (attendanceRealtimeChannels.has(topic)) {
+    const sharedEntry = attendanceRealtimeChannels.get(topic);
+    if (sharedEntry.state === "open"
+      && sharedEntry.client === client
+      && sharedEntry.storeId === scopedStoreId) {
+      return attachAttendanceRealtimeListener(sharedEntry, listener);
+    }
+    if (sharedEntry.state === "closed") {
+      if (attendanceRealtimeChannels.get(topic) === sharedEntry) {
+        attendanceRealtimeChannels.delete(topic);
+      }
+    } else {
+      await closeAttendanceRealtimeEntry(sharedEntry);
+    }
+    if (currentProfile?.sessionToken !== sessionToken || supabaseClient !== client) {
+      throw new Error("A sessão mudou durante a abertura da sincronização em tempo real.");
+    }
+  }
+
+  const channel = client.channel(topic, {
+    config: {
+      private: true,
+      broadcast: { ack: false, self: false },
+    },
+  });
+  const entry = {
+    client,
+    channel,
+    topic,
+    storeId: scopedStoreId,
+    listeners: new Set([listener]),
+    status: "",
+    statusError: null,
+    statusVersion: 0,
+    state: "open",
+    closePromise: null,
+  };
+  attendanceRealtimeChannels.set(topic, entry);
+  const cleanup = attachAttendanceRealtimeListener(entry, listener, { alreadyAttached: true });
+
+  try {
+    channel
+      .on("broadcast", { event }, (message) => {
+        if (entry.state !== "open") return;
+        const source = message?.payload && typeof message.payload === "object" ? message.payload : message;
+        const normalized = source && typeof source === "object"
+          ? { ...source, storeId: scopedStoreId }
+          : { resource: String(source || "unknown"), storeId: scopedStoreId };
+        [...entry.listeners].forEach((subscriber) => {
+          try {
+            subscriber.onEvent?.(normalized);
+          } catch (error) {
+            console.error("Falha ao processar uma invalidação Realtime de Atendimentos.", error);
+          }
+        });
+      })
+      .subscribe((status, error) => {
+        if (entry.state !== "open") return;
+        entry.status = status;
+        entry.statusError = error;
+        entry.statusVersion += 1;
+        const subscribers = [...entry.listeners];
+        if (String(status || "").toUpperCase() === "CLOSED") {
+          entry.state = "closed";
+          entry.listeners.clear();
+          if (attendanceRealtimeChannels.get(topic) === entry) {
+            attendanceRealtimeChannels.delete(topic);
+          }
+        }
+        subscribers.forEach((subscriber) => {
+          try {
+            subscriber.onStatus?.(status, error);
+          } catch (callbackError) {
+            console.error("Falha ao processar o estado do Realtime de Atendimentos.", callbackError);
+          }
+        });
+      });
+    return cleanup;
+  } catch (error) {
+    await cleanup().catch(() => {});
+    throw error;
+  }
+}
+
+function attachAttendanceRealtimeListener(entry, listener, { alreadyAttached = false } = {}) {
+  if (!alreadyAttached) entry.listeners.add(listener);
+  let listenerRemoved = false;
+  const replayStatus = entry.status;
+  const replayError = entry.statusError;
+  const replayVersion = entry.statusVersion;
+  if (replayStatus && String(replayStatus).toUpperCase() !== "CLOSED") {
+    Promise.resolve().then(() => {
+      if (listenerRemoved
+        || entry.state !== "open"
+        || !entry.listeners.has(listener)
+        || entry.statusVersion !== replayVersion) return;
+      try {
+        listener.onStatus?.(replayStatus, replayError);
+      } catch (error) {
+        console.error("Falha ao processar o estado do Realtime de Atendimentos.", error);
+      }
+    });
+  }
+  return async () => {
+    if (listenerRemoved) return;
+    listenerRemoved = true;
+    entry.listeners.delete(listener);
+    if (entry.listeners.size || entry.state !== "open") return;
+    await closeAttendanceRealtimeEntry(entry);
+  };
+}
+
+async function closeAttendanceRealtimeEntry(entry) {
+  if (!entry || entry.state === "closed") return;
+  if (entry.state === "closing" && entry.closePromise) {
+    await entry.closePromise;
+    return;
+  }
+
+  entry.state = "closing";
+  entry.statusVersion += 1;
+  entry.status = "";
+  entry.statusError = null;
+  entry.listeners.clear();
+  entry.closePromise = (async () => {
+    let removalError = null;
+    let removalStatus = "";
+    try {
+      removalStatus = await entry.client.removeChannel(entry.channel);
+      if (removalStatus === "error") {
+        removalError = new Error("O Supabase não confirmou o encerramento do canal Realtime.");
+      }
+    } catch (error) {
+      removalError = error;
+    }
+
+    let stillRegistered = true;
+    try {
+      stillRegistered = entry.client.getChannels().some((candidate) => (
+        candidate === entry.channel || candidate?.topic === entry.channel?.topic
+      ));
+    } catch (error) {
+      removalError ||= error;
+    }
+    if (stillRegistered) {
+      entry.state = "close_failed";
+      entry.closePromise = null;
+      throw removalError || new Error("O canal Realtime anterior ainda está ativo.");
+    }
+
+    if (removalStatus !== "ok") entry.channel?.teardown?.();
+    entry.state = "closed";
+    if (attendanceRealtimeChannels.get(entry.topic) === entry) {
+      attendanceRealtimeChannels.delete(entry.topic);
+    }
+  })();
+
+  try {
+    await entry.closePromise;
+  } catch (error) {
+    if (entry.state === "closing") {
+      entry.state = "close_failed";
+      entry.closePromise = null;
+    }
+    throw error;
+  }
+}
+
+async function clearAttendanceRealtimeChannels() {
+  const entries = [...new Set(attendanceRealtimeChannels.values())];
+  await Promise.allSettled(entries.map(async (entry) => {
+    if (entry.state === "closed") {
+      if (attendanceRealtimeChannels.get(entry.topic) === entry) {
+        attendanceRealtimeChannels.delete(entry.topic);
+      }
+      return;
+    }
+    try {
+      await closeAttendanceRealtimeEntry(entry);
+    } catch {
+      // Mantém o tombstone no mapa; uma nova tentativa não poderá reutilizar
+      // silenciosamente a instância que o SDK ainda considera registrada.
+    }
+  }));
 }
 
 function assertLegacyModuleSelection({ leadEnabled, prospectionEnabled, attendanceEnabled }) {

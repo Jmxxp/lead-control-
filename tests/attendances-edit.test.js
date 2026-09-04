@@ -390,7 +390,7 @@ test("conflito otimista reconhece a mensagem exata emitida pelo SQL", () => {
 
 test("contrato e markup expõem edição dedicada sem fallback destrutivo", () => {
   const contract = window.AttendancesModule.getIntegrationContract();
-  assert.equal(contract.version, 5);
+  assert.equal(contract.version, 6);
   assert.equal(contract.rpc.update.name, "lc_update_attendance_v1");
   assert.equal(contract.rpc.update.args.p_expected_updated_at.startsWith("timestamptz"), true);
   assert.match(source, /data-attendance-action="edit-attendance"/);
