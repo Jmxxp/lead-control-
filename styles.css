@@ -331,6 +331,50 @@ body:not(.is-dark) .modal-dialog {
   pointer-events: none;
 }
 
+.pwa-notification-button {
+  position: relative;
+  overflow: visible;
+}
+
+.pwa-notification-indicator {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.pwa-notification-button[aria-pressed="true"] .pwa-notification-indicator,
+.pwa-notification-button.is-subscribed .pwa-notification-indicator,
+.pwa-notification-button[data-state="subscribed"] .pwa-notification-indicator {
+  background: var(--green);
+}
+
+.pwa-notification-button[data-state="idle"] .pwa-notification-indicator,
+.pwa-notification-button[data-state="needs-install"] .pwa-notification-indicator {
+  background: var(--amber);
+}
+
+.pwa-notification-button[data-state="denied"] .pwa-notification-indicator,
+.pwa-notification-button[data-state="error"] .pwa-notification-indicator {
+  background: var(--rose);
+}
+
+.pwa-notification-button[data-state="loading"] .pwa-notification-indicator {
+  background: var(--blue);
+}
+
+.pwa-notification-button.is-subscribed {
+  border-color: color-mix(in srgb, var(--green) 32%, var(--line));
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  color: var(--green);
+}
+
 .app-notification {
   position: fixed;
   top: 132px;
@@ -6796,6 +6840,637 @@ body.is-keyboard-navigation .ai-chat-form textarea:focus {
   width: min(520px, 100%);
 }
 
+.pwa-notification-backdrop {
+  z-index: 90;
+  background: color-mix(in srgb, #0b1511 66%, transparent);
+  backdrop-filter: blur(10px) saturate(1.06);
+}
+
+.pwa-notification-dialog {
+  position: relative;
+  width: min(780px, 100%);
+  gap: 18px;
+  overflow: hidden auto;
+  padding: 24px;
+  border-radius: 16px;
+}
+
+.pwa-notification-dialog::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), #2f80ed);
+  pointer-events: none;
+}
+
+.pwa-notification-header {
+  align-items: flex-start;
+}
+
+.pwa-notification-header-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pwa-notification-header-copy > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pwa-notification-header-copy p,
+.pwa-notification-header-copy h2 {
+  margin: 0;
+}
+
+.pwa-notification-header-copy > div > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.pwa-notification-header-icon {
+  display: grid;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--green) 28%, var(--line));
+  border-radius: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--green) 18%, var(--surface)), var(--surface));
+  color: var(--green);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--green) 14%, transparent);
+}
+
+.pwa-notification-header h2 {
+  margin: 0;
+  font-size: 1.18rem;
+  letter-spacing: -0.025em;
+}
+
+.pwa-notification-header .topbar-icon-button {
+  flex: 0 0 42px;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+}
+
+.pwa-notification-status {
+  --pwa-notification-accent: var(--blue);
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--pwa-notification-accent) 30%, var(--line));
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--pwa-notification-accent) 9%, var(--surface)), var(--surface));
+}
+
+.pwa-notification-device-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pwa-notification-status[data-state="subscribed"] {
+  --pwa-notification-accent: var(--green);
+}
+
+.pwa-notification-status[data-state="needs-install"],
+.pwa-notification-status[data-state="idle"] {
+  --pwa-notification-accent: var(--amber);
+}
+
+.pwa-notification-status[data-state="denied"],
+.pwa-notification-status[data-state="error"] {
+  --pwa-notification-accent: var(--rose);
+}
+
+.pwa-notification-status[data-state="unsupported"] {
+  --pwa-notification-accent: var(--muted);
+}
+
+.pwa-notification-status-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pwa-notification-accent) 14%, var(--surface));
+  color: var(--pwa-notification-accent);
+  font-size: 1rem;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pwa-notification-accent) 18%, transparent);
+}
+
+.pwa-notification-status > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pwa-notification-status strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.pwa-notification-status p,
+.pwa-notification-dialog .pwa-notification-status p:not(.eyebrow),
+.pwa-notification-status-copy > span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.pwa-notification-install-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  color: var(--muted);
+}
+
+.pwa-notification-install-hint > i {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--amber);
+}
+
+.pwa-notification-install-hint p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.pwa-notification-install-hint strong {
+  color: var(--ink);
+  font-size: 0.79rem;
+}
+
+.pwa-notification-install-hint span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.pwa-notification-dialog > .form-message:empty {
+  display: none;
+}
+
+.pwa-notification-dialog > .form-message.success {
+  color: var(--green);
+}
+
+.pwa-notification-actions {
+  padding-top: 2px;
+}
+
+.pwa-notification-actions > button {
+  min-height: 44px;
+}
+
+.pwa-notification-actions .primary-button {
+  width: auto;
+  gap: 7px;
+}
+
+.pwa-daily-report-section {
+  display: grid;
+  gap: 13px;
+  min-width: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.pwa-daily-report-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.62fr);
+  gap: 4px;
+  align-items: end;
+}
+
+.pwa-daily-report-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pwa-daily-report-heading h3,
+.pwa-daily-report-heading p {
+  margin: 0;
+}
+
+.pwa-daily-report-heading h3 {
+  color: var(--ink);
+  font-size: 0.96rem;
+  letter-spacing: -0.018em;
+}
+
+.pwa-daily-report-heading > p,
+.pwa-notification-dialog .pwa-daily-report-heading > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.pwa-daily-report-heading > p,
+.pwa-notification-dialog .pwa-daily-report-heading > p:not(.eyebrow) {
+  justify-self: end;
+  max-width: 290px;
+  text-align: right;
+}
+
+.pwa-daily-report-list {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  max-height: min(360px, 42dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.pwa-daily-report-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.pwa-daily-report-loading i {
+  color: var(--green);
+}
+
+.pwa-daily-report-store {
+  display: grid;
+  grid-template-columns: minmax(165px, 0.72fr) minmax(350px, 1.28fr);
+  gap: 13px;
+  align-items: center;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.pwa-daily-report-store.is-enabled,
+.pwa-daily-report-store:has([data-daily-report-enabled]:checked) {
+  border-color: color-mix(in srgb, var(--green) 34%, var(--line));
+  background: color-mix(in srgb, var(--green) 6%, var(--surface));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--green) 7%, transparent);
+}
+
+.pwa-daily-report-store.is-error {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-color: color-mix(in srgb, var(--rose) 34%, var(--line));
+  background: color-mix(in srgb, var(--rose) 5%, var(--surface));
+}
+
+.pwa-daily-report-store.is-error .pwa-daily-report-store-icon {
+  background: color-mix(in srgb, var(--rose) 11%, var(--surface));
+  color: var(--rose);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 17%, transparent);
+}
+
+.pwa-daily-report-store.is-error .pwa-daily-report-store-copy small {
+  overflow: visible;
+  color: var(--rose);
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pwa-daily-report-store.is-saving .pwa-daily-report-controls {
+  opacity: 0.58;
+}
+
+.pwa-daily-report-store.is-saving .pwa-daily-report-save {
+  cursor: progress;
+}
+
+.pwa-daily-report-store-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pwa-daily-report-store-icon {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--blue) 11%, var(--surface));
+  color: var(--blue);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 17%, transparent);
+}
+
+.pwa-daily-report-store-copy > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pwa-daily-report-store-copy strong,
+.pwa-daily-report-store-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pwa-daily-report-store-copy strong {
+  color: var(--ink);
+  font-size: 0.79rem;
+}
+
+.pwa-daily-report-store-copy small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.pwa-daily-report-controls {
+  display: grid;
+  grid-template-columns: auto minmax(118px, 142px) auto;
+  grid-template-areas: "toggle time save";
+  gap: 9px;
+  align-items: end;
+  justify-content: end;
+  min-width: 0;
+}
+
+.pwa-daily-report-toggle {
+  position: relative;
+  grid-area: toggle;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.pwa-daily-report-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pwa-daily-report-toggle > span {
+  position: relative;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  transition: 160ms ease;
+}
+
+.pwa-daily-report-toggle > span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: 160ms ease;
+}
+
+.pwa-daily-report-toggle input:checked + span {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.pwa-daily-report-toggle input:checked + span::after {
+  left: 21px;
+  background: #ffffff;
+}
+
+.pwa-daily-report-toggle input:focus-visible + span {
+  outline: 3px solid color-mix(in srgb, var(--blue) 32%, transparent);
+  outline-offset: 2px;
+}
+
+.pwa-daily-report-toggle input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.pwa-daily-report-toggle em {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.pwa-daily-report-toggle input:checked ~ em {
+  color: var(--green);
+}
+
+.pwa-daily-report-time {
+  grid-area: time;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pwa-daily-report-time > span {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.pwa-daily-report-time input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 850;
+  color-scheme: light;
+}
+
+.pwa-daily-report-time input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+body.is-dark .pwa-daily-report-time input {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+.pwa-daily-report-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 11px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.pwa-daily-report-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.pwa-daily-report-timezone {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pwa-daily-report-timezone i {
+  color: var(--blue);
+}
+
+.pwa-daily-report-schedule {
+  margin-left: auto;
+}
+
+.pwa-daily-report-delivery {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.pwa-daily-report-delivery.is-ready {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--line));
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  color: var(--green);
+}
+
+.pwa-daily-report-delivery.is-missing {
+  border-color: color-mix(in srgb, var(--amber) 28%, var(--line));
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  color: var(--amber);
+}
+
+.pwa-daily-report-save {
+  align-self: end;
+  gap: 7px;
+  width: auto;
+  min-width: 92px;
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+.pwa-daily-report-controls > .pwa-daily-report-save {
+  grid-area: save;
+}
+
+.pwa-daily-report-row-message {
+  grid-column: 1 / -1;
+  min-height: 0;
+  margin: -3px 0 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.pwa-daily-report-row-message:empty {
+  display: none;
+}
+
+.pwa-daily-report-row-message.is-success {
+  color: var(--green);
+}
+
+.pwa-daily-report-row-message.is-error {
+  color: var(--rose);
+}
+
+.pwa-daily-report-empty {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-height: 130px;
+  padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+  text-align: center;
+}
+
+.pwa-daily-report-empty > i {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.pwa-daily-report-empty strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.pwa-daily-report-empty span {
+  max-width: 360px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .account-creation-backdrop {
   z-index: 34;
   backdrop-filter: blur(12px);
@@ -8252,6 +8927,13 @@ body.is-dark .mini-button:not(.danger):not(.phone-button):not(.analytics-inspect
   border-color: #555555;
   background-color: #282828;
   color: #ffffff;
+}
+
+body.is-dark .ghost-button.pwa-notification-button.is-subscribed,
+body.is-dark .ghost-button.pwa-notification-button[data-state="subscribed"] {
+  border-color: color-mix(in srgb, var(--green) 42%, var(--line));
+  background: color-mix(in srgb, var(--green) 17%, var(--surface));
+  color: var(--green);
 }
 
 body.is-keyboard-navigation button:focus-visible,

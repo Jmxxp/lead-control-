@@ -11,6 +11,13 @@ const BACKUP_ROOT_FOLDER = "Controle de Leads";
 const BACKUP_SCHEDULE_HOUR = 20;
 const SYSTEM_MODULE_STORAGE_PREFIX = "lead-control-module";
 const ATTENDANCE_REALTIME_SUBSCRIPTION_RPC = "lc_get_attendance_realtime_subscription_v1";
+const PUSH_PUBLIC_KEY_RPC = "lc_get_push_public_key_v1";
+const PUSH_REGISTER_SUBSCRIPTION_RPC = "lc_register_push_subscription_v1";
+const PUSH_UNREGISTER_SUBSCRIPTION_RPC = "lc_unregister_push_subscription_v1";
+const DAILY_REPORT_SETTINGS_RPC = "lc_get_daily_report_settings_v1";
+const DAILY_REPORT_SAVE_RPC = "lc_save_daily_report_setting_v1";
+const DEFAULT_DAILY_REPORT_TIME = "18:00";
+const DEFAULT_DAILY_REPORT_TIME_ZONE = "America/Sao_Paulo";
 
 const LEGACY_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Analise os registros filtrados, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados, e responda com recomendações objetivas para aumentar visitas, compras e conversão. Use apenas os dados fornecidos no contexto, indique quando houver pouca amostra e priorize ações práticas.`;
 const LEGACY_MULTI_STORE_AI_SYSTEM_PROMPT = `Você é uma IA especialista em análise comercial de leads para óticas. Responda somente ao que o usuário perguntou, sem antecipar análises, recomendações ou assuntos que não foram pedidos. Se o usuário apenas cumprimentar, cumprimente de volta de forma breve e pergunte como pode ajudar. Quando o usuário pedir análise, use os leads filtrados como contexto, encontre padrões, gargalos e oportunidades, compare lojas, canais, campanhas e resultados quando isso for relevante para a pergunta, indique quando houver pouca amostra e priorize ações práticas. Use apenas os dados fornecidos no contexto.`;
@@ -62,6 +69,19 @@ let leadModuleSnapshot = null;
 let moduleAccessContractVersion = 1;
 let attendanceStoreSelectionId = "";
 let accountUsage = null;
+let pushNotificationClient = null;
+let pushNotificationState = {
+  phase: "idle",
+  permission: "default",
+  subscribed: false,
+  busy: false,
+  error: "",
+  support: null,
+};
+let dailyReportSettings = new Map();
+let dailyReportSettingsErrors = new Map();
+let dailyReportSettingsRequestId = 0;
+let pushNotificationReturnFocus = null;
 let companyWorkspaceSection = "clients";
 let selectedAnalyticsStoreId = "";
 let unifiedAnalysisModule = "leads";
@@ -150,6 +170,18 @@ const themeToggle = $("#themeToggle");
 const logoutButton = $("#logoutButton");
 const backAdminButton = $("#backAdminButton");
 const settingsButton = $("#settingsButton");
+const pushNotificationButton = $("#pushNotificationButton");
+const pushNotificationModal = $("#pushNotificationModal");
+const pushNotificationCloseButton = $("#pushNotificationCloseButton");
+const pushNotificationCancelButton = $("#pushNotificationCancelButton");
+const pushNotificationActionButton = $("#pushNotificationActionButton");
+const pushNotificationDeviceSection = $("#pushNotificationDeviceSection");
+const pushNotificationStatus = $("#pushNotificationStatus");
+const pushNotificationDeviceTitle = $("#pushNotificationDeviceTitle");
+const pushNotificationStatusText = $("#pushNotificationStatusText");
+const pushNotificationInstallHint = $("#pushNotificationInstallHint");
+const pushNotificationMessage = $("#pushNotificationMessage");
+const dailyReportSettingsList = $("#dailyReportSettingsList");
 const loginForm = $("#loginForm");
 const authMessage = $("#authMessage");
 const loginNick = $("#loginNick");
@@ -551,6 +583,7 @@ async function init() {
   renderAiMessages();
   renderAll();
   initializeSupabase();
+  initializePushNotificationClient();
 
   if (!isSupabaseReady()) {
     showAuthMessage("Cole a URL e a chave pública/anon do Supabase no topo do app.js.");
@@ -583,6 +616,16 @@ function bindEvents() {
   moduleSwitcher.addEventListener("keydown", handleModuleSwitcherKeydown);
   logoutButton.addEventListener("click", () => guardUnsavedOptions(confirmLogout));
   backAdminButton.addEventListener("click", () => guardUnsavedOptions(returnToAdmin));
+  pushNotificationButton?.addEventListener("click", openPushNotificationModal);
+  pushNotificationCloseButton?.addEventListener("click", closePushNotificationModal);
+  pushNotificationCancelButton?.addEventListener("click", closePushNotificationModal);
+  pushNotificationActionButton?.addEventListener("click", handlePushNotificationAction);
+  pushNotificationModal?.addEventListener("click", (event) => {
+    if (event.target === pushNotificationModal) closePushNotificationModal();
+  });
+  pushNotificationModal?.addEventListener("keydown", handlePushNotificationModalKeydown);
+  dailyReportSettingsList?.addEventListener("click", handleDailyReportSettingsClick);
+  dailyReportSettingsList?.addEventListener("change", handleDailyReportSettingsChange);
   settingsButton.addEventListener("click", openSettingsModal);
   settingsClose.addEventListener("click", closeSettingsModal);
   settingsCancel.addEventListener("click", closeSettingsModal);
@@ -912,6 +955,9 @@ function bindEvents() {
     if (!confirmModal.hidden) {
       event.preventDefault();
       closeConfirmModal();
+    } else if (!pushNotificationModal?.hidden) {
+      event.preventDefault();
+      closePushNotificationModal();
     } else if (!storeTeamModal?.hidden) {
       event.preventDefault();
       closeStoreTeamModal();
@@ -956,6 +1002,545 @@ function syncLeadWorkspacePanelHeight() {
 
   const formHeight = Math.ceil(form.getBoundingClientRect().height);
   if (formHeight > 0) registeredLeadsPanel.style.height = `${formHeight}px`;
+}
+
+function initializePushNotificationClient() {
+  const pushApi = window.LeadControlPushNotifications;
+  if (!pushApi?.createClient) {
+    renderPushNotificationState({
+      ...pushNotificationState,
+      phase: "unsupported",
+      error: "O módulo de notificações não foi carregado neste navegador.",
+    });
+    return;
+  }
+
+  pushNotificationClient = pushApi.createClient({
+    getPublicKey: async () => firstRow(await authenticatedRpc(PUSH_PUBLIC_KEY_RPC)),
+    registerSubscription: async (subscription, device) => authenticatedRpc(PUSH_REGISTER_SUBSCRIPTION_RPC, {
+      p_subscription: { ...subscription, device },
+    }),
+    unregisterSubscription: async (endpoint) => authenticatedRpc(PUSH_UNREGISTER_SUBSCRIPTION_RPC, {
+      p_endpoint: endpoint,
+    }),
+    onStateChange: renderPushNotificationState,
+  });
+
+  void pushNotificationClient.initialize();
+}
+
+async function syncPushNotificationsForCurrentProfile() {
+  if (!currentProfile) {
+    pushNotificationClient?.deactivateSession();
+    renderPushNotificationState(pushNotificationClient?.getState?.() || pushNotificationState);
+    return;
+  }
+
+  pushNotificationButton.hidden = false;
+  if (currentProfile.role === "technician" && pushNotificationClient) {
+    await pushNotificationClient.activateSession(currentProfile.id);
+  } else {
+    pushNotificationClient?.deactivateSession();
+    renderPushNotificationState(pushNotificationClient?.getState?.() || pushNotificationState);
+  }
+}
+
+function getPushNotificationPresentation(state) {
+  if (state?.phase === "loading") {
+    return {
+      icon: "fa-circle-notch fa-spin",
+      title: "Preparando este aparelho",
+      text: "Aguarde enquanto a assinatura segura é atualizada.",
+      action: state.subscribed ? "Desativando…" : "Ativando…",
+    };
+  }
+  if (state?.phase === "subscribed") {
+    return {
+      icon: "fa-circle-check",
+      title: "Este aparelho está conectado",
+      text: "Os relatórios habilitados podem chegar mesmo com o app fechado.",
+      action: "Desativar neste aparelho",
+    };
+  }
+  if (state?.phase === "needs-install") {
+    return {
+      icon: "fa-mobile-screen-button",
+      title: "Adicione o app à Tela de Início",
+      text: state.support?.reason || "A instalação é necessária para receber notificações neste aparelho.",
+      action: "Instale o app primeiro",
+    };
+  }
+  if (state?.phase === "denied") {
+    return {
+      icon: "fa-bell-slash",
+      title: "Permissão bloqueada",
+      text: "Libere as notificações nas configurações do navegador ou do aparelho.",
+      action: "Permissão bloqueada",
+    };
+  }
+  if (state?.phase === "unsupported") {
+    return {
+      icon: "fa-triangle-exclamation",
+      title: "Notificações indisponíveis",
+      text: state.error || state.support?.reason || "Este navegador não oferece notificações em segundo plano.",
+      action: "Indisponível",
+    };
+  }
+  if (state?.phase === "error") {
+    return {
+      icon: "fa-circle-exclamation",
+      title: "Não foi possível sincronizar",
+      text: state.error || "Tente novamente em instantes.",
+      action: state.subscribed ? "Desativar neste aparelho" : "Tentar novamente",
+    };
+  }
+  return {
+    icon: "fa-bell",
+    title: "Ative neste aparelho",
+    text: "Receba diariamente o valor vendido, as prospecções e a taxa de conversão.",
+    action: "Ativar neste aparelho",
+  };
+}
+
+function hasEnabledDailyReportSetting() {
+  return [...dailyReportSettings.values()].some((setting) => setting.enabled);
+}
+
+function syncPushNotificationButtonState() {
+  if (!pushNotificationButton) return;
+  const isAgency = currentProfile?.role === "technician";
+  const isActive = isAgency ? Boolean(pushNotificationState.subscribed) : hasEnabledDailyReportSetting();
+  const visualState = isAgency
+    ? isActive ? "subscribed" : pushNotificationState.phase || "idle"
+    : isActive ? "subscribed" : "idle";
+  pushNotificationButton.hidden = !currentProfile;
+  pushNotificationButton.dataset.state = visualState;
+  pushNotificationButton.classList.toggle("is-subscribed", isActive);
+  pushNotificationButton.setAttribute("aria-pressed", String(isActive));
+}
+
+function renderPushNotificationState(nextState) {
+  if (nextState) pushNotificationState = { ...pushNotificationState, ...nextState };
+  const presentation = getPushNotificationPresentation(pushNotificationState);
+  const isAgency = currentProfile?.role === "technician";
+
+  syncPushNotificationButtonState();
+  if (pushNotificationDeviceSection) pushNotificationDeviceSection.hidden = !isAgency;
+  if (pushNotificationStatus) {
+    pushNotificationStatus.dataset.state = pushNotificationState.phase || "idle";
+    const icon = pushNotificationStatus.querySelector(".pwa-notification-status-icon i");
+    if (icon) icon.className = `fa-solid ${presentation.icon}`;
+  }
+  if (pushNotificationDeviceTitle) pushNotificationDeviceTitle.textContent = presentation.title;
+  if (pushNotificationStatusText) pushNotificationStatusText.textContent = presentation.text;
+  if (pushNotificationInstallHint) {
+    pushNotificationInstallHint.hidden = !isAgency || pushNotificationState.phase !== "needs-install";
+  }
+  if (pushNotificationActionButton) {
+    const cannotRequest = ["unsupported", "needs-install", "denied"].includes(pushNotificationState.phase);
+    pushNotificationActionButton.hidden = !isAgency;
+    pushNotificationActionButton.disabled = Boolean(pushNotificationState.busy) || cannotRequest;
+    const label = pushNotificationActionButton.querySelector("span");
+    if (label) label.textContent = presentation.action;
+    const icon = pushNotificationActionButton.querySelector("i");
+    if (icon) {
+      icon.className = `fa-solid ${pushNotificationState.busy
+        ? "fa-circle-notch fa-spin"
+        : pushNotificationState.subscribed
+          ? "fa-bell-slash"
+          : "fa-bell"}`;
+    }
+  }
+}
+
+function openPushNotificationModal() {
+  if (!currentProfile || !pushNotificationModal) return;
+  pushNotificationReturnFocus = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : pushNotificationButton;
+  pushNotificationMessage.textContent = "";
+  pushNotificationMessage.classList.remove("error", "success");
+  pushNotificationModal.hidden = false;
+  renderPushNotificationState(pushNotificationClient?.getState?.() || pushNotificationState);
+  renderDailyReportSettings({ loading: true });
+  syncModalLock();
+  requestAnimationFrame(() => pushNotificationCloseButton?.focus());
+
+  if (currentProfile.role === "technician") {
+    void pushNotificationClient?.refresh({ synchronize: true });
+  }
+  void loadDailyReportSettings();
+}
+
+function closePushNotificationModal({ restoreFocus = true } = {}) {
+  if (!pushNotificationModal) return;
+  pushNotificationModal.hidden = true;
+  pushNotificationMessage.textContent = "";
+  pushNotificationMessage.classList.remove("error", "success");
+  syncModalLock();
+  const returnFocus = pushNotificationReturnFocus;
+  pushNotificationReturnFocus = null;
+  if (restoreFocus && returnFocus?.isConnected && !returnFocus.hidden) {
+    requestAnimationFrame(() => returnFocus.focus());
+  }
+}
+
+function handlePushNotificationModalKeydown(event) {
+  if (event.key !== "Tab" || pushNotificationModal?.hidden) return;
+  const focusable = [...pushNotificationModal.querySelectorAll(
+    'button:not(:disabled):not([hidden]), input:not(:disabled):not([hidden]), select:not(:disabled):not([hidden]), [tabindex]:not([tabindex="-1"])'
+  )].filter((element) => element.getClientRects().length > 0);
+  if (!focusable.length) {
+    event.preventDefault();
+    pushNotificationModal.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+async function handlePushNotificationAction() {
+  if (currentProfile?.role !== "technician" || !pushNotificationClient || pushNotificationState.busy) return;
+  pushNotificationMessage.textContent = "";
+  pushNotificationMessage.classList.remove("error", "success");
+  try {
+    const nextState = pushNotificationState.subscribed
+      ? await pushNotificationClient.disable()
+      : await pushNotificationClient.enable();
+    if (nextState.phase === "error") {
+      pushNotificationMessage.textContent = nextState.error || "Não foi possível atualizar este aparelho.";
+      pushNotificationMessage.classList.remove("success");
+      pushNotificationMessage.classList.add("error");
+      return;
+    }
+    pushNotificationMessage.classList.remove("error");
+    pushNotificationMessage.classList.add("success");
+    pushNotificationMessage.textContent = nextState.subscribed
+      ? "Notificações ativadas neste aparelho."
+      : "Notificações desativadas neste aparelho.";
+    await loadDailyReportSettings({ showLoading: false });
+  } catch (error) {
+    pushNotificationMessage.classList.remove("success");
+    pushNotificationMessage.classList.add("error");
+    pushNotificationMessage.textContent = readableError(error);
+  }
+}
+
+function readBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_DAILY_REPORT_TIME_ZONE;
+  } catch {
+    return DEFAULT_DAILY_REPORT_TIME_ZONE;
+  }
+}
+
+function normalizeDailyReportTime(value) {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})/);
+  if (!match) return "";
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return "";
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function normalizeRpcRows(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.settings)) return value.settings;
+  return value && typeof value === "object" ? [value] : [];
+}
+
+function isTrueValue(value) {
+  return value === true || String(value || "").toLowerCase() === "true";
+}
+
+function getDailyReportSettingKey(storeId, agencyUserId) {
+  return `${String(storeId || "")}:${String(agencyUserId || "")}`;
+}
+
+function findStoreAgencyName(store, agencyUserId) {
+  const access = store?.agencyAccesses?.find((item) => item.agencyId === agencyUserId);
+  if (access?.agencyName) return access.agencyName;
+  if (agencyUserId === currentProfile?.id && currentProfile?.role === "technician") {
+    return currentProfile.fullName || currentProfile.username || "Agência";
+  }
+  return technicians.find((item) => item.id === agencyUserId)?.fullName || "Agência";
+}
+
+function normalizeDailyReportSetting(row, store, fallbackAgencyId = "") {
+  const agencyUserId = String(row?.agency_user_id || row?.agency_id || fallbackAgencyId || "").trim();
+  if (!store?.id || !agencyUserId) return null;
+  const timeZone = String(row?.time_zone || readBrowserTimeZone()).trim() || DEFAULT_DAILY_REPORT_TIME_ZONE;
+  return {
+    storeId: String(row?.store_id || store.id),
+    storeName: String(row?.store_name || store.name || "Loja"),
+    agencyUserId,
+    agencyName: String(row?.agency_name || findStoreAgencyName(store, agencyUserId)),
+    enabled: isTrueValue(row?.enabled),
+    reportTime: normalizeDailyReportTime(row?.report_time) || DEFAULT_DAILY_REPORT_TIME,
+    timeZone,
+    hasActiveSubscription: isTrueValue(row?.has_active_subscription),
+    nextRunAt: row?.next_run_at || null,
+  };
+}
+
+function buildDefaultDailyReportSettings(store) {
+  let accesses = Array.isArray(store?.agencyAccesses) ? store.agencyAccesses : [];
+  if (currentProfile?.role === "technician") {
+    accesses = [{
+      agencyId: currentProfile.id,
+      agencyName: currentProfile.fullName || currentProfile.username || "Agência",
+    }];
+  } else if (!accesses.length && store?.technicianId) {
+    accesses = [{ agencyId: store.technicianId, agencyName: store.technicianName || "Agência" }];
+  }
+
+  return accesses
+    .map((access) => normalizeDailyReportSetting({
+      agency_user_id: access.agencyId,
+      agency_name: access.agencyName,
+      enabled: false,
+      report_time: DEFAULT_DAILY_REPORT_TIME,
+      time_zone: readBrowserTimeZone(),
+      has_active_subscription: false,
+    }, store, access.agencyId))
+    .filter(Boolean);
+}
+
+async function loadDailyReportSettings({ showLoading = true } = {}) {
+  if (!currentProfile?.sessionToken) return;
+  const requestId = ++dailyReportSettingsRequestId;
+  const sessionToken = currentProfile.sessionToken;
+  const dashboardStores = getDashboardStores().map((store) => ({ ...store }));
+  if (showLoading) renderDailyReportSettings({ loading: true });
+
+  if (!dashboardStores.length) {
+    dailyReportSettings = new Map();
+    dailyReportSettingsErrors = new Map();
+    renderDailyReportSettings();
+    return;
+  }
+
+  const results = await Promise.all(dashboardStores.map(async (store) => {
+    try {
+      const response = await authenticatedRpc(DAILY_REPORT_SETTINGS_RPC, { p_store_id: store.id });
+      return { store, rows: normalizeRpcRows(response), error: null };
+    } catch (error) {
+      return { store, rows: [], error };
+    }
+  }));
+
+  if (requestId !== dailyReportSettingsRequestId || currentProfile?.sessionToken !== sessionToken) return;
+
+  const nextSettings = new Map();
+  const nextErrors = new Map();
+  results.forEach(({ store, rows, error }) => {
+    if (error) {
+      nextErrors.set(store.id, { store, error });
+      return;
+    }
+    const normalizedRows = rows
+      .map((row) => normalizeDailyReportSetting(row, store))
+      .filter(Boolean);
+    const settings = normalizedRows.length ? normalizedRows : buildDefaultDailyReportSettings(store);
+    settings.forEach((setting) => {
+      nextSettings.set(getDailyReportSettingKey(setting.storeId, setting.agencyUserId), setting);
+    });
+  });
+
+  dailyReportSettings = nextSettings;
+  dailyReportSettingsErrors = nextErrors;
+  renderDailyReportSettings();
+  syncPushNotificationButtonState();
+}
+
+function formatDailyReportNextRun(value, timeZone) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    }).format(new Date(value));
+  } catch {
+    return formatDateTime(value);
+  }
+}
+
+function renderDailyReportSettings({ loading = false } = {}) {
+  if (!dailyReportSettingsList) return;
+  if (loading) {
+    dailyReportSettingsList.innerHTML = `<div class="pwa-daily-report-loading"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i><span>Carregando configurações…</span></div>`;
+    return;
+  }
+
+  const settings = [...dailyReportSettings.values()].sort((left, right) => (
+    left.storeName.localeCompare(right.storeName, "pt-BR")
+      || left.agencyName.localeCompare(right.agencyName, "pt-BR")
+  ));
+  const errorCards = [...dailyReportSettingsErrors.values()].map(({ store, error }) => `
+    <article class="pwa-daily-report-store is-error" data-daily-report-store="${escapeHtml(store.id)}">
+      <div class="pwa-daily-report-store-copy">
+        <span class="pwa-daily-report-store-icon" aria-hidden="true"><i class="fa-solid fa-store"></i></span>
+        <div><strong>${escapeHtml(store.name || "Loja")}</strong><small>${escapeHtml(readableError(error))}</small></div>
+      </div>
+      <button class="secondary-button pwa-daily-report-save" type="button" data-daily-report-retry-store="${escapeHtml(store.id)}">Tentar novamente</button>
+    </article>
+  `).join("");
+
+  const settingCards = settings.map((setting) => {
+    const key = getDailyReportSettingKey(setting.storeId, setting.agencyUserId);
+    const nextRun = formatDailyReportNextRun(setting.nextRunAt, setting.timeZone);
+    const scheduleText = setting.enabled
+      ? nextRun ? `Próximo envio: ${nextRun}` : `Envio diário às ${setting.reportTime}`
+      : "Envio diário pausado";
+    const deliveryText = setting.hasActiveSubscription
+      ? "Agência com aparelho conectado"
+      : "A agência precisa ativar em um aparelho";
+    return `
+      <article class="pwa-daily-report-store${setting.enabled ? " is-enabled" : ""}" data-daily-report-key="${escapeHtml(key)}" data-daily-report-store="${escapeHtml(setting.storeId)}" data-daily-report-agency="${escapeHtml(setting.agencyUserId)}">
+        <div class="pwa-daily-report-store-copy">
+          <span class="pwa-daily-report-store-icon" aria-hidden="true"><i class="fa-solid fa-store"></i></span>
+          <div>
+            <strong>${escapeHtml(setting.storeName)}</strong>
+            <small>${escapeHtml(setting.agencyName)}</small>
+          </div>
+        </div>
+        <div class="pwa-daily-report-controls">
+          <label class="feature-access-toggle pwa-daily-report-toggle">
+            <input type="checkbox" data-daily-report-enabled aria-label="Ativar relatório de ${escapeHtml(setting.storeName)} para ${escapeHtml(setting.agencyName)}" ${setting.enabled ? "checked" : ""} />
+            <span aria-hidden="true"></span>
+            <em>${setting.enabled ? "Ativo" : "Inativo"}</em>
+          </label>
+          <label class="pwa-daily-report-time">
+            <span>Horário</span>
+            <input type="time" step="60" data-daily-report-time value="${escapeHtml(setting.reportTime)}" aria-label="Horário do relatório de ${escapeHtml(setting.storeName)}" />
+          </label>
+          <button class="secondary-button pwa-daily-report-save" type="button" data-daily-report-save>
+            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Salvar</span>
+          </button>
+        </div>
+        <div class="pwa-daily-report-meta">
+          <span class="pwa-daily-report-timezone"><i class="fa-solid fa-clock" aria-hidden="true"></i>${escapeHtml(setting.timeZone)}</span>
+          <span class="pwa-daily-report-schedule">${escapeHtml(scheduleText)}</span>
+          <span class="pwa-daily-report-delivery${setting.hasActiveSubscription ? " is-ready" : " is-missing"}"><i class="fa-solid ${setting.hasActiveSubscription ? "fa-mobile-screen-button" : "fa-triangle-exclamation"}" aria-hidden="true"></i>${escapeHtml(deliveryText)}</span>
+        </div>
+        <p class="pwa-daily-report-row-message" role="status" aria-live="polite"></p>
+      </article>
+    `;
+  }).join("");
+
+  if (!settingCards && !errorCards) {
+    dailyReportSettingsList.innerHTML = `<div class="pwa-daily-report-empty"><i class="fa-solid fa-store-slash" aria-hidden="true"></i><strong>Nenhuma agência vinculada</strong><span>Vincule uma agência à loja para configurar o relatório diário.</span></div>`;
+    return;
+  }
+  dailyReportSettingsList.innerHTML = settingCards + errorCards;
+}
+
+function handleDailyReportSettingsChange(event) {
+  const toggle = event.target.closest("[data-daily-report-enabled]");
+  const timeInput = event.target.closest("[data-daily-report-time]");
+  if (!toggle && !timeInput) return;
+  const card = event.target.closest("[data-daily-report-key]");
+  if (toggle) {
+    card?.classList.toggle("is-enabled", toggle.checked);
+    const label = card?.querySelector(".pwa-daily-report-toggle em");
+    if (label) label.textContent = toggle.checked ? "Ativo" : "Inativo";
+  }
+  const message = card?.querySelector(".pwa-daily-report-row-message");
+  if (message) {
+    message.classList.remove("is-error", "is-success");
+    message.textContent = "Alteração ainda não salva.";
+  }
+}
+
+function handleDailyReportSettingsClick(event) {
+  const retryButton = event.target.closest("[data-daily-report-retry-store]");
+  if (retryButton) {
+    void loadDailyReportSettings();
+    return;
+  }
+  const saveButton = event.target.closest("[data-daily-report-save]");
+  if (saveButton) void saveDailyReportSetting(saveButton);
+}
+
+async function saveDailyReportSetting(button) {
+  const card = button.closest("[data-daily-report-key]");
+  const key = card?.dataset.dailyReportKey || "";
+  const setting = dailyReportSettings.get(key);
+  const enabledInput = card?.querySelector("[data-daily-report-enabled]");
+  const timeInput = card?.querySelector("[data-daily-report-time]");
+  const message = card?.querySelector(".pwa-daily-report-row-message");
+  if (!card || !setting || !enabledInput || !timeInput || !message || !currentProfile?.sessionToken) return;
+
+  const reportTime = normalizeDailyReportTime(timeInput.value);
+  if (!reportTime) {
+    message.textContent = "Informe um horário válido.";
+    message.classList.remove("is-success");
+    message.classList.add("is-error");
+    timeInput.focus();
+    return;
+  }
+
+  const sessionToken = currentProfile.sessionToken;
+  const enabled = enabledInput.checked;
+  const controls = [...card.querySelectorAll("button, input")];
+  controls.forEach((control) => { control.disabled = true; });
+  card.classList.add("is-saving");
+  message.classList.remove("is-error", "is-success");
+  message.textContent = "Salvando…";
+
+  try {
+    const response = await authenticatedRpc(DAILY_REPORT_SAVE_RPC, {
+      p_store_id: setting.storeId,
+      p_agency_user_id: setting.agencyUserId,
+      p_enabled: enabled,
+      p_report_time: `${reportTime}:00`,
+      p_time_zone: setting.timeZone || readBrowserTimeZone(),
+    });
+    if (currentProfile?.sessionToken !== sessionToken) return;
+
+    const responseRow = normalizeRpcRows(response).find((row) => (
+      String(row?.agency_user_id || row?.agency_id || "") === setting.agencyUserId
+    ));
+    const updated = responseRow
+      ? normalizeDailyReportSetting(responseRow, {
+          id: setting.storeId,
+          name: setting.storeName,
+          agencyAccesses: [{ agencyId: setting.agencyUserId, agencyName: setting.agencyName }],
+        }, setting.agencyUserId)
+      : { ...setting, enabled, reportTime };
+    dailyReportSettings.set(key, updated || { ...setting, enabled, reportTime });
+    card.classList.toggle("is-enabled", enabled);
+    const toggleLabel = card.querySelector(".pwa-daily-report-toggle em");
+    if (toggleLabel) toggleLabel.textContent = enabled ? "Ativo" : "Inativo";
+    const scheduleLabel = card.querySelector(".pwa-daily-report-schedule");
+    if (scheduleLabel) {
+      const nextRun = formatDailyReportNextRun(updated?.nextRunAt, updated?.timeZone || setting.timeZone);
+      scheduleLabel.textContent = enabled
+        ? nextRun ? `Próximo envio: ${nextRun}` : `Envio diário às ${reportTime}`
+        : "Envio diário pausado";
+    }
+    message.classList.add("is-success");
+    message.textContent = enabled ? "Relatório diário ativado." : "Relatório diário pausado.";
+    syncPushNotificationButtonState();
+  } catch (error) {
+    message.classList.remove("is-success");
+    message.classList.add("is-error");
+    message.textContent = readableError(error);
+  } finally {
+    card.classList.remove("is-saving");
+    controls.forEach((control) => { control.disabled = false; });
+  }
 }
 
 function initializeSupabase() {
@@ -1060,6 +1645,15 @@ async function openProfile(profile) {
     activeSystemModule = "leads";
     updateSystemModuleControls();
   }
+
+  void syncPushNotificationsForCurrentProfile().catch((error) => {
+    renderPushNotificationState({
+      ...pushNotificationState,
+      phase: "error",
+      busy: false,
+      error: readableError(error),
+    });
+  });
 }
 
 async function ensureLegalTermsAcceptance() {
@@ -1426,6 +2020,12 @@ async function handleLogout() {
 
 function showAuth() {
   clearAppNotification();
+  dailyReportSettingsRequestId += 1;
+  dailyReportSettings = new Map();
+  dailyReportSettingsErrors = new Map();
+  pushNotificationClient?.deactivateSession();
+  closePushNotificationModal({ restoreFocus: false });
+  if (pushNotificationButton) pushNotificationButton.hidden = true;
   closeSettingsModal();
   closeManagedAccountModal();
   closeAllAccountCreationModals();

@@ -2472,6 +2472,16 @@ body.is-dark .attendance-turn-label > span,
   box-shadow: var(--att-shadow-soft);
 }
 
+.attendance-morning-goal.is-surplus,
+.attendance-morning-goal.is-met {
+  border-color: color-mix(in srgb, var(--att-emerald) 38%, var(--att-line));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--att-emerald) 9%, var(--att-panel)), var(--att-panel));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--att-emerald) 7%, transparent),
+    0 12px 28px color-mix(in srgb, var(--att-emerald) 10%, transparent);
+}
+
 .attendance-morning-goal header {
   justify-content: space-between;
   gap: 6px;
@@ -2489,6 +2499,13 @@ body.is-dark .attendance-turn-label > span,
 .attendance-morning-goal header i,
 .attendance-morning-goal header b {
   color: #d97706;
+}
+
+.attendance-morning-goal.is-surplus header i,
+.attendance-morning-goal.is-surplus header b,
+.attendance-morning-goal.is-met header i,
+.attendance-morning-goal.is-met header b {
+  color: var(--att-emerald);
 }
 
 .attendance-morning-goal header b {
@@ -2531,6 +2548,101 @@ body.is-dark .attendance-turn-label > span,
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
+.attendance-morning-goal.is-surplus .attendance-morning-progress b,
+.attendance-morning-goal.is-met .attendance-morning-progress b {
+  background: linear-gradient(90deg, var(--att-emerald), var(--att-lime));
+}
+
+.attendance-morning-balance-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--att-muted);
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.attendance-morning-goal > .attendance-morning-balance-label {
+  justify-self: start;
+  max-width: 100%;
+  min-height: 25px;
+  padding: 4px 8px;
+  border: 1px solid var(--att-line);
+  border-radius: 999px;
+  background: var(--att-panel-soft);
+  font-size: 0.59rem;
+  overflow-wrap: anywhere;
+}
+
+.attendance-morning-goal > .attendance-morning-balance-label.is-surplus,
+.attendance-morning-goal > .attendance-morning-balance-label.is-met {
+  border-color: color-mix(in srgb, var(--att-emerald) 30%, var(--att-line));
+  background: color-mix(in srgb, var(--att-emerald) 11%, var(--att-panel));
+  color: var(--att-emerald);
+}
+
+.attendance-morning-goal > .attendance-morning-balance-label.is-remaining {
+  border-color: color-mix(in srgb, var(--att-warning) 28%, var(--att-line));
+  background: color-mix(in srgb, var(--att-warning) 9%, var(--att-panel));
+  color: color-mix(in srgb, var(--att-warning) 82%, var(--att-ink));
+}
+
+.attendance-morning-pace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  align-items: center;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--att-emerald) 24%, var(--att-line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--att-emerald) 7%, var(--att-panel));
+}
+
+.attendance-morning-pace > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--att-muted);
+  font-size: 0.55rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.attendance-morning-pace > span i,
+.attendance-morning-pace > strong {
+  color: var(--att-emerald);
+}
+
+.attendance-morning-pace > strong {
+  justify-self: end;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.attendance-morning-pace > small {
+  grid-column: 1 / -1;
+  min-height: 0;
+  color: var(--att-muted);
+  font-size: 0.56rem;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
+.attendance-morning-pace.is-behind {
+  border-color: color-mix(in srgb, var(--att-warning) 30%, var(--att-line));
+  background: color-mix(in srgb, var(--att-warning) 8%, var(--att-panel));
+}
+
+.attendance-morning-pace.is-behind > span i,
+.attendance-morning-pace.is-behind > strong {
+  color: var(--att-warning);
 }
 
 .attendance-morning-individual-goals {
@@ -2584,10 +2696,46 @@ body.is-dark .attendance-turn-label > span,
 }
 
 .attendance-morning-individual-goals p > strong {
+  display: grid;
   flex: 0 0 auto;
+  gap: 1px;
+  justify-items: end;
   color: var(--att-ink);
   font-size: 0.62rem;
   letter-spacing: -0.015em;
+}
+
+.attendance-morning-individual-goals p > strong > span {
+  white-space: nowrap;
+}
+
+.attendance-morning-individual-goals p > strong > .attendance-morning-balance-label {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--att-muted);
+  font-size: 0.47rem;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+.attendance-morning-individual-goals p.is-surplus {
+  background: color-mix(in srgb, var(--att-emerald) 10%, var(--att-panel));
+}
+
+.attendance-morning-individual-goals p.is-met {
+  background: color-mix(in srgb, var(--att-emerald) 6%, var(--att-panel));
+}
+
+.attendance-morning-individual-goals p.is-surplus > strong > span,
+.attendance-morning-individual-goals p.is-surplus > strong > .attendance-morning-balance-label,
+.attendance-morning-individual-goals p.is-met > strong > .attendance-morning-balance-label {
+  color: var(--att-emerald);
+}
+
+.attendance-morning-individual-goals p.is-remaining > strong > .attendance-morning-balance-label {
+  color: var(--att-warning);
 }
 
 .attendance-morning-board--setup,
@@ -3827,15 +3975,24 @@ body.is-dark .attendance-turn-label > span,
   }
 
   .attendance-morning-goals {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .attendance-morning-goal.is-month {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .attendance-morning-individual-goals p {
-    padding-inline: 5px;
+    min-height: 42px;
+    padding: 6px 7px;
+  }
+
+  .attendance-morning-goal > small {
+    min-height: 0;
+  }
+
+  .attendance-morning-pace {
+    padding: 9px 10px;
   }
 
   .attendance-turn-label {

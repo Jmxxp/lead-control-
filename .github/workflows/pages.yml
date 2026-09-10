@@ -33,6 +33,8 @@ jobs:
           cp \
             index.html \
             app.js \
+            pwa-notifications.js \
+            service-worker.js \
             styles.css \
             mobile.css \
             prospections.js \

@@ -278,29 +278,36 @@ video {
 
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
     display: grid;
-    grid-template-columns: repeat(3, 32px);
+    grid-template-columns: repeat(3, 44px);
+    grid-auto-flow: row;
+    grid-auto-rows: 44px;
     gap: 4px;
     max-width: none;
     overflow: visible;
   }
 
+  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
+    grid-template-columns: repeat(4, 44px);
+  }
+
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-status {
+    order: 2;
     grid-column: 1 / -1;
-    grid-row: 2;
     width: 100%;
   }
 
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-button {
-    width: 32px;
-    min-width: 32px;
-    height: 32px;
-    min-height: 32px;
+    order: 1;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-status,
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card {
-    height: 32px;
-    min-height: 32px;
+    height: 40px;
+    min-height: 40px;
   }
 
   #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card {
@@ -1176,6 +1183,181 @@ video {
     padding: 15px;
     border: 1px solid var(--line);
     border-radius: 10px;
+  }
+
+  .modal-backdrop.pwa-notification-backdrop > .pwa-notification-dialog {
+    width: min(100%, 520px);
+    gap: 13px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .pwa-notification-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .pwa-notification-header-copy {
+    align-items: flex-start;
+    gap: 9px;
+  }
+
+  .pwa-notification-header-icon {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .pwa-notification-header h2 {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+
+  .pwa-notification-header-copy > div > p:not(.eyebrow) {
+    font-size: 0.67rem;
+    line-height: 1.35;
+  }
+
+  .pwa-notification-header .topbar-icon-button {
+    flex-basis: 40px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  .pwa-notification-status {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+    border-radius: 11px;
+  }
+
+  .pwa-notification-status-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .pwa-notification-status strong {
+    font-size: 0.82rem;
+  }
+
+  .pwa-notification-status p,
+  .pwa-notification-dialog .pwa-notification-status p:not(.eyebrow) {
+    font-size: 0.68rem;
+    line-height: 1.35;
+  }
+
+  .pwa-notification-install-hint {
+    padding: 11px 12px;
+    border-radius: 10px;
+  }
+
+  .pwa-daily-report-heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+    align-items: start;
+  }
+
+  .pwa-daily-report-heading > p,
+  .pwa-notification-dialog .pwa-daily-report-heading > p:not(.eyebrow) {
+    justify-self: start;
+    max-width: none;
+    text-align: left;
+  }
+
+  .pwa-daily-report-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .pwa-daily-report-store,
+  .pwa-daily-report-store.is-error {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+    padding: 12px;
+    border-radius: 11px;
+  }
+
+  .pwa-daily-report-store-copy strong,
+  .pwa-daily-report-store-copy small {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pwa-daily-report-controls {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "toggle"
+      "time"
+      "save";
+    gap: 8px;
+    justify-content: stretch;
+  }
+
+  .pwa-daily-report-toggle {
+    justify-content: flex-start;
+    width: 100%;
+    padding: 0 2px;
+  }
+
+  .pwa-daily-report-timezone {
+    text-align: left;
+  }
+
+  .pwa-daily-report-meta {
+    grid-column: auto;
+    display: grid;
+    gap: 6px;
+    align-items: start;
+  }
+
+  .pwa-daily-report-meta > span {
+    width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pwa-daily-report-schedule {
+    margin-left: 0;
+  }
+
+  .pwa-daily-report-meta > .pwa-daily-report-delivery {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .pwa-daily-report-save {
+    width: 100%;
+  }
+
+  .pwa-daily-report-store.is-error .pwa-daily-report-save {
+    grid-column: auto;
+  }
+
+  .pwa-notification-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .pwa-notification-actions > button,
+  .pwa-notification-actions .primary-button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 9px;
+  }
+
+  .pwa-notification-actions:has(> button[hidden]) > button:not([hidden]) {
+    grid-column: 1 / -1;
   }
 
   .configuration-backdrop,

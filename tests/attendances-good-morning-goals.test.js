@@ -177,8 +177,8 @@ test("meta no meio do mês desconta histórico do mês e da semana e fecha cada 
     ["seller-b", 428571],
   ]);
   assert.deepEqual(plain([...plan.todayTargetsCents.entries()]), [
-    ["seller-a", 63095],
-    ["seller-b", 142857],
+    ["seller-a", 82381],
+    ["seller-b", 123571],
   ]);
   assert.equal(sumTargets(plan.weekTargetsCents), plan.weekTargetCents);
   assert.equal(sumTargets(plan.todayTargetsCents), plan.todayTargetCents);
@@ -255,10 +255,183 @@ test("compra de hoje aparece no realizado sem mover a meta; no próximo dia aber
   assert.equal(nextOpenDay.weekTargetCents, 767857);
   assert.equal(nextOpenDay.todayTargetCents, 288929);
   assert.deepEqual(plain([...nextOpenDay.todayTargetsCents.entries()]), [
-    ["seller-a", 74643],
-    ["seller-b", 214286],
+    ["seller-a", 112034],
+    ["seller-b", 176895],
   ]);
+  assert.ok(
+    nextOpenDay.todayTargetsCents.get("seller-b") > nextOpenDay.todayTargetsCents.get("seller-a"),
+    "quem está mais distante da meta mensal deve receber o maior alvo no novo dia",
+  );
   assert.equal(sumTargets(nextOpenDay.todayTargetsCents), nextOpenDay.todayTargetCents);
+});
+
+test("alvo individual diário usa o déficit mensal no início do dia e não se move com vendas de hoje", () => {
+  const workspace = hooks.normalizeMorningWorkspace({
+    licensed: true,
+    configured: true,
+    today: "2026-09-08",
+    week_start: "2026-09-07",
+    week_end: "2026-09-13",
+    goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
+    monthly_goal: 10000,
+    goals: {
+      today: { target: 1000, actual: 1200 },
+      week: { target: 5000, actual: 2200 },
+      month: { target: 10000, actual: 3200 },
+    },
+    professionals: [
+      {
+        id: "seller-a",
+        name: "Ana",
+        goal_amount: 5000,
+        actual_month: 1900,
+        actual_week: 1400,
+        actual_today: 900,
+      },
+      {
+        id: "seller-b",
+        name: "Bia",
+        goal_amount: 5000,
+        actual_month: 1300,
+        actual_week: 800,
+        actual_today: 300,
+      },
+    ],
+  });
+  const context = hooks.calculateMorningWorkingDayContext(
+    workspace.today,
+    workspace.weekStart,
+    workspace.weekEnd,
+    workspace.closedDays,
+  );
+
+  const before = hooks.calculateMorningDailyTargetsByMonthlyDeficit(workspace, context);
+  assert.deepEqual(plain([...before.entries()]), [
+    ["seller-a", 50000],
+    ["seller-b", 50000],
+  ]);
+
+  workspace.goals.today.actual += 700;
+  workspace.goals.week.actual += 700;
+  workspace.goals.month.actual += 700;
+  workspace.professionals[0].actualToday += 700;
+  workspace.professionals[0].actualWeek += 700;
+  workspace.professionals[0].actualMonth += 700;
+  const after = hooks.calculateMorningDailyTargetsByMonthlyDeficit(workspace, context);
+  assert.deepEqual(plain([...after.entries()]), plain([...before.entries()]));
+});
+
+test("saldo diário preserva o excedente da equipe e separa quem ficou acima ou abaixo", () => {
+  const workspace = hooks.normalizeMorningWorkspace({
+    licensed: true,
+    configured: true,
+    today: "2026-09-08",
+    week_start: "2026-09-07",
+    week_end: "2026-09-13",
+    goal_strategy: "hierarchical_weekly_daily_team_balance_v1",
+    monthly_goal: 10000,
+    goals: {
+      today: { target: 1000, actual: 1200 },
+      week: { target: 5000, actual: 2200 },
+      month: { target: 10000, actual: 3200 },
+    },
+    professionals: [
+      {
+        id: "seller-a",
+        name: "Ana",
+        goal_amount: 5000,
+        actual_month: 1900,
+        actual_week: 1400,
+        actual_today: 900,
+      },
+      {
+        id: "seller-b",
+        name: "Bia",
+        goal_amount: 5000,
+        actual_month: 1300,
+        actual_week: 800,
+        actual_today: 300,
+      },
+    ],
+  });
+  const performance = hooks.calculateMorningGoalPerformance(workspace, "today");
+
+  assert.deepEqual(plain({
+    targetCents: performance.targetCents,
+    actualCents: performance.actualCents,
+    balanceCents: performance.balanceCents,
+    remainingCents: performance.remainingCents,
+    surplusCents: performance.surplusCents,
+    status: performance.status,
+    progressPercent: performance.progressPercent,
+    progressBarPercent: performance.progressBarPercent,
+  }), {
+    targetCents: 100000,
+    actualCents: 120000,
+    balanceCents: 20000,
+    remainingCents: 0,
+    surplusCents: 20000,
+    status: "surplus",
+    progressPercent: 120,
+    progressBarPercent: 100,
+  });
+  assert.deepEqual(plain([...performance.professionals.entries()].map(([id, balance]) => [id, {
+    targetCents: balance.targetCents,
+    actualCents: balance.actualCents,
+    balanceCents: balance.balanceCents,
+    status: balance.status,
+  }])), [
+    ["seller-a", { targetCents: 50000, actualCents: 90000, balanceCents: 40000, status: "surplus" }],
+    ["seller-b", { targetCents: 50000, actualCents: 30000, balanceCents: -20000, status: "remaining" }],
+  ]);
+  assert.equal(hooks.goalProgress(1300, 1000), 130, "o percentual visível não pode parar em 100%");
+});
+
+test("projeção mensal mostra a porcentagem no ritmo dos dias úteis sem limitar em 100%", () => {
+  const workspace = hooks.normalizeMorningWorkspace({
+    licensed: true,
+    configured: true,
+    today: "2026-09-08",
+    week_start: "2026-09-07",
+    week_end: "2026-09-13",
+    monthly_goal: 26000,
+    goals: {
+      today: { target: 1000, actual: 1000 },
+      week: { target: 6000, actual: 3000 },
+      month: { target: 26000, actual: 7000 },
+    },
+    professionals: [],
+  });
+  const context = hooks.calculateMorningWorkingDayContext(
+    workspace.today,
+    workspace.weekStart,
+    workspace.weekEnd,
+    workspace.closedDays,
+  );
+  const onPace = hooks.calculateMorningPaceProjection(workspace, context);
+
+  assert.equal(context.total, 26);
+  assert.equal(context.throughToday, 7);
+  assert.deepEqual(plain(onPace), {
+    available: true,
+    elapsedWorkdays: 7,
+    totalWorkdays: 26,
+    actualCents: 700000,
+    targetCents: 2600000,
+    projectedCents: 2600000,
+    projectedAttainmentPercent: 100,
+    status: "met",
+  });
+
+  workspace.goals.month.actual = 10500;
+  const abovePace = hooks.calculateMorningPaceProjection(workspace, context);
+  assert.equal(abovePace.projectedCents, 3900000);
+  assert.equal(abovePace.projectedAttainmentPercent, 150);
+  assert.equal(abovePace.status, "surplus");
+
+  workspace.goals.month.target = 0;
+  workspace.monthlyGoal = 0;
+  assert.equal(hooks.calculateMorningPaceProjection(workspace, context).available, false);
 });
 
 test("cards repartem exatamente o saldo coletivo pelo déficit mensal vivo", () => {

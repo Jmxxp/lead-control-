@@ -3,6 +3,7 @@
   "short_name": "Leads",
   "description": "Sistema de controle e análise de leads para lojas e agências.",
   "lang": "pt-BR",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

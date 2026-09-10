@@ -1212,6 +1212,14 @@
         professional.remaining_month,
         professional.remainingMonth
       );
+      const actualTodayAgainstTarget = firstDefined(
+        moneyFromCents(firstDefined(
+          professional.actual_today_against_target_cents,
+          professional.actualTodayAgainstTargetCents
+        )),
+        professional.actual_today_against_target,
+        professional.actualTodayAgainstTarget
+      );
       return {
         id,
         name: String(firstDefined(professional.name, professional.professional_name, "Vendedor")),
@@ -1254,6 +1262,8 @@
           previousActual(previous, "today", "actualToday"),
           0
         )),
+        actualTodayAgainstTarget: normalizeMoney(firstDefined(actualTodayAgainstTarget, 0)),
+        hasActualTodayAgainstTarget: actualTodayAgainstTarget != null,
         actualTodayBeforeConfiguration: normalizeMoney(firstDefined(
           professional.actual_today_before_configuration,
           professional.actualTodayBeforeConfiguration,
@@ -1452,8 +1462,10 @@
   }
 
   function goalProgress(actual, target) {
-    if (target <= 0) return 0;
-    return Math.min(Math.max(Math.round((actual / target) * 100), 0), 100);
+    const normalizedActual = Math.max(Number(actual) || 0, 0);
+    const normalizedTarget = Math.max(Number(target) || 0, 0);
+    if (normalizedTarget <= 0) return 0;
+    return Math.max(Math.round((normalizedActual / normalizedTarget) * 100), 0);
   }
 
   function formatShortDate(value) {
@@ -1487,6 +1499,51 @@
 
   function morningMoneyCents(value) {
     return Math.max(Math.round(normalizeMoney(value) * 100), 0);
+  }
+
+  function morningBalanceSnapshot(targetCents, actualCents) {
+    const target = Math.max(Math.round(Number(targetCents || 0)), 0);
+    const actual = Math.max(Math.round(Number(actualCents || 0)), 0);
+    const balanceCents = actual - target;
+    const progressPercent = target > 0 ? goalProgress(actual, target) : 0;
+    return {
+      targetCents: target,
+      actualCents: actual,
+      balanceCents,
+      remainingCents: Math.max(-balanceCents, 0),
+      surplusCents: Math.max(balanceCents, 0),
+      status: balanceCents > 0
+        ? "surplus"
+        : balanceCents < 0 ? "remaining" : target > 0 ? "met" : "neutral",
+      progressPercent,
+      progressBarPercent: Math.min(progressPercent, 100),
+    };
+  }
+
+  function morningProfessionalActualAgainstTargetCents(professional, key, morning) {
+    if (key === "today") {
+      if (professional?.hasActualTodayAgainstTarget) {
+        return morningMoneyCents(professional.actualTodayAgainstTarget);
+      }
+      const liveTodayCents = morningMoneyCents(professional?.actualToday);
+      if (morning?.configurationActualSnapshotActive !== true) return liveTodayCents;
+      return Math.max(
+        liveTodayCents - morningMoneyCents(professional?.actualTodayBeforeConfiguration),
+        0,
+      );
+    }
+    return morningMoneyCents(key === "week" ? professional?.actualWeek : professional?.actualMonth);
+  }
+
+  function morningProfessionalMonthActualBeforeTodayCents(professional, morning) {
+    if (morning?.configurationActualSnapshotActive === true) {
+      return morningMoneyCents(professional?.actualMonthAtConfiguration);
+    }
+    return Math.max(
+      morningMoneyCents(professional?.actualMonth)
+        - morningMoneyCents(professional?.actualToday),
+      0,
+    );
   }
 
   function morningUsesServerTeamGoals(morning = state.morning) {
@@ -1760,6 +1817,31 @@
     return targets;
   }
 
+  function calculateMorningDailyTargetShares(morning, targetCents) {
+    const participants = morningCalculationParticipants(morning?.professionals || []);
+    const monthlyBalances = participants.map((professional) => {
+      const monthGoalCents = morningMoneyCents(professional.goalMonth || professional.goalAmount);
+      return {
+        id: professional.id,
+        name: professional.name,
+        monthGoalCents,
+        deficitCents: Math.max(
+          monthGoalCents - morningProfessionalMonthActualBeforeTodayCents(professional, morning),
+          0,
+        ),
+      };
+    });
+    const totalDeficitCents = monthlyBalances.reduce((sum, item) => sum + item.deficitCents, 0);
+    const totalMonthGoalCents = monthlyBalances.reduce((sum, item) => sum + item.monthGoalCents, 0);
+    return morningApportionGoalCents(targetCents, monthlyBalances.map((item) => ({
+      id: item.id,
+      name: item.name,
+      weightCents: totalDeficitCents > 0
+        ? item.deficitCents
+        : totalMonthGoalCents > 0 ? item.monthGoalCents : 1,
+    })));
+  }
+
   function calculateMorningRemainingGoalPlan(morning, context) {
     // A ordem da fila é uma mecânica independente. Usar uma ordem estável por id
     // impede que qualquer cálculo mude ao avançar a rotação.
@@ -1825,40 +1907,11 @@
     const todayTargetCents = context.todayIsWorkingDay && context.remainingWeekWorkdays
       ? Math.round(weekBalanceTodayCents / context.remainingWeekWorkdays)
       : 0;
-    const dailyAllocations = participants.map((professional) => {
-      const weekGoalCents = weekTargetsCents.get(professional.id) || 0;
-      const professionalTodayActualCents = morningMoneyCents(professional.actualToday);
-      const professionalTodayBeforeConfigurationCents = Math.min(morningMoneyCents(
-        professional.actualTodayBeforeConfiguration
-      ), professionalTodayActualCents);
-      const actualWeekBeforeTodayCents = snapshotActive
-        ? morningMoneyCents(professional.actualWeekAtConfiguration)
-        : Math.max(
-          morningMoneyCents(professional.actualWeek)
-          - professionalTodayActualCents
-          + professionalTodayBeforeConfigurationCents,
-          0
-        );
-      return {
-        id: professional.id,
-        name: professional.name,
-        weekGoalCents,
-        monthGoalCents: morningMoneyCents(professional.goalAmount || professional.goalMonth),
-        gapCents: Math.max(weekGoalCents - actualWeekBeforeTodayCents, 0),
-      };
-    });
-    const totalWeekGapCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.gapCents, 0);
-    const totalWeekGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.weekGoalCents, 0);
-    const totalConfiguredGoalCents = dailyAllocations.reduce((sum, allocation) => sum + allocation.monthGoalCents, 0);
-    const todayTargetsCents = morningApportionGoalCents(todayTargetCents, dailyAllocations.map((allocation) => ({
-      id: allocation.id,
-      name: allocation.name,
-      weightCents: totalWeekGapCents > 0
-        ? allocation.gapCents
-        : totalWeekGoalCents > 0
-          ? allocation.weekGoalCents
-          : totalConfiguredGoalCents > 0 ? allocation.monthGoalCents : 1,
-    })));
+    // O alvo diário da equipe permanece fixo durante o expediente. A divisão
+    // entre vendedores olha o déficit mensal no início do dia: quem está mais
+    // distante da própria meta recebe uma fatia proporcionalmente maior, sem
+    // transformar a venda de hoje em uma meta móvel.
+    const todayTargetsCents = calculateMorningDailyTargetShares(morning, todayTargetCents);
     return { todayTargetCents, weekTargetCents, todayTargetsCents, weekTargetsCents };
   }
 
@@ -1969,6 +2022,133 @@
     );
   }
 
+  function calculateMorningDailyTargetsByMonthlyDeficit(morning, context, goalPlanOverride = null) {
+    const resolvedContext = context || calculateMorningWorkingDayContext(
+      morning?.today,
+      morning?.weekStart,
+      morning?.weekEnd,
+      morning?.closedDays,
+    );
+    const goalPlan = !morningUsesServerTeamGoals(morning)
+      ? goalPlanOverride || calculateMorningRemainingGoalPlan(morning, resolvedContext)
+      : null;
+    const targetCents = morningCollectiveTargetCents(
+      morning,
+      "today",
+      resolvedContext,
+      goalPlan,
+    );
+    return calculateMorningDailyTargetShares(morning, targetCents);
+  }
+
+  function calculateMorningGoalPerformance(morning, key, context, goalPlanOverride = null) {
+    const validKey = ["today", "week", "month"].includes(key) ? key : "month";
+    const resolvedContext = context || calculateMorningWorkingDayContext(
+      morning?.today,
+      morning?.weekStart,
+      morning?.weekEnd,
+      morning?.closedDays,
+    );
+    const goalPlan = ["today", "week"].includes(validKey) && !morningUsesServerTeamGoals(morning)
+      ? goalPlanOverride || calculateMorningRemainingGoalPlan(morning, resolvedContext)
+      : null;
+    const team = morningBalanceSnapshot(
+      morningCollectiveTargetCents(morning, validKey, resolvedContext, goalPlan),
+      morningEffectiveActualCents(morning, validKey),
+    );
+    const dailyTargets = validKey === "today"
+      ? calculateMorningDailyTargetShares(morning, team.targetCents)
+      : null;
+    const professionals = new Map(morningCalculationParticipants(morning?.professionals || []).map((professional) => {
+      const targetCents = validKey === "today"
+        ? dailyTargets.get(professional.id) || 0
+        : morningMoneyCents(morningProfessionalGoal(
+          professional,
+          validKey,
+          resolvedContext,
+          goalPlan,
+          morning,
+        ));
+      return [professional.id, {
+        id: professional.id,
+        name: professional.name,
+        ...morningBalanceSnapshot(
+          targetCents,
+          morningProfessionalActualAgainstTargetCents(professional, validKey, morning),
+        ),
+      }];
+    }));
+    return { key: validKey, ...team, professionals };
+  }
+
+  function calculateMorningPaceProjection(morning, context) {
+    const resolvedContext = context || calculateMorningWorkingDayContext(
+      morning?.today,
+      morning?.weekStart,
+      morning?.weekEnd,
+      morning?.closedDays,
+    );
+    const totalWorkdays = Math.max(Math.round(Number(
+      resolvedContext?.total || morning?.workdaysInMonth || 0
+    )), 0);
+    const fallbackElapsed = totalWorkdays - Math.max(Math.round(Number(
+      morning?.remainingWorkdaysInMonth || 0
+    )), 0) + (morning?.todayIsWorkingDay ? 1 : 0);
+    const elapsedWorkdays = Math.min(Math.max(Math.round(Number(
+      resolvedContext?.throughToday ?? fallbackElapsed
+    )), 0), totalWorkdays);
+    const targetCents = morningMoneyCents(morning?.goals?.month?.target || morning?.monthlyGoal);
+    const actualCents = morningMoneyCents(morning?.goals?.month?.actual);
+    const available = targetCents > 0 && totalWorkdays > 0 && elapsedWorkdays > 0;
+    const projectedCents = available
+      ? Math.max(Math.round((actualCents * totalWorkdays) / elapsedWorkdays), 0)
+      : 0;
+    const projection = morningBalanceSnapshot(targetCents, projectedCents);
+    return {
+      available,
+      elapsedWorkdays,
+      totalWorkdays,
+      actualCents,
+      targetCents,
+      projectedCents,
+      projectedAttainmentPercent: available ? projection.progressPercent : 0,
+      status: available ? projection.status : "neutral",
+    };
+  }
+
+  function morningBalancePresentation(balance) {
+    if (balance.status === "surplus") {
+      return {
+        label: "Acima",
+        amount: `+ ${formatCurrency(balance.surplusCents / 100)}`,
+        detail: `+ ${formatCurrency(balance.surplusCents / 100)} acima da meta`,
+        icon: "fa-arrow-trend-up",
+      };
+    }
+    if (balance.status === "remaining") {
+      return {
+        label: "Falta",
+        amount: formatCurrency(balance.remainingCents / 100),
+        detail: `Faltam ${formatCurrency(balance.remainingCents / 100)}`,
+        icon: "fa-bullseye",
+      };
+    }
+    if (balance.status === "met") {
+      return {
+        label: "Meta batida",
+        amount: formatCurrency(0),
+        detail: "Meta batida",
+        icon: "fa-circle-check",
+      };
+    }
+    return {
+      label: "Sem meta",
+      amount: formatCurrency(0),
+      detail: "Sem meta neste período",
+      icon: "fa-minus",
+    };
+  }
+
   function renderMorningIndividualGoals(key, goalPlan = null, context = morningWorkingDayContext()) {
     const professionals = [...morningParticipants(state.morning?.professionals || [])].sort((a, b) => (
       String(a.name || "").localeCompare(String(b.name || ""), "pt-BR")
@@ -1978,13 +2158,24 @@
     const resolvedGoalPlan = ["today", "week"].includes(key) && !morningUsesServerTeamGoals()
       ? goalPlan || morningRemainingGoalPlan(context)
       : null;
-    const remainingByProfessional = calculateMorningIndividualRemaining(
+    const performance = calculateMorningGoalPerformance(
       state.morning,
       key,
       context,
       resolvedGoalPlan,
     );
-    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Quanto falta por vendedor</span><div>${professionals.map((professional) => `<p><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong>${escapeHtml(formatCurrency((remainingByProfessional.get(professional.id) || 0) / 100))}</strong></p>`).join("")}</div></div>`;
+    return `<div class="attendance-morning-individual-goals"><span><i class="fa-solid fa-users" aria-hidden="true"></i>Saldo por vendedor</span><div>${professionals.map((professional) => {
+      const balance = performance.professionals.get(professional.id) || morningBalanceSnapshot(0, 0);
+      const presentation = morningBalancePresentation(balance);
+      return `<p class="is-${balance.status}"><span title="${escapeHtml(professional.name)}">${escapeHtml(professional.name)}</span><strong><small class="attendance-morning-balance-label">${escapeHtml(presentation.label)}</small><span>${escapeHtml(presentation.amount)}</span></strong></p>`;
+    }).join("")}</div></div>`;
+  }
+
+  function renderMorningPace(context) {
+    const pace = calculateMorningPaceProjection(state.morning, context);
+    if (!pace.available) return "";
+    const paceStatus = pace.projectedAttainmentPercent >= 100 ? "on-track" : "behind";
+    return `<div class="attendance-morning-pace is-${paceStatus}"><span><i class="fa-solid fa-chart-line" aria-hidden="true"></i>No ritmo atual</span><strong>${pace.projectedAttainmentPercent}% da meta</strong><small>Projeção de ${escapeHtml(formatCurrency(pace.projectedCents / 100))} no mês</small></div>`;
   }
 
   function renderMorningGoalCard(key, label, icon, helper, goalPlan = null, context = morningWorkingDayContext()) {
@@ -1998,13 +2189,21 @@
         target: (key === "today" ? resolvedGoalPlan.todayTargetCents : resolvedGoalPlan.weekTargetCents) / 100,
       };
     }
-    const progress = goalProgress(goal.actual, goal.target);
-    return `<article class="attendance-morning-goal is-${key}">
-      <header><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><b>${progress}%</b></header>
+    const performance = calculateMorningGoalPerformance(
+      state.morning,
+      key,
+      context,
+      resolvedGoalPlan,
+    );
+    const balancePresentation = morningBalancePresentation(performance);
+    return `<article class="attendance-morning-goal is-${key} is-${performance.status}">
+      <header><span><i class="fa-solid ${icon}" aria-hidden="true"></i>${label}</span><b>${performance.progressPercent}%</b></header>
       <span class="attendance-morning-general-label">Meta geral da equipe</span>
       <strong>${escapeHtml(formatCurrency(goal.target))}</strong>
       <small>${escapeHtml(formatCurrency(goal.actual))} realizado${helper ? ` · ${escapeHtml(helper)}` : ""}</small>
-      <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${progress}%"></b></i>
+      <span class="attendance-morning-balance-label is-${performance.status}"><i class="fa-solid ${balancePresentation.icon}" aria-hidden="true"></i>${escapeHtml(balancePresentation.detail)}</span>
+      <i class="attendance-morning-progress" aria-hidden="true"><b style="width:${performance.progressBarPercent}%"></b></i>
+      ${key === "month" ? renderMorningPace(context) : ""}
       ${renderMorningIndividualGoals(key, resolvedGoalPlan, context)}
     </article>`;
   }
@@ -5302,7 +5501,7 @@
             remaining_workdays_in_week: "integer (Monday through Saturday, including today)",
             remaining_workdays_in_month: "integer (Monday through Saturday, including today)",
             goals: "object",
-            professionals: "array; each participant includes goal_*_target and remaining_today/week/month (plus exact *_cents fields); remaining values partition the collective balance by each live monthly deficit",
+            professionals: "array; each participant includes goal_*_target, actual_today_against_target and remaining_today/week/month (plus exact *_cents fields); remaining values partition the collective balance by each live monthly deficit",
             queue: "array",
           },
         },
@@ -5350,7 +5549,9 @@
         "Dias sem expediente aceitam apenas o mês atual, de segunda a sábado, sem duplicatas; motivo vazio vira Sem expediente.",
         "Meta, divisão, fila e dias sem expediente são salvos atomicamente pela RPC v2; não há fallback silencioso após a capability ser liberada.",
         "A meta semanal nasce do saldo mensal; a meta diária usa o saldo da semana até ontem e redistribui falta ou excesso nos dias seguintes.",
-        "Em cada período, os saldos individuais fecham em centavos com o saldo coletivo e são ponderados pelo déficit mensal vivo de cada participante; fila e vendedor da vez não alteram valores.",
+        "O alvo diário individual fecha em centavos com o alvo da equipe e é ponderado pelo déficit mensal de cada participante no início do dia; vendas do expediente não transformam o alvo em uma meta móvel.",
+        "O saldo assinado compara o realizado ao alvo fixo e preserva excedentes da equipe e de cada vendedor, em vez de limitar o resultado a zero.",
+        "A projeção mensal usa o ritmo médio dos dias úteis transcorridos e pode ultrapassar 100% sem esconder o valor projetado.",
         "A primeira configuração do mês incorpora atendimentos já registrados, inclusive os do próprio dia; vendas posteriores aparecem no realizado sem mover o alvo durante o expediente.",
         "A fila só avança por uma ação explícita do usuário.",
       ],
@@ -5362,7 +5563,10 @@
       attendanceRecordDate,
       attendanceUpdateFeedbackMessage,
       attendanceUpdateArgs,
+      calculateMorningDailyTargetsByMonthlyDeficit,
+      calculateMorningGoalPerformance,
       calculateMorningIndividualRemaining,
+      calculateMorningPaceProjection,
       calculateMorningRemainingGoalPlan,
       calculateMorningWorkingDayContext,
       cloneMorningDraft,
@@ -5376,9 +5580,11 @@
       isAttendanceEditConflict,
       mergeMorningDraftWithWorkspace,
       morningMonthDateLimits,
+      morningBalanceSnapshot,
       morningEffectiveActualCents,
       morningProfessionalRemainingAmount,
       morningUsesServerGoalBalance,
+      goalProgress,
       normalizeRecord,
       normalizeSaveFeedback,
       normalizeMorningClosedDays,

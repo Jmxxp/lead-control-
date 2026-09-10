@@ -28,18 +28,19 @@
     <link rel="icon" type="image/png" sizes="512x512" href="assets/site-icon.png?v=20260804-brand-2" />
     <link rel="shortcut icon" href="favicon.ico?v=20260804-brand-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260804-brand-2" />
-    <link rel="manifest" href="manifest.webmanifest?v=20260804-brand-2" />
-    <link rel="stylesheet" href="styles.css?v=20260901-scroll-handoff-1" />
+    <link rel="manifest" href="manifest.webmanifest?v=20260909-daily-push-1" />
+    <link rel="stylesheet" href="styles.css?v=20260909-daily-push-1" />
     <link rel="stylesheet" href="prospections.css?v=20260901-topbar-collision-1" />
-    <link rel="stylesheet" href="attendances.css?v=20260904-individual-goals-filters-1" />
+    <link rel="stylesheet" href="attendances.css?v=20260909-goal-balance-1" />
     <link id="prospecOriginalStyles" rel="stylesheet" href="prospec-original.css?v=20260901-scroll-handoff-1" disabled />
-    <link rel="stylesheet" href="mobile.css?v=20260828-multi-agency-1" />
-    <link rel="stylesheet" href="support-assistant.css?v=20260901-topbar-collision-1" />
+    <link rel="stylesheet" href="mobile.css?v=20260909-daily-push-1" />
+    <link rel="stylesheet" href="support-assistant.css?v=20260910-push-topbar-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0"></script>
-    <script src="app.js?v=20260904-attendance-realtime-1" defer></script>
+    <script src="pwa-notifications.js?v=20260909-daily-push-1" defer></script>
+    <script src="app.js?v=20260909-daily-push-1" defer></script>
     <script src="prospections.js?v=20260901-weekly-bonus-payout-1" defer></script>
-    <script src="attendances.js?v=20260904-attendance-realtime-1" defer></script>
+    <script src="attendances.js?v=20260909-goal-balance-1" defer></script>
     <script src="support-assistant.js?v=20260819-human-search-2" defer></script>
   </head>
   <body>
@@ -119,6 +120,10 @@
           <button class="ghost-button topbar-button topbar-icon-button appointment-monitor-toggle" type="button" id="appointmentMonitorToggle" aria-label="Confirmar visitas" title="Confirmar visitas" aria-expanded="false" aria-controls="appointmentMonitorPanel" hidden>
             <i class="fa-solid fa-check" aria-hidden="true"></i>
             <b id="appointmentMonitorBadge" class="notification-badge" hidden>0</b>
+          </button>
+          <button class="ghost-button topbar-button topbar-icon-button pwa-notification-button" type="button" id="pushNotificationButton" aria-label="Relatórios e notificações" title="Relatórios e notificações" aria-haspopup="dialog" aria-controls="pushNotificationModal" aria-pressed="false" data-state="idle" hidden>
+            <i class="fa-solid fa-bell" aria-hidden="true"></i>
+            <span class="pwa-notification-indicator" aria-hidden="true"></span>
           </button>
           <button class="ghost-button topbar-button topbar-icon-button" type="button" id="settingsButton" aria-label="Configurações" title="Configurações" hidden>
             <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -1990,6 +1995,64 @@
             <button class="primary-button legal-accept-button" type="submit"><i class="fa-solid fa-signature"></i>Assinar e continuar</button>
           </form>
         </div>
+      </section>
+    </div>
+
+    <div id="pushNotificationModal" class="modal-backdrop pwa-notification-backdrop" hidden>
+      <section class="modal-dialog pwa-notification-dialog" role="dialog" aria-modal="true" aria-labelledby="pushNotificationTitle" aria-describedby="pushNotificationSubtitle">
+        <header class="lead-details-header pwa-notification-header">
+          <div class="pwa-notification-header-copy">
+            <span class="pwa-notification-header-icon" aria-hidden="true"><i class="fa-solid fa-bell"></i></span>
+            <div>
+              <p class="eyebrow">Relatório diário</p>
+              <h2 id="pushNotificationTitle">Notificações</h2>
+              <p id="pushNotificationSubtitle">Defina quando cada agência recebe o resumo comercial da loja.</p>
+            </div>
+          </div>
+          <button class="ghost-button topbar-icon-button pwa-notification-close" type="button" id="pushNotificationCloseButton" aria-label="Fechar" title="Fechar">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <section id="pushNotificationDeviceSection" class="pwa-notification-device-section" aria-labelledby="pushNotificationDeviceTitle" hidden>
+          <div id="pushNotificationStatus" class="pwa-notification-status" data-state="idle" role="status" aria-live="polite">
+            <span class="pwa-notification-status-icon" aria-hidden="true"><i class="fa-solid fa-bell"></i></span>
+            <div class="pwa-notification-status-copy">
+              <strong id="pushNotificationDeviceTitle">Notificações neste aparelho</strong>
+              <p id="pushNotificationStatusText">Verificando a compatibilidade do navegador…</p>
+            </div>
+          </div>
+
+          <aside id="pushNotificationInstallHint" class="pwa-notification-install-hint" hidden>
+            <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+            <p>
+              <strong>Instale o app primeiro</strong>
+              <span>No iPhone ou iPad, toque em Compartilhar, depois em “Adicionar à Tela de Início” e abra o app pelo novo ícone.</span>
+            </p>
+          </aside>
+        </section>
+
+        <section id="dailyReportSettingsSection" class="pwa-daily-report-section" aria-labelledby="dailyReportSettingsTitle">
+          <header class="pwa-daily-report-heading">
+            <div>
+              <p class="eyebrow">Envio automático</p>
+              <h3 id="dailyReportSettingsTitle">Resumo por loja e agência</h3>
+            </div>
+            <p>Vendas, prospecções e taxa de conversão do dia.</p>
+          </header>
+          <div id="dailyReportSettingsList" class="pwa-daily-report-list" aria-live="polite">
+            <div class="pwa-daily-report-loading"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i><span>Carregando configurações…</span></div>
+          </div>
+        </section>
+
+        <p id="pushNotificationMessage" class="form-message" role="status" aria-live="polite"></p>
+        <footer class="modal-actions pwa-notification-actions">
+          <button class="ghost-button" type="button" id="pushNotificationCancelButton">Fechar</button>
+          <button class="primary-button compact-primary" type="button" id="pushNotificationActionButton" hidden>
+            <i class="fa-solid fa-bell" aria-hidden="true"></i>
+            <span>Ativar neste aparelho</span>
+          </button>
+        </footer>
       </section>
     </div>
 
