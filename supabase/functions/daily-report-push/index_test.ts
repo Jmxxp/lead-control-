@@ -2,7 +2,9 @@ import {
   buildNotification,
   constantTimeEqual,
   formatCurrencyFromCents,
+  formatPercent,
   handleRequest,
+  reportConversionRate,
 } from "./index.ts";
 
 function assert(condition: unknown, message: string) {
@@ -35,7 +37,9 @@ Deno.test("monta notificacao transparente com as tres metricas", () => {
       revenue_cents: 476000,
       prospections: 12,
       converted_prospections: 4,
-      conversion_rate: 33.3,
+      attendances: 5,
+      sales: 2,
+      conversion_rate: 40,
       url: "./?module=attendances",
     },
   }));
@@ -43,8 +47,47 @@ Deno.test("monta notificacao transparente com as tres metricas", () => {
   assert(payload.title === "Resumo diário · Ótica Centro", "titulo incorreto");
   assert(payload.body.includes("4.760,00"), "faturamento ausente");
   assert(payload.body.includes("12 prospecções"), "prospeccoes ausentes");
-  assert(payload.body.includes("33,3% de conversão"), "conversao ausente");
+  assert(payload.body.includes("40% de conversão"), "conversao de atendimentos ausente");
   assert(payload.data.storeId === "store-1", "loja ausente");
+});
+
+Deno.test("calcula conversao sobre todos os atendimentos quando a taxa nao vier no payload", () => {
+  const conversionRate = reportConversionRate({
+    store_id: "store-1",
+    store_name: "Ótica Centro",
+    report_date: "2026-09-12",
+    revenue_cents: 0,
+    prospections: 7,
+    converted_prospections: 6,
+    attendances: 31,
+    sales: 27,
+  });
+
+  assert(Math.abs(conversionRate - (27 / 31) * 100) < 0.001, "base de atendimentos incorreta");
+  assert(formatPercent(conversionRate) === "87,1", "percentual brasileiro incorreto");
+});
+
+Deno.test("notificacao sem atendimentos sempre exibe zero antes do percentual", () => {
+  const payload = JSON.parse(buildNotification({
+    delivery_id: "delivery-empty",
+    endpoint: "https://push.example.test/empty",
+    p256dh: "key",
+    auth: "auth",
+    content_encoding: "aes128gcm",
+    attempt: 1,
+    payload: {
+      store_id: "store-1",
+      store_name: "Ótica Centro",
+      report_date: "2026-09-13",
+      revenue_cents: 0,
+      prospections: 0,
+      converted_prospections: 0,
+      attendances: 0,
+      sales: 0,
+    },
+  }));
+
+  assert(payload.body.includes("0% de conversão"), `percentual vazio: ${payload.body}`);
 });
 
 Deno.test("worker recusa chamada sem o segredo do agendador", async () => {

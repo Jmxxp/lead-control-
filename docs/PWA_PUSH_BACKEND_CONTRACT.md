@@ -107,6 +107,7 @@ O service worker limita textos, ignora ícones fornecidos pelo servidor e só ac
 - Assinaturas que retornarem HTTP `404` ou `410` devem ser revogadas.
 - Falhas temporárias podem ser tentadas novamente com limite e backoff.
 - O relatório deve calcular o fechamento do dia da loja no fuso configurado: valor vendido, total de prospecções e taxa de conversão.
+- A taxa de conversão é sempre `atendimentos com resultado de compra ÷ todos os atendimentos × 100`. Prospecções não formam o denominador dessa taxa.
 - A entrega Web Push é por natureza “best effort”; `has_active_subscription` informa se existe ao menos um aparelho apto, não garante que o sistema operacional exibirá cada notificação.
 
 ## Restrições no celular

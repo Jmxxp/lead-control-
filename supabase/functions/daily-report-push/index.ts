@@ -14,7 +14,9 @@ type Delivery = {
     revenue_cents: number | string;
     prospections: number | string;
     converted_prospections: number | string;
-    conversion_rate: number | string;
+    attendances?: number | string;
+    sales?: number | string;
+    conversion_rate?: number | string;
     url?: string;
   };
   attempt: number;
@@ -64,10 +66,23 @@ function formatCurrencyFromCents(value: number | string | undefined) {
 }
 
 function formatPercent(value: number | string | undefined) {
-  return new Intl.NumberFormat("pt-BR", {
+  const formatted = new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   }).format(asSafeNumber(value));
+  return formatted.trim() || "0";
+}
+
+function reportConversionRate(report: Delivery["payload"]) {
+  const explicitRate = Number(report.conversion_rate);
+  if (Number.isFinite(explicitRate)) {
+    return Math.min(100, Math.max(0, explicitRate));
+  }
+
+  const attendances = Math.max(0, Math.trunc(asSafeNumber(report.attendances)));
+  const sales = Math.max(0, Math.trunc(asSafeNumber(report.sales)));
+  if (!attendances) return 0;
+  return Math.min(100, (sales / attendances) * 100);
 }
 
 function pluralizeProspections(value: number) {
@@ -84,7 +99,7 @@ function buildNotification(delivery: Delivery) {
     title: `Resumo diário · ${storeName}`,
     body: `${formatCurrencyFromCents(report.revenue_cents)} vendidos · ${
       pluralizeProspections(prospections)
-    } · ${formatPercent(report.conversion_rate)}% de conversão`,
+    } · ${formatPercent(reportConversionRate(report))}% de conversão`,
     icon: "./assets/app-icon-192.png",
     badge: "./assets/favicon-32.png",
     tag: `daily-report-${report.store_id}-${reportDate}`,
@@ -264,5 +279,7 @@ export {
   buildNotification,
   constantTimeEqual,
   formatCurrencyFromCents,
+  formatPercent,
   handleRequest,
+  reportConversionRate,
 };
