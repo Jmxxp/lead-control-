@@ -67,6 +67,7 @@ test("prefill mantém todos os campos comerciais e converte timestamp no fuso de
     tag: "purchase",
     purchaseValue: "1.200,00",
     serviceOrder: "OS-1048",
+    serviceOrders: [{ serviceOrder: "OS-1048", value: "1.200,00" }],
   });
 
   assert.equal(hooks.formatDateTime("2026-09-01T02:30:00Z").includes("23:30"), true);
@@ -84,6 +85,164 @@ test("parser monetário é estrito, brasileiro e não reinterpreta milhar como c
   assert.throws(() => hooks.parseAttendanceMoney("1.23"), /formato brasileiro/i);
   assert.throws(() => hooks.parseAttendanceMoney("1,234"), /formato brasileiro/i);
   assert.throws(() => hooks.parseAttendanceMoney("valor 50"), /formato brasileiro/i);
+});
+
+test("múltiplas OS são normalizadas, somadas em centavos e preservadas no prefill", () => {
+  const record = hooks.normalizeRecord({
+    id: "attendance-multi-os",
+    tag: "purchase",
+    service_orders: [
+      { service_order: "OS-200", amount: "100.01", position: 2 },
+      { order_number: "OS-100", value: "200.02", position: 1 },
+    ],
+  });
+
+  assert.equal(record.purchaseValue, 300.03);
+  assert.deepEqual(plain(record.serviceOrders.map(({ serviceOrder, amount, position }) => ({ serviceOrder, amount, position }))), [
+    { serviceOrder: "OS-100", amount: 200.02, position: 1 },
+    { serviceOrder: "OS-200", amount: 100.01, position: 2 },
+  ]);
+  assert.equal(hooks.serviceOrdersTotalCents(record.serviceOrders), 30003);
+  assert.deepEqual(plain(hooks.createAttendanceEditDraft(record).serviceOrders), [
+    { serviceOrder: "OS-100", value: "200,02" },
+    { serviceOrder: "OS-200", value: "100,01" },
+  ]);
+});
+
+test("validação de compra gera payload de várias OS e rejeita duplicidade", () => {
+  const common = {
+    professional_name: "Ana",
+    attended_on: "2026-09-01",
+    customer_name: "Cliente",
+    phone: "11999999999",
+    cpf: "",
+    description: "Duas compras no mesmo atendimento",
+    tag: "purchase",
+    service_value: "",
+    service_orders: [
+      { serviceOrder: "OS-10", value: "1.000,01" },
+      { serviceOrder: "OS-11", value: "249,99" },
+    ],
+  };
+  const options = {
+    professionalNames: ["Ana"],
+    dateLimits: { min: "2024-09-01", today: "2026-09-01" },
+    retroactiveDatesGranted: true,
+  };
+  const submitted = hooks.validateAttendanceSubmission(common, options);
+
+  assert.equal(submitted.purchaseValue, 1250);
+  assert.equal(submitted.serviceOrder, "OS-10");
+  assert.deepEqual(plain(submitted.serviceOrders), [
+    { service_order: "OS-10", amount: 1000.01 },
+    { service_order: "OS-11", amount: 249.99 },
+  ]);
+  assert.throws(() => hooks.validateAttendanceSubmission({
+    ...common,
+    service_orders: [
+      { serviceOrder: "OS-10", value: "10,00" },
+      { serviceOrder: " os-10 ", value: "20,00" },
+    ],
+  }, options), /adicionada mais de uma vez/i);
+});
+
+test("cancelamento normaliza auditoria e envia escopo, token e motivo", () => {
+  const record = hooks.normalizeRecord({
+    id: "attendance-canceled",
+    store_id: "store-1",
+    updated_at: "2026-09-15T12:00:00Z",
+    canceled_at: "2026-09-15T12:05:00Z",
+    canceled_by_name: "Admin",
+    cancellation_reason: "Compra desfeita",
+    links: {
+      active: false,
+      historical: true,
+      lead: { id: "lead-original", name: "Cliente original", historical: true },
+      prospection: { id: "prospection-original", historical: true },
+    },
+  });
+  assert.equal(record.canceled, true);
+  assert.equal(record.canceledBy, "Admin");
+  assert.equal(record.cancellationReason, "Compra desfeita");
+  assert.equal(record.linkedLead.linked, false);
+  assert.equal(record.linkedLead.historical, true);
+  assert.equal(record.linkedProspection.linked, false);
+  assert.equal(record.linkedProspection.historical, true);
+  assert.deepEqual(plain(hooks.attendanceCancelArgs(record, "  Cliente desistiu  ")), {
+    p_attendance_id: "attendance-canceled",
+    p_store_id: "store-1",
+    p_expected_updated_at: "2026-09-15T12:00:00Z",
+    p_reason: "Cliente desistiu",
+  });
+});
+
+test("cancelamento só é confirmado por registro autoritativo cancelado do mesmo escopo", () => {
+  const expected = { id: "attendance-canceled", storeId: "store-1" };
+  const valid = hooks.authoritativeCanceledAttendance({
+    canceled: true,
+    attendance: {
+      id: expected.id,
+      store_id: expected.storeId,
+      canceled_at: "2026-09-15T12:05:00Z",
+    },
+  }, expected);
+
+  assert.equal(valid.id, expected.id);
+  assert.equal(valid.canceled, true);
+  assert.equal(hooks.authoritativeCanceledAttendance({ success: true }, expected), null);
+  assert.equal(hooks.authoritativeCanceledAttendance({
+    attendance: { id: expected.id, store_id: expected.storeId, canceled: false },
+  }, expected), null);
+  assert.equal(hooks.authoritativeCanceledAttendance({
+    attendance: { id: expected.id, canceled_at: "2026-09-15T12:05:00Z" },
+  }, expected), null);
+  assert.equal(hooks.authoritativeCanceledAttendance({
+    attendance: { id: expected.id, store_id: "store-2", canceled_at: "2026-09-15T12:05:00Z" },
+  }, expected), null);
+});
+
+test("histórico cancelado não inventa uma segunda origem ausente", () => {
+  const record = hooks.normalizeRecord({
+    id: "attendance-canceled-single-origin",
+    canceled_at: "2026-09-15T12:05:00Z",
+    links: {
+      active: false,
+      historical: true,
+      lead: { id: "lead-original", historical: true },
+      prospection: null,
+    },
+  });
+
+  assert.equal(record.linkedLead.historical, true);
+  assert.equal(record.linkedProspection.historical, false);
+  assert.equal(record.linkedProspection.id, "");
+});
+
+test("fallback de indicadores ignora cancelados no valor, meta e conversão", () => {
+  const metrics = hooks.embeddedAttendanceMetricData([
+    hooks.normalizeRecord({
+      id: "active-purchase",
+      tag: "purchase",
+      purchase_value: 450,
+      service_value: 25,
+      phone: "11999990001",
+    }),
+    hooks.normalizeRecord({
+      id: "canceled-purchase",
+      tag: "purchase",
+      purchase_value: 900,
+      service_value: 50,
+      phone: "11999990002",
+      canceled_at: "2026-09-15T12:05:00Z",
+    }),
+  ]);
+
+  assert.equal(metrics.total, 1);
+  assert.equal(metrics.purchases, 1);
+  assert.equal(metrics.revenue, 450);
+  assert.equal(metrics.serviceValue, 25);
+  assert.equal(metrics.conversion, 100);
+  assert.equal(metrics.uniqueCustomers, 1);
 });
 
 test("normalização e prefill distinguem NULL de zero no valor do atendimento", () => {
@@ -213,6 +372,7 @@ test("RPC de atualização recebe todos os campos mutáveis e o expected_updated
     serviceValue: 25.5,
     purchaseValue: 300,
     serviceOrder: "OS-20",
+    serviceOrders: [{ service_order: "OS-20", amount: 300 }],
   };
   const args = hooks.attendanceUpdateArgs({
     id: "attendance-3",
@@ -232,16 +392,14 @@ test("RPC de atualização recebe todos os campos mutáveis e o expected_updated
     p_description: "Descrição atualizada",
     p_tag: "purchase",
     p_service_value: 25.5,
-    p_purchase_value: 300,
-    p_service_order: "OS-20",
+    p_service_orders: [{ service_order: "OS-20", amount: 300 }],
   });
 
   const nonPurchase = hooks.attendanceUpdateArgs(
     { id: "attendance-3", storeId: "store-3", expectedUpdatedAt: "token" },
     { ...submitted, tag: "budget" },
   );
-  assert.equal(nonPurchase.p_purchase_value, null);
-  assert.equal(nonPurchase.p_service_order, null);
+  assert.deepEqual(plain(nonPurchase.p_service_orders), []);
 
   const nullService = hooks.attendanceUpdateArgs(
     { id: "attendance-3", storeId: "store-3", expectedUpdatedAt: "token" },
@@ -350,6 +508,34 @@ test("bloqueia sucesso quando o banco devolve data ou dados comerciais diferente
   assert.match(verification.message, /tela foi atualizada/i);
 });
 
+test("compra com múltiplas OS exige confirmação autoritativa da composição", () => {
+  const submitted = {
+    attendedOn: "2026-09-15",
+    professionalName: "Ana",
+    tag: "purchase",
+    purchaseValue: 300,
+    serviceOrders: [
+      { service_order: "OS-1", amount: 100 },
+      { service_order: "OS-2", amount: 200 },
+    ],
+  };
+  const missingOrders = {
+    attendance: {
+      id: "attendance-missing-orders",
+      attended_on: "2026-09-15",
+      professional_name: "Ana",
+      tag: "purchase",
+      purchase_value: 300,
+    },
+  };
+  const feedback = hooks.normalizeSaveFeedback(missingOrders, submitted);
+  const verification = hooks.verifyAttendanceAuthoritativeResponse(missingOrders, feedback, submitted);
+
+  assert.equal(verification.ok, false);
+  assert.deepEqual(plain(verification.mismatches.map((item) => item.field)), ["service_orders"]);
+  assert.match(verification.message, /ordens de serviço/i);
+});
+
 test("exige data autoritativa e compara os demais campos somente quando retornados", () => {
   const submitted = {
     attendedOn: "2026-08-31",
@@ -390,10 +576,20 @@ test("conflito otimista reconhece a mensagem exata emitida pelo SQL", () => {
 
 test("contrato e markup expõem edição dedicada sem fallback destrutivo", () => {
   const contract = window.AttendancesModule.getIntegrationContract();
-  assert.equal(contract.version, 6);
-  assert.equal(contract.rpc.update.name, "lc_update_attendance_v1");
+  assert.equal(contract.version, 7);
+  assert.equal(contract.rpc.update.name, "lc_update_attendance_v2");
+  assert.equal(contract.rpc.save.name, "lc_upsert_attendance_v4");
+  assert.equal(contract.rpc.list.name, "lc_list_attendances_v4");
+  assert.equal(contract.rpc.cancel.name, "lc_cancel_attendance_v1");
   assert.equal(contract.rpc.update.args.p_expected_updated_at.startsWith("timestamptz"), true);
   assert.match(source, /data-attendance-action="edit-attendance"/);
+  assert.match(source, /data-attendance-action="open-attendance-cancel"/);
+  assert.match(source, /data-attendance-cancel-dialog/);
+  assert.match(source, /data-attendance-action="add-service-order"/);
+  assert.match(source, /p_service_orders:/);
+  assert.match(source, /state\.cancelReason = target\.value/);
+  assert.match(source, /\|\| Boolean\(state\.cancelingRecordId\)/);
+  assert.match(source, /state\.generation \+= 1;\s+state\.listGeneration \+= 1;\s+state\.listLoading = false;\s+const replaceOptions = \{ recordId: cancelContext\.id/);
   assert.match(source, /data-attendance-edit-form/);
   assert.match(source, /A atualização do banco que libera a edição ainda não foi aplicada/);
   assert.match(source, /inert aria-hidden="true"/);
@@ -401,6 +597,9 @@ test("contrato e markup expõem edição dedicada sem fallback destrutivo", () =
   assert.match(source, /aria-live="assertive"/);
   assert.equal((source.match(/const feedback = normalizeSaveFeedback\(raw, submitted\);\s+const authoritativeResponse = verifyAttendanceAuthoritativeResponse\(raw, feedback, submitted\);/g) || []).length, 2);
   assert.match(source, /if \(!authoritativeResponse\.ok\)[\s\S]*?await loadWorkspace\(\{ quiet: true \}\);/);
+  assert.match(styles, /\.attendance-record\.is-canceled[\s\S]*?--att-danger/);
+  assert.match(styles, /\.attendance-service-order-row[\s\S]*?grid-template-columns/);
+  assert.match(styles, /\.attendance-card-action--cancel/);
 });
 
 test("rodapé da edição mantém ações alinhadas, com mesma altura e ícone", () => {

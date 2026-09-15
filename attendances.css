@@ -20,6 +20,8 @@
   --att-teal-soft: #dcefee;
   --att-sage: #60796d;
   --att-danger: #c74461;
+  --att-danger-action: #ad2343;
+  --att-danger-action-deep: #7e1830;
   --att-warning: #9b620f;
   --att-budget: #2563eb;
   --att-budget-soft: #e9f0ff;
@@ -687,6 +689,10 @@ body.is-dark .attendance-shell,
   background: linear-gradient(145deg, var(--att-mint-soft), color-mix(in srgb, var(--att-panel) 92%, var(--att-mint-soft)));
 }
 
+.attendance-purchase-fields {
+  container-type: inline-size;
+}
+
 .attendance-purchase-heading {
   display: flex;
   align-items: center;
@@ -718,6 +724,140 @@ body.is-dark .attendance-shell,
   font-size: 0.61rem;
 }
 
+.attendance-service-orders,
+.attendance-service-order-list {
+  display: grid;
+  gap: 9px;
+}
+
+.attendance-service-order-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--att-line) 86%, var(--att-emerald));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--att-panel) 90%, var(--att-mint-soft));
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--att-forest-deep) 7%, transparent);
+}
+
+.attendance-service-order-index {
+  display: grid;
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--att-forest-deep);
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.attendance-service-order-row .attendance-field {
+  grid-column: 2;
+}
+
+.attendance-service-order-remove {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 34%, var(--att-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--att-danger) 8%, var(--att-panel));
+  color: var(--att-danger);
+}
+
+.attendance-service-order-remove:hover:not(:disabled) {
+  border-color: var(--att-danger);
+  background: color-mix(in srgb, var(--att-danger) 14%, var(--att-panel));
+}
+
+.attendance-service-order-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
+.attendance-service-order-footer {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.attendance-service-order-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--att-emerald) 54%, var(--att-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--att-mint-soft) 76%, var(--att-panel));
+  color: var(--att-emerald);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.attendance-service-order-add:hover:not(:disabled) {
+  border-color: var(--att-emerald);
+  transform: translateY(-1px);
+}
+
+.attendance-service-order-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.attendance-purchase-total {
+  display: grid;
+  min-width: 156px;
+  justify-items: end;
+  align-content: center;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--att-purchase) 35%, var(--att-line));
+  border-radius: 10px;
+  background: var(--att-panel);
+}
+
+.attendance-purchase-total span,
+.attendance-purchase-total small {
+  color: var(--att-muted);
+  font-size: 0.55rem;
+  font-weight: 750;
+}
+
+.attendance-purchase-total strong {
+  color: var(--att-purchase);
+  font-size: 0.88rem;
+  letter-spacing: -0.02em;
+}
+
+@container (min-width: 560px) {
+  .attendance-service-order-row {
+    grid-template-columns: 28px minmax(0, 1.15fr) minmax(150px, 0.85fr) 44px;
+  }
+
+  .attendance-service-order-index,
+  .attendance-service-order-remove {
+    grid-row: 1;
+  }
+
+  .attendance-service-order-row .attendance-field {
+    grid-column: auto;
+  }
+
+  .attendance-service-order-remove {
+    grid-column: 4;
+  }
+}
+
 .attendance-form-error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--att-danger) 42%, var(--att-line));
@@ -729,6 +869,7 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-primary-button,
+.attendance-danger-button,
 .attendance-secondary-button,
 .attendance-filter-button,
 .attendance-clear-filters,
@@ -754,6 +895,27 @@ body.is-dark .attendance-shell,
   box-shadow: 0 12px 26px color-mix(in srgb, var(--att-forest-deep) 26%, transparent);
 }
 
+.attendance-danger-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--att-danger-action-deep);
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--att-danger-action), var(--att-danger-action-deep));
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  box-shadow: 0 12px 25px color-mix(in srgb, var(--att-danger-action-deep) 30%, transparent);
+}
+
+.attendance-danger-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.attendance-danger-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .attendance-primary-button:hover:not(:disabled),
 .attendance-filter-button:hover,
 .attendance-clear-filters:hover,
@@ -776,6 +938,16 @@ body.is-dark .attendance-shell,
 }
 
 .attendance-form[aria-busy="true"] .attendance-button-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendance-cancel-dialog form[aria-busy="true"] .attendance-button-idle {
+  display: none;
+}
+
+.attendance-cancel-dialog form[aria-busy="true"] .attendance-button-loading {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1324,6 +1496,17 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   box-shadow: 0 9px 22px rgba(10, 82, 56, 0.085);
 }
 
+.attendance-record.is-canceled {
+  border-color: color-mix(in srgb, var(--att-danger) 68%, var(--att-line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--att-danger) 12%, var(--att-panel)), color-mix(in srgb, var(--att-panel-soft) 88%, var(--att-panel)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--att-danger) 12%, transparent), 0 10px 26px color-mix(in srgb, var(--att-danger) 11%, transparent);
+}
+
+.attendance-record.is-canceled:hover {
+  border-color: var(--att-danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--att-danger) 18%, transparent), 0 12px 28px color-mix(in srgb, var(--att-danger) 16%, transparent);
+}
+
 .attendance-record-accent {
   position: absolute;
   inset: 0 auto 0 0;
@@ -1342,6 +1525,11 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   background: var(--att-other);
 }
 
+.attendance-record-accent--canceled {
+  width: 5px;
+  background: var(--att-danger);
+}
+
 .attendance-record > header,
 .attendance-record-person,
 .attendance-record-summary,
@@ -1356,6 +1544,15 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
+}
+
+.attendance-record-statuses {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .attendance-record-person {
@@ -1423,6 +1620,56 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   flex: 0 0 auto;
 }
 
+.attendance-record-canceled-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 58%, var(--att-line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--att-danger) 15%, var(--att-panel));
+  color: var(--att-danger);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.attendance-record-cancellation {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 38%, var(--att-line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--att-danger) 10%, var(--att-panel));
+  color: var(--att-danger);
+}
+
+.attendance-record-cancellation > i {
+  flex: 0 0 auto;
+}
+
+.attendance-record-cancellation > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.attendance-record-cancellation strong {
+  font-size: 0.66rem;
+}
+
+.attendance-record-cancellation small {
+  color: color-mix(in srgb, var(--att-danger) 76%, var(--att-muted));
+  font-size: 0.58rem;
+  font-weight: 680;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .attendance-record-tag--emerald,
 .attendance-link-badge--lead {
   border-color: color-mix(in srgb, var(--att-budget) 38%, var(--att-line));
@@ -1458,6 +1705,12 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   color: var(--att-warning);
 }
 
+.attendance-link-badge--historical {
+  border-color: color-mix(in srgb, var(--att-danger) 34%, var(--att-line));
+  background: color-mix(in srgb, var(--att-danger) 8%, var(--att-panel));
+  color: color-mix(in srgb, var(--att-danger) 82%, var(--att-muted));
+}
+
 .attendance-record-context {
   min-width: 0;
   padding: 9px 10px;
@@ -1490,9 +1743,78 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 
 .attendance-record-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 7px;
   margin: 0;
+}
+
+.attendance-record-orders {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--att-purchase) 25%, var(--att-line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--att-purchase-soft) 38%, var(--att-panel));
+}
+
+.attendance-record-orders-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.attendance-record-orders-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--att-purchase);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.attendance-record-orders-heading > b {
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--att-purchase);
+  color: #fff;
+  font-size: 0.56rem;
+}
+
+.attendance-record-order-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 6px;
+}
+
+.attendance-record-order-list > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--att-line) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--att-panel) 82%, transparent);
+  font-size: 0.62rem;
+}
+
+.attendance-record-order-list strong {
+  overflow: hidden;
+  color: var(--att-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-record-order-list b {
+  flex: 0 0 auto;
+  color: var(--att-purchase);
 }
 
 .attendance-record-meta > span {
@@ -1582,7 +1904,7 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 }
 
 .attendance-card-action {
-  min-height: 35px;
+  min-height: 44px;
   padding: 0 10px;
   font-size: 0.64rem;
 }
@@ -1597,6 +1919,17 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   border-color: color-mix(in srgb, var(--att-emerald) 52%, var(--att-line));
   background: color-mix(in srgb, var(--att-mint-soft) 72%, var(--att-panel));
   color: var(--att-emerald);
+}
+
+.attendance-card-action--cancel {
+  border-color: color-mix(in srgb, var(--att-danger) 48%, var(--att-line));
+  background: color-mix(in srgb, var(--att-danger) 9%, var(--att-panel));
+  color: var(--att-danger);
+}
+
+.attendance-card-action--cancel:hover {
+  border-color: var(--att-danger);
+  background: color-mix(in srgb, var(--att-danger) 14%, var(--att-panel));
 }
 
 .attendance-card-action.is-disabled {
@@ -2818,7 +3151,8 @@ body.is-dark .attendance-turn-label > span,
   -webkit-backdrop-filter: blur(12px);
 }
 
-.attendance-edit-modal {
+.attendance-edit-modal,
+.attendance-cancel-modal {
   position: fixed;
   z-index: 10060;
   inset: 0;
@@ -2830,6 +3164,174 @@ body.is-dark .attendance-turn-label > span,
   background: rgba(4, 18, 12, 0.68);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+.attendance-cancel-modal {
+  z-index: 10070;
+}
+
+.attendance-cancel-dialog {
+  width: min(540px, 100%);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 46%, var(--att-line));
+  border-radius: 18px;
+  background: var(--att-panel);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.36);
+}
+
+.attendance-cancel-dialog > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--att-danger) 24%, var(--att-line));
+  background: linear-gradient(120deg, color-mix(in srgb, var(--att-danger) 12%, var(--att-panel)), var(--att-panel));
+}
+
+.attendance-cancel-dialog > header > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 46%, var(--att-line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--att-danger) 13%, var(--att-panel));
+  color: var(--att-danger);
+}
+
+.attendance-cancel-dialog > header > div {
+  min-width: 0;
+}
+
+.attendance-cancel-dialog h2 {
+  margin: 2px 0;
+  color: var(--att-ink);
+  font-size: 1.22rem;
+  letter-spacing: -0.035em;
+}
+
+.attendance-cancel-dialog > header p:last-child {
+  margin: 0;
+  color: var(--att-muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.42;
+}
+
+.attendance-cancel-record {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 20px 0;
+  padding: 11px;
+  border: 1px solid var(--att-line);
+  border-radius: 11px;
+  background: var(--att-panel-soft);
+}
+
+.attendance-cancel-record > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--att-danger) 13%, var(--att-panel));
+  color: var(--att-danger);
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.attendance-cancel-record > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.attendance-cancel-record strong,
+.attendance-cancel-record small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-cancel-record strong {
+  color: var(--att-ink);
+  font-size: 0.78rem;
+}
+
+.attendance-cancel-record small {
+  color: var(--att-muted);
+  font-size: 0.6rem;
+  font-weight: 650;
+}
+
+.attendance-cancel-record > b {
+  color: var(--att-danger);
+  font-size: 0.79rem;
+}
+
+.attendance-cancel-impact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 20px 0;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--att-danger) 38%, var(--att-line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--att-danger) 9%, var(--att-panel));
+  color: var(--att-danger);
+}
+
+.attendance-cancel-impact > i {
+  flex: 0 0 auto;
+}
+
+.attendance-cancel-impact > div {
+  display: grid;
+  gap: 2px;
+}
+
+.attendance-cancel-impact strong {
+  font-size: 0.7rem;
+}
+
+.attendance-cancel-impact small {
+  color: color-mix(in srgb, var(--att-danger) 70%, var(--att-muted));
+  font-size: 0.6rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.attendance-cancel-dialog form {
+  display: grid;
+  gap: 13px;
+  padding: 16px 20px 20px;
+}
+
+.attendance-cancel-dialog .attendance-field > span:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.attendance-cancel-dialog .attendance-field em {
+  color: var(--att-muted);
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.attendance-cancel-dialog footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  gap: 9px;
+}
+
+.attendance-cancel-dialog footer > button {
+  width: 100%;
 }
 
 .attendance-edit-dialog {
@@ -4009,9 +4511,41 @@ body.is-dark .attendance-turn-label > span,
     padding: 0;
   }
 
-  .attendance-edit-modal {
+  .attendance-edit-modal,
+  .attendance-cancel-modal {
     align-items: end;
     padding: 0;
+  }
+
+  .attendance-cancel-dialog {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .attendance-cancel-dialog > header,
+  .attendance-cancel-dialog form {
+    padding: 14px;
+  }
+
+  .attendance-cancel-record,
+  .attendance-cancel-impact {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .attendance-cancel-record {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .attendance-cancel-record > b {
+    grid-column: 2;
+  }
+
+  .attendance-cancel-dialog footer {
+    grid-template-columns: 1fr;
   }
 
   .attendance-edit-dialog {
@@ -4205,15 +4739,30 @@ body.is-dark .attendance-turn-label > span,
     grid-template-columns: 1fr;
   }
 
+  .attendance-service-order-footer {
+    display: grid;
+  }
+
+  .attendance-service-order-add,
+  .attendance-purchase-total {
+    width: 100%;
+  }
+
+  .attendance-purchase-total {
+    justify-items: start;
+  }
+
   .attendance-panel-header,
   .attendance-overview-heading {
-    flex-wrap: wrap;
+    align-items: stretch;
+    flex-direction: column;
     gap: 7px;
   }
 
   .attendance-header-badge,
   .attendance-scope-badge {
-    justify-self: start;
+    align-self: flex-start;
+    max-width: 100%;
   }
 
   .attendance-tag-options {
@@ -4298,6 +4847,11 @@ body.is-dark .attendance-turn-label > span,
 
   .attendance-record > header {
     align-items: flex-start;
+  }
+
+  .attendance-record-statuses {
+    align-items: flex-end;
+    flex-direction: column;
   }
 
   .attendance-record-meta {

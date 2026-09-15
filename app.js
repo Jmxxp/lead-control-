@@ -2249,7 +2249,10 @@ function attendanceCompatibilityBridge() {
   return {
     attendanceRetroactiveDatesGranted: retroactiveDatesGranted,
     attendanceRpcNames: {
-      save: retroactiveDatesGranted ? "lc_upsert_attendance_v3" : "lc_upsert_attendance_v2",
+      save: "lc_upsert_attendance_v4",
+      update: "lc_update_attendance_v2",
+      cancel: "lc_cancel_attendance_v1",
+      list: "lc_list_attendances_v4",
     },
   };
 }
@@ -2446,6 +2449,7 @@ async function setSystemModule(moduleName, { persist = true, force = false } = {
         },
         afterSave: reconcileAttendanceAppState,
         onAttendanceUpdated: reconcileAttendanceAppState,
+        onAttendanceCanceled: reconcileAttendanceAppState,
         openLeadsForStore: async (storeId) => {
           const targetStore = stores.find((store) => store.id === (storeId || activeStoreContext?.id || currentProfile.storeId));
           if (!targetStore?.leadEnabled) {

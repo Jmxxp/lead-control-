@@ -3,10 +3,11 @@
 
   const DEFAULT_RPC = Object.freeze({
     workspace: "lc_get_attendance_workspace",
-    save: "lc_upsert_attendance_v3",
+    save: "lc_upsert_attendance_v4",
     saveLegacy: "lc_upsert_attendance_v2",
-    update: "lc_update_attendance_v1",
-    list: "lc_list_attendances_v3",
+    update: "lc_update_attendance_v2",
+    cancel: "lc_cancel_attendance_v1",
+    list: "lc_list_attendances_v4",
     analysis: "lc_get_attendance_analysis_v1",
     morningWorkspace: "lc_get_good_morning_seller_workspace",
     morningSave: "lc_save_good_morning_seller_settings_v2",
@@ -321,6 +322,7 @@
     purchase: { label: "Compra", icon: "fa-bag-shopping", tone: "forest" },
     other: { label: "Outro", icon: "fa-ellipsis", tone: "sage" },
   });
+  const ATTENDANCE_SERVICE_ORDER_LIMIT = 12;
 
   const state = {
     root: null,
@@ -338,6 +340,11 @@
     editSaving: false,
     editError: "",
     editGeneration: 0,
+    cancelingRecordId: "",
+    cancelSaving: false,
+    cancelError: "",
+    cancelReason: "",
+    cancelGeneration: 0,
     selectedStoreId: "",
     stores: [],
     records: [],
@@ -517,6 +524,7 @@
     state.saving = false;
     state.pendingSave = null;
     clearAttendanceEditState();
+    clearAttendanceCancelState();
     state.records = [];
     state.listRecords = [];
     state.listTotal = 0;
@@ -780,6 +788,82 @@
     }).format(amount);
   }
 
+  function normalizeServiceOrders(source = {}, fallbackServiceOrder = "", fallbackPurchaseValue = null) {
+    const rawOrders = Array.isArray(source)
+      ? source
+      : firstDefined(source?.service_orders, source?.serviceOrders, source?.orders, []);
+    const orders = (Array.isArray(rawOrders) ? rawOrders : [])
+      .map((order = {}, index) => {
+        const amountSource = firstPresentProperty(
+          order,
+          ["amount", "value", "purchase_value", "purchaseValue", "total"],
+          null,
+        );
+        return {
+          id: String(firstDefined(order.id, order.service_order_id, order.serviceOrderId, "")),
+          serviceOrder: String(firstDefined(
+            order.service_order,
+            order.serviceOrder,
+            order.order_number,
+            order.orderNumber,
+            order.number,
+            order.os,
+            "",
+          )).trim(),
+          amount: amountSource === null || amountSource === "" ? null : normalizeMoney(amountSource),
+          position: Math.max(1, Number(firstDefined(order.position, order.order_position, index + 1)) || index + 1),
+        };
+      })
+      .filter((order) => order.serviceOrder || order.amount !== null)
+      .sort((left, right) => left.position - right.position)
+      .slice(0, ATTENDANCE_SERVICE_ORDER_LIMIT);
+
+    if (orders.length) return orders;
+    const legacyOrder = String(fallbackServiceOrder || "").trim();
+    const legacyValuePresent = fallbackPurchaseValue !== null
+      && fallbackPurchaseValue !== undefined
+      && String(fallbackPurchaseValue).trim() !== "";
+    if (!legacyOrder && !legacyValuePresent) return [];
+    return [{
+      id: "",
+      serviceOrder: legacyOrder,
+      amount: legacyValuePresent ? normalizeMoney(fallbackPurchaseValue) : null,
+      position: 1,
+    }];
+  }
+
+  function serviceOrderDrafts(source = {}) {
+    if (Array.isArray(source?.serviceOrders) && source.serviceOrders.length) {
+      return source.serviceOrders.slice(0, ATTENDANCE_SERVICE_ORDER_LIMIT).map((order) => ({
+        serviceOrder: String(firstDefined(order?.serviceOrder, order?.service_order, "") || ""),
+        value: Object.prototype.hasOwnProperty.call(order || {}, "value")
+          ? String(order.value || "")
+          : formatMoneyInput(firstDefined(order?.amount, order?.purchase_value, "")),
+      }));
+    }
+    const normalized = normalizeServiceOrders(
+      source,
+      source?.serviceOrder,
+      source?.purchaseValue,
+    ).map((order) => ({
+      serviceOrder: String(order.serviceOrder || ""),
+      value: formatMoneyInput(order.amount),
+    }));
+    return normalized.length ? normalized : [{ serviceOrder: "", value: "" }];
+  }
+
+  function serviceOrdersTotalCents(orders = []) {
+    return (Array.isArray(orders) ? orders : []).reduce((total, order) => {
+      const rawValue = firstDefined(order?.value, order?.amount, order?.purchase_value, "");
+      try {
+        const amount = parseAttendanceMoney(rawValue);
+        return amount === null ? total : total + Math.round(amount * 100);
+      } catch {
+        return total;
+      }
+    }, 0);
+  }
+
   function attendanceRetroactiveDatesGranted() {
     return state.legacyAttendanceSaveRequired !== true
       && state.bridge?.attendanceRetroactiveDatesGranted !== false;
@@ -840,13 +924,26 @@
       raw?.[`is_linked_${prefix}`],
       raw?.[`has_${prefix}`],
     );
-    const linked = Boolean(id || normalizeBoolean(explicit) === true);
+    const historical = Boolean(id) && normalizeBoolean(firstDefined(
+      objectValue?.historical,
+      raw?.links?.historical,
+      raw?.historical_links?.historical,
+      false,
+    )) === true;
+    const explicitlyInactive = normalizeBoolean(firstDefined(
+      objectValue?.active,
+      raw?.links?.active,
+      raw?.historical_links?.active,
+    )) === false;
+    const linked = !historical && !explicitlyInactive
+      && Boolean(id || normalizeBoolean(explicit) === true);
     return {
       linked,
       id: id ? String(id) : "",
       name: String(firstDefined(objectValue?.name, objectValue?.customer_name, objectValue?.customerName, "")),
       ambiguous: normalizeBoolean(firstDefined(objectValue?.ambiguous, objectValue?.is_ambiguous)) === true,
       candidateCount: Number(firstDefined(objectValue?.candidate_count, objectValue?.candidateCount, objectValue?.candidates_count, 0)) || 0,
+      historical,
     };
   }
 
@@ -864,6 +961,18 @@
       ["purchase_value", "purchaseValue", "sale_value", "saleValue"],
       null,
     );
+    const legacyServiceOrder = String(firstDefined(source.service_order, source.serviceOrder, source.os, source.order_number, ""));
+    const serviceOrders = normalizeServiceOrders(source, legacyServiceOrder, purchaseValueSource);
+    const serviceOrdersTotal = serviceOrdersTotalCents(serviceOrders) / 100;
+    const canceledAt = String(firstDefined(
+      source.canceled_at,
+      source.cancelled_at,
+      source.canceledAt,
+      source.cancelledAt,
+      "",
+    ) || "");
+    const canceled = Boolean(canceledAt)
+      || normalizeBoolean(firstDefined(source.canceled, source.cancelled, source.is_canceled, source.is_cancelled)) === true;
     const attendedOn = firstDefined(source.attended_on, source.attendedOn, "");
     const registeredAt = firstDefined(source.created_at, source.registered_at, source.registeredAt, source.createdAt, "");
     const createdAt = firstDefined(source.attended_at, source.attendedAt, attendedOn, registeredAt, source.date);
@@ -878,13 +987,34 @@
       description: String(firstDefined(source.description, source.notes, source.observation, source.observations, "")),
       tag: normalizeTag(firstDefined(source.tag, source.attendance_tag, source.type, source.kind)),
       serviceValue: serviceValueSource === null || serviceValueSource === "" ? null : normalizeMoney(serviceValueSource),
-      purchaseValue: purchaseValueSource === null || purchaseValueSource === "" ? null : normalizeMoney(purchaseValueSource),
-      serviceOrder: String(firstDefined(source.service_order, source.serviceOrder, source.os, source.order_number, "")),
+      purchaseValue: purchaseValueSource === null || purchaseValueSource === ""
+        ? (serviceOrders.length ? serviceOrdersTotal : null)
+        : normalizeMoney(purchaseValueSource),
+      serviceOrder: legacyServiceOrder || serviceOrders[0]?.serviceOrder || "",
+      serviceOrders,
       attendedOn: String(attendedOn || ""),
       createdAt: createdAt || "",
       registeredAt: registeredAt || "",
       updatedAt: String(firstDefined(source.expected_updated_at, source.expectedUpdatedAt, source.updated_at, source.updatedAt, source.modified_at, source.modifiedAt, "") || ""),
       editCount: Math.max(0, Number(firstDefined(source.edit_count, source.editCount, 0)) || 0),
+      canceled,
+      canceledAt,
+      canceledBy: String(firstDefined(
+        source.canceled_by_name,
+        source.cancelled_by_name,
+        source.canceledByName,
+        source.cancelledByName,
+        source.canceled_by,
+        source.cancelled_by,
+        "",
+      )),
+      cancellationReason: String(firstDefined(
+        source.cancellation_reason,
+        source.cancel_reason,
+        source.cancellationReason,
+        source.cancelReason,
+        "",
+      )),
       linkedLead: lead,
       linkedProspection: prospection,
       ambiguous: normalizeBoolean(firstDefined(source.match_ambiguous, source.matchAmbiguous, links.ambiguous)) === true,
@@ -2424,9 +2554,80 @@
     return true;
   }
 
+  function captureServiceOrderDrafts(form) {
+    if (!form) return [];
+    return [...form.querySelectorAll("[data-attendance-service-order-row]")]
+      .slice(0, ATTENDANCE_SERVICE_ORDER_LIMIT)
+      .map((row) => ({
+        serviceOrder: String(row.querySelector("[data-attendance-service-order-number]")?.value || ""),
+        value: String(row.querySelector("[data-attendance-service-order-value]")?.value || ""),
+      }));
+  }
+
+  function renderServiceOrderRow(order = {}, index = 0, count = 1) {
+    const position = index + 1;
+    return `<div class="attendance-service-order-row" data-attendance-service-order-row>
+      <span class="attendance-service-order-index" aria-hidden="true">${position}</span>
+      <label class="attendance-field"><span>Número da OS <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-receipt" aria-hidden="true"></i><input name="service_orders_${index}_number" data-attendance-service-order-number autocomplete="off" maxlength="80" placeholder="Ex.: OS-1048" value="${escapeHtml(order.serviceOrder || "")}" /></span></label>
+      <label class="attendance-field"><span>Valor da OS <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-brazilian-real-sign" aria-hidden="true"></i><input name="service_orders_${index}_value" data-attendance-service-order-value inputmode="decimal" placeholder="0,00" value="${escapeHtml(order.value || "")}" /></span></label>
+      <button class="attendance-service-order-remove" type="button" data-attendance-action="remove-service-order" aria-label="Remover OS ${position}" title="Remover esta OS" ${count <= 1 ? "disabled" : ""}><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+    </div>`;
+  }
+
+  function renderServiceOrderEditor(draft = {}) {
+    const orders = serviceOrderDrafts(draft).slice(0, ATTENDANCE_SERVICE_ORDER_LIMIT);
+    const totalCents = serviceOrdersTotalCents(orders);
+    return `<div class="attendance-service-orders" data-attendance-service-orders>
+      <div class="attendance-service-order-list" data-attendance-service-order-list>
+        ${orders.map((order, index) => renderServiceOrderRow(order, index, orders.length)).join("")}
+      </div>
+      <footer class="attendance-service-order-footer">
+        <button class="attendance-service-order-add" type="button" data-attendance-action="add-service-order" ${orders.length >= ATTENDANCE_SERVICE_ORDER_LIMIT ? "disabled" : ""}><i class="fa-solid fa-plus" aria-hidden="true"></i>Adicionar OS</button>
+        <div class="attendance-purchase-total"><span>Total da compra</span><strong data-attendance-purchase-total aria-live="polite">${escapeHtml(formatCurrency(totalCents / 100))}</strong><small>Soma automática de ${orders.length} OS</small></div>
+      </footer>
+    </div>`;
+  }
+
+  function renumberServiceOrderRows(form) {
+    const rows = [...(form?.querySelectorAll("[data-attendance-service-order-row]") || [])];
+    rows.forEach((row, index) => {
+      const position = index + 1;
+      const badge = row.querySelector(".attendance-service-order-index");
+      const number = row.querySelector("[data-attendance-service-order-number]");
+      const value = row.querySelector("[data-attendance-service-order-value]");
+      const remove = row.querySelector('[data-attendance-action="remove-service-order"]');
+      if (badge) badge.textContent = String(position);
+      if (number) nameServiceOrderField(number, `service_orders_${index}_number`);
+      if (value) nameServiceOrderField(value, `service_orders_${index}_value`);
+      if (remove) {
+        remove.disabled = rows.length <= 1;
+        remove.setAttribute("aria-label", `Remover OS ${position}`);
+      }
+    });
+    const add = form?.querySelector('[data-attendance-action="add-service-order"]');
+    if (add) add.disabled = rows.length >= ATTENDANCE_SERVICE_ORDER_LIMIT;
+    return rows;
+  }
+
+  function nameServiceOrderField(field, name) {
+    field.name = name;
+    field.removeAttribute("aria-invalid");
+  }
+
+  function syncServiceOrderTotal(form) {
+    const rows = renumberServiceOrderRows(form);
+    const orders = captureServiceOrderDrafts(form);
+    const total = form?.querySelector("[data-attendance-purchase-total]");
+    const helper = form?.querySelector(".attendance-purchase-total small");
+    if (total) total.textContent = formatCurrency(serviceOrdersTotalCents(orders) / 100);
+    if (helper) helper.textContent = `Soma automática de ${rows.length} OS`;
+  }
+
   function captureDraft() {
     const form = state.root?.querySelector("[data-attendance-form]");
     if (!form || !state.selectedStoreId) return;
+    const serviceOrders = captureServiceOrderDrafts(form);
+    const hasServiceOrderValue = serviceOrders.some((order) => String(order.value || "").trim());
     state.drafts.set(state.selectedStoreId, {
       professionalName: String(form.elements.professional_name?.value || ""),
       attendedOn: String(form.elements.attended_on?.value || ""),
@@ -2436,8 +2637,9 @@
       description: String(form.elements.description?.value || ""),
       serviceValue: String(form.elements.service_value?.value || ""),
       tag: String(form.querySelector('input[name="tag"]:checked')?.value || "budget"),
-      purchaseValue: String(form.elements.purchase_value?.value || ""),
-      serviceOrder: String(form.elements.service_order?.value || ""),
+      purchaseValue: hasServiceOrderValue ? formatMoneyInput(serviceOrdersTotalCents(serviceOrders) / 100) : "",
+      serviceOrder: String(serviceOrders[0]?.serviceOrder || ""),
+      serviceOrders,
     });
   }
 
@@ -2458,12 +2660,15 @@
       tag: normalizeTag(record.tag),
       purchaseValue: formatMoneyInput(record.purchaseValue),
       serviceOrder: String(record.serviceOrder || ""),
+      serviceOrders: serviceOrderDrafts(record),
     };
   }
 
   function captureAttendanceEditDraft() {
     const form = state.root?.querySelector("[data-attendance-edit-form]");
     if (!form || !state.editDraft || !state.editingRecordId) return;
+    const serviceOrders = captureServiceOrderDrafts(form);
+    const hasServiceOrderValue = serviceOrders.some((order) => String(order.value || "").trim());
     state.editDraft = {
       ...state.editDraft,
       professionalName: String(form.elements.professional_name?.value || ""),
@@ -2474,8 +2679,9 @@
       description: String(form.elements.description?.value || ""),
       serviceValue: String(form.elements.service_value?.value || ""),
       tag: String(form.querySelector('input[name="tag"]:checked')?.value || "budget"),
-      purchaseValue: String(form.elements.purchase_value?.value || ""),
-      serviceOrder: String(form.elements.service_order?.value || ""),
+      purchaseValue: hasServiceOrderValue ? formatMoneyInput(serviceOrdersTotalCents(serviceOrders) / 100) : "",
+      serviceOrder: String(serviceOrders[0]?.serviceOrder || ""),
+      serviceOrders,
     };
   }
 
@@ -2502,6 +2708,10 @@
       notify("Este atendimento não está mais disponível nesta lista. Atualize os registros e tente novamente.", "warning");
       return false;
     }
+    if (record.canceled) {
+      notify("Atendimentos cancelados permanecem no histórico e não podem ser editados.", "warning");
+      return false;
+    }
     captureDraft();
     clearAttendanceEditState();
     state.editingRecordId = record.id;
@@ -2514,6 +2724,72 @@
         || state.root?.querySelector('[data-attendance-action="close-attendance-edit"]'))?.focus();
     });
     return true;
+  }
+
+  function clearAttendanceCancelState() {
+    state.cancelGeneration += 1;
+    state.cancelingRecordId = "";
+    state.cancelSaving = false;
+    state.cancelError = "";
+    state.cancelReason = "";
+  }
+
+  function openAttendanceCancel(recordId) {
+    const record = editableAttendanceRecord(recordId);
+    if (!record || !state.selectedStoreId) {
+      notify("Este atendimento não está mais disponível nesta lista. Atualize os registros e tente novamente.", "warning");
+      return false;
+    }
+    if (record.canceled) {
+      notify("Este atendimento já está cancelado.", "info");
+      return false;
+    }
+    captureDraft();
+    clearAttendanceCancelState();
+    state.cancelingRecordId = record.id;
+    renderWorkspace();
+    requestAnimationFrame(() => {
+      state.root?.querySelector("[data-attendance-cancel-reason]")?.focus();
+    });
+    return true;
+  }
+
+  function closeAttendanceCancel({ restoreFocus = true, force = false } = {}) {
+    const recordId = state.cancelingRecordId;
+    if (!recordId) return true;
+    if (!force && state.cancelSaving) {
+      notify("Aguarde o cancelamento terminar antes de fechar.", "warning");
+      return false;
+    }
+    clearAttendanceCancelState();
+    renderWorkspace();
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        [...(state.root?.querySelectorAll('[data-attendance-action="open-attendance-cancel"]') || [])]
+          .find((button) => button.dataset.attendanceId === recordId)
+          ?.focus();
+      });
+    }
+    return true;
+  }
+
+  function renderAttendanceCancelModal() {
+    if (!state.cancelingRecordId || state.view !== "operations") return "";
+    const record = editableAttendanceRecord(state.cancelingRecordId);
+    if (!record || record.canceled) return "";
+    const orderCount = record.serviceOrders.length;
+    return `<div class="attendance-cancel-modal" role="presentation" data-attendance-cancel-backdrop>
+      <section class="attendance-cancel-dialog" role="dialog" aria-modal="true" aria-labelledby="attendanceCancelTitle" aria-describedby="attendanceCancelDescription attendanceCancelError" data-attendance-cancel-dialog>
+        <header><span><i class="fa-solid fa-ban" aria-hidden="true"></i></span><div><p class="attendance-eyebrow">Ação protegida</p><h2 id="attendanceCancelTitle">Cancelar atendimento?</h2><p id="attendanceCancelDescription">O registro continuará visível no histórico, destacado em vermelho.</p></div></header>
+        <div class="attendance-cancel-record"><span>${escapeHtml(initials(record.customerName))}</span><div><strong>${escapeHtml(record.customerName)}</strong><small>${escapeHtml(formatDateTime(record.createdAt))} · ${escapeHtml(record.professionalName)}</small></div>${record.tag === "purchase" ? `<b>${escapeHtml(formatCurrency(record.purchaseValue))}</b>` : ""}</div>
+        <div class="attendance-cancel-impact"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><div><strong>${record.tag === "purchase" ? "O valor será retirado das metas do mês do atendimento" : "O atendimento será retirado dos indicadores"}</strong><small>${orderCount ? `${orderCount} ${orderCount === 1 ? "OS vinculada" : "OS vinculadas"}. ` : ""}Os dados originais serão preservados para auditoria.</small></div></div>
+        <form data-attendance-cancel-form aria-busy="${state.cancelSaving ? "true" : "false"}">
+          <label class="attendance-field"><span>Motivo do cancelamento <em>opcional</em></span><span class="attendance-input-wrap attendance-input-wrap--textarea"><i class="fa-solid fa-message" aria-hidden="true"></i><textarea name="reason" data-attendance-cancel-reason rows="3" maxlength="300" placeholder="Ex.: compra desfeita pelo cliente">${escapeHtml(state.cancelReason)}</textarea></span></label>
+          <div id="attendanceCancelError" class="attendance-form-error" data-attendance-cancel-error role="alert" aria-live="assertive" ${state.cancelError ? "" : "hidden"}>${state.cancelError ? `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(state.cancelError)}</span>` : ""}</div>
+          <footer><button class="attendance-secondary-button" type="button" data-attendance-action="close-attendance-cancel" ${state.cancelSaving ? "disabled" : ""}>Manter atendimento</button><button class="attendance-danger-button" type="submit" ${state.cancelSaving ? "disabled" : ""}><span class="attendance-button-idle"><i class="fa-solid fa-ban" aria-hidden="true"></i>Cancelar atendimento</span><span class="attendance-button-loading"><span class="attendance-mini-spinner" aria-hidden="true"></span>Cancelando com segurança</span></button></footer>
+        </form>
+      </section>
+    </div>`;
   }
 
   function closeAttendanceEdit({ restoreFocus = true, force = false } = {}) {
@@ -2597,11 +2873,8 @@
             <div class="attendance-tag-options">${Object.entries(TAGS).map(([value, config]) => `<label class="attendance-tag-option attendance-tag-option--${config.tone}"><input type="radio" name="tag" value="${value}" ${value === normalizeTag(draft.tag) ? "checked" : ""} /><span><i class="fa-solid ${config.icon}" aria-hidden="true"></i><strong>${config.label}</strong><i class="fa-solid fa-circle-check attendance-tag-check" aria-hidden="true"></i></span></label>`).join("")}</div>
           </fieldset>
           <section class="attendance-purchase-fields" data-attendance-purchase-fields hidden>
-            <div class="attendance-purchase-heading"><span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span><div><strong>Dados da compra</strong><small>Obrigatórios somente quando a etiqueta for Compra.</small></div></div>
-            <div class="attendance-form-grid">
-              <label class="attendance-field"><span>Valor da compra <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><input name="purchase_value" inputmode="decimal" placeholder="0,00" value="${escapeHtml(draft.purchaseValue)}" disabled /></span></label>
-              <label class="attendance-field"><span>Ordem de serviço (OS) <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-receipt" aria-hidden="true"></i><input name="service_order" autocomplete="off" placeholder="Ex.: OS-1048" value="${escapeHtml(draft.serviceOrder)}" disabled /></span></label>
-            </div>
+            <div class="attendance-purchase-heading"><span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span><div><strong>Ordens de serviço da compra</strong><small>Adicione até 12 OS. O total é calculado automaticamente.</small></div></div>
+            ${renderServiceOrderEditor(draft)}
           </section>
           <div id="attendanceEditError" class="attendance-form-error" data-attendance-edit-error role="alert" aria-live="assertive" aria-atomic="true" ${state.editError ? "" : "hidden"}>${state.editError ? `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(state.editError)}</span>` : ""}</div>
           <footer class="attendance-edit-footer"><div><strong>Alterações protegidas</strong><small>Se outra sessão modificar este registro, o sistema bloqueará a gravação para evitar perda de dados.</small></div><button class="attendance-secondary-button" type="button" data-attendance-action="close-attendance-edit" ${state.editSaving ? "disabled" : ""}>Cancelar</button><button class="attendance-primary-button" type="submit" data-attendance-edit-save ${state.editSaving || (!hasProfessionals && !missingProfessional) ? "disabled" : ""}><span class="attendance-button-idle"><i class="fa-solid fa-check" aria-hidden="true"></i>Salvar alterações</span><span class="attendance-button-loading"><span class="attendance-mini-spinner" aria-hidden="true"></span>Atualizando com segurança</span></button></footer>
@@ -2714,11 +2987,8 @@
         </fieldset>
 
         <section class="attendance-purchase-fields" data-attendance-purchase-fields hidden>
-          <div class="attendance-purchase-heading"><span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span><div><strong>Dados da compra</strong><small>Obrigatórios somente quando a etiqueta for Compra.</small></div></div>
-          <div class="attendance-form-grid">
-            <label class="attendance-field"><span>Valor da compra <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-sack-dollar" aria-hidden="true"></i><input name="purchase_value" inputmode="decimal" placeholder="0,00" value="${escapeHtml(draft.purchaseValue || "")}" disabled /></span></label>
-            <label class="attendance-field"><span>Ordem de serviço (OS) <b>*</b></span><span class="attendance-input-wrap"><i class="fa-solid fa-receipt" aria-hidden="true"></i><input name="service_order" autocomplete="off" placeholder="Ex.: OS-1048" value="${escapeHtml(draft.serviceOrder || "")}" disabled /></span></label>
-          </div>
+          <div class="attendance-purchase-heading"><span><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span><div><strong>Ordens de serviço da compra</strong><small>Adicione até 12 OS. O total é calculado automaticamente.</small></div></div>
+          ${renderServiceOrderEditor(draft)}
         </section>
 
         <div class="attendance-form-error" data-attendance-form-error role="alert" hidden></div>
@@ -2753,7 +3023,8 @@
         record.cpf,
         record.professionalName,
         record.description,
-        record.serviceOrder,
+        record.serviceOrders.map((order) => order.serviceOrder).join(" "),
+        record.canceled ? "cancelado" : "",
         TAGS[record.tag]?.label,
       ].join(" ")).includes(query);
     }).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -2798,37 +3069,48 @@
     const origins = [];
     if (record.linkedLead?.linked) origins.push(`<span class="attendance-link-badge attendance-link-badge--lead"><i class="fa-solid fa-user-group" aria-hidden="true"></i>Lead</span>`);
     if (record.linkedProspection?.linked) origins.push(`<span class="attendance-link-badge attendance-link-badge--prospection"><i class="fa-solid fa-phone" aria-hidden="true"></i>Prospecção</span>`);
+    if (record.canceled && record.linkedLead?.historical) origins.push(`<span class="attendance-link-badge attendance-link-badge--historical"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>Origem anterior: Lead</span>`);
+    if (record.canceled && record.linkedProspection?.historical) origins.push(`<span class="attendance-link-badge attendance-link-badge--historical"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>Origem anterior: Prospecção</span>`);
     if (record.ambiguous) origins.push(`<span class="attendance-link-badge attendance-link-badge--review"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>Revisar vínculo</span>`);
     if (!origins.length) origins.push(`<span class="attendance-link-badge attendance-link-badge--standalone"><i class="fa-solid fa-circle-dot" aria-hidden="true"></i>Avulso</span>`);
     return origins.join("");
   }
 
+  function renderRecordServiceOrders(record) {
+    if (record.tag !== "purchase" || !record.serviceOrders.length) return "";
+    return `<div class="attendance-record-orders" aria-label="Ordens de serviço desta compra">
+      <div class="attendance-record-orders-heading"><span><i class="fa-solid fa-receipt" aria-hidden="true"></i>Ordens de serviço</span><b>${record.serviceOrders.length}</b></div>
+      <div class="attendance-record-order-list">${record.serviceOrders.map((order) => `<span><strong>${escapeHtml(order.serviceOrder || "OS sem número")}</strong><b>${escapeHtml(formatCurrency(order.amount))}</b></span>`).join("")}</div>
+    </div>`;
+  }
+
   function renderRecord(record, { compact = false } = {}) {
     const tag = TAGS[record.tag] || TAGS.other;
     const phone = onlyDigits(record.phone);
-    const bonusApplies = record.tag === "purchase" && record.linkedProspection?.linked;
+    const bonusApplies = !record.canceled && record.tag === "purchase" && record.linkedProspection?.linked;
     const bonus = bonusApplies && record.bonusEligible === true
       ? `<span class="attendance-record-bonus is-positive"><i class="fa-solid fa-award" aria-hidden="true"></i>Bônus elegível${record.bonusAmount != null ? ` · ${escapeHtml(formatCurrency(record.bonusAmount))}` : ""}</span>`
       : bonusApplies && record.bonusEligible === false
         ? `<span class="attendance-record-bonus is-negative"><i class="fa-solid fa-circle-minus" aria-hidden="true"></i>Não elegível</span>`
         : "";
-    const editAction = compact
+    const editAction = compact || record.canceled
       ? ""
-      : `<button class="attendance-card-action attendance-card-action--edit" type="button" data-attendance-action="edit-attendance" data-attendance-id="${escapeHtml(record.id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i>Editar</button>`;
-    return `<article class="attendance-record${compact ? " is-compact" : ""}">
-      <div class="attendance-record-accent attendance-record-accent--${tag.tone}" aria-hidden="true"></div>
+      : `<button class="attendance-card-action attendance-card-action--edit" type="button" data-attendance-action="edit-attendance" data-attendance-id="${escapeHtml(record.id)}"><i class="fa-solid fa-pen" aria-hidden="true"></i>Editar</button><button class="attendance-card-action attendance-card-action--cancel" type="button" data-attendance-action="open-attendance-cancel" data-attendance-id="${escapeHtml(record.id)}"><i class="fa-solid fa-ban" aria-hidden="true"></i>Cancelar</button>`;
+    return `<article class="attendance-record${compact ? " is-compact" : ""}${record.canceled ? " is-canceled" : ""}">
+      <div class="attendance-record-accent attendance-record-accent--${record.canceled ? "canceled" : tag.tone}" aria-hidden="true"></div>
       <header>
         <div class="attendance-record-person"><span>${escapeHtml(initials(record.customerName))}</span><div><strong>${escapeHtml(record.customerName)}</strong><small>${escapeHtml([record.phone, record.cpf].filter(Boolean).join(" · ") || "Documento não informado")}</small></div></div>
-        <span class="attendance-record-tag attendance-record-tag--${tag.tone}"><i class="fa-solid ${tag.icon}" aria-hidden="true"></i>${tag.label}</span>
+        <div class="attendance-record-statuses"><span class="attendance-record-tag attendance-record-tag--${tag.tone}"><i class="fa-solid ${tag.icon}" aria-hidden="true"></i>${tag.label}</span>${record.canceled ? `<span class="attendance-record-canceled-badge"><i class="fa-solid fa-ban" aria-hidden="true"></i>Cancelado</span>` : ""}</div>
       </header>
+      ${record.canceled ? `<div class="attendance-record-cancellation"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><div><strong>Atendimento cancelado · fora dos indicadores e metas</strong><small>${record.canceledAt ? `Cancelado em ${escapeHtml(formatDateTime(record.canceledAt))}` : "Cancelamento registrado"}${record.canceledBy ? ` por ${escapeHtml(record.canceledBy)}` : ""}${record.cancellationReason ? ` · ${escapeHtml(record.cancellationReason)}` : ""}</small></div></div>` : ""}
       <div class="attendance-record-context"><small>Contexto do atendimento</small><p class="attendance-record-description">${escapeHtml(record.description || "Nenhuma descrição informada.")}</p></div>
       <div class="attendance-record-meta">
         <span><i class="fa-solid fa-user-tie" aria-hidden="true"></i><small>Atendido por</small><b>${escapeHtml(record.professionalName)}</b></span>
         <span><i class="fa-regular fa-calendar" aria-hidden="true"></i><small>Data</small><b>${escapeHtml(formatDateTime(record.createdAt))}</b></span>
-        ${record.serviceOrder ? `<span><i class="fa-solid fa-receipt" aria-hidden="true"></i><small>Ordem de serviço</small><b>${escapeHtml(record.serviceOrder)}</b></span>` : ""}
       </div>
+      ${renderRecordServiceOrders(record)}
       <footer>
-        <div class="attendance-record-summary"><div class="attendance-record-links">${renderRecordOrigins(record)}${record.prospectionProfessionalName ? `<span class="attendance-credit-badge"><i class="fa-solid fa-medal" aria-hidden="true"></i>Crédito: ${escapeHtml(record.prospectionProfessionalName)}</span>` : ""}${bonus}</div><div class="attendance-record-values">${record.serviceValue ? `<span><small>Atendimento</small><b>${escapeHtml(formatCurrency(record.serviceValue))}</b></span>` : ""}${record.tag === "purchase" ? `<span><small>Compra</small><b>${escapeHtml(formatCurrency(record.purchaseValue))}</b></span>` : ""}</div></div>
+        <div class="attendance-record-summary"><div class="attendance-record-links">${renderRecordOrigins(record)}${record.prospectionProfessionalName ? `<span class="attendance-credit-badge"><i class="fa-solid fa-medal" aria-hidden="true"></i>Crédito: ${escapeHtml(record.prospectionProfessionalName)}</span>` : ""}${bonus}</div><div class="attendance-record-values">${record.serviceValue ? `<span><small>Atendimento</small><b>${escapeHtml(formatCurrency(record.serviceValue))}</b></span>` : ""}${record.tag === "purchase" ? `<span><small>${record.canceled ? "Compra cancelada" : "Total da compra"}</small><b>${escapeHtml(formatCurrency(record.purchaseValue))}</b></span>` : ""}</div></div>
         <div class="attendance-record-actions">${editAction}${phone ? `<a class="attendance-card-action is-primary" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i>Ligar</a><button class="attendance-card-action" type="button" data-attendance-copy-phone="${escapeHtml(phone)}"><i class="fa-regular fa-copy" aria-hidden="true"></i>Copiar telefone</button>` : `<span class="attendance-card-action is-disabled"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i>Sem telefone</span>`}</div>
       </footer>
     </article>`;
@@ -2861,7 +3143,7 @@
         <div id="attendanceFilters" class="attendance-filter-panel attendance-operational-filter-panel" ${state.filtersOpen ? "" : "hidden"}>
           <label><span><i class="fa-solid fa-tags" aria-hidden="true"></i>Tipo</span><select data-attendance-filter="tag"><option value="all" ${state.filters.tag === "all" ? "selected" : ""}>Todos os tipos</option>${Object.entries(TAGS).map(([value, tag]) => `<option value="${value}" ${state.filters.tag === value ? "selected" : ""}>${tag.label}</option>`).join("")}</select></label>
           <label><span><i class="fa-solid fa-user-tie" aria-hidden="true"></i>Profissional</span><select data-attendance-filter="professional"><option value="all">Todos os profissionais</option>${professionals.map((name) => `<option value="${escapeHtml(name)}" ${state.filters.professional === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
-          <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo</span><select data-attendance-filter="link"><option value="all" ${state.filters.link === "all" ? "selected" : ""}>Todos os vínculos</option><option value="linked" ${state.filters.link === "linked" ? "selected" : ""}>Lead ou Prospecção</option><option value="standalone" ${state.filters.link === "standalone" ? "selected" : ""}>Atendimento avulso</option><option value="review" ${state.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
+          <label><span><i class="fa-solid fa-link" aria-hidden="true"></i>Vínculo ativo</span><select data-attendance-filter="link"><option value="all" ${state.filters.link === "all" ? "selected" : ""}>Todos</option><option value="linked" ${state.filters.link === "linked" ? "selected" : ""}>Com Lead ou Prospecção</option><option value="standalone" ${state.filters.link === "standalone" ? "selected" : ""}>Sem vínculo ativo</option><option value="review" ${state.filters.link === "review" ? "selected" : ""}>Precisa revisar</option></select></label>
           <label><span><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Período</span><select data-attendance-filter="period"><option value="today" ${state.filters.period === "today" ? "selected" : ""}>Hoje</option><option value="currentWeek" ${state.filters.period === "currentWeek" ? "selected" : ""}>Esta semana</option><option value="currentMonth" ${state.filters.period === "currentMonth" ? "selected" : ""}>Este mês</option><option value="currentYear" ${state.filters.period === "currentYear" ? "selected" : ""}>Este ano</option><option value="specificDate" ${state.filters.period === "specificDate" ? "selected" : ""}>Data específica</option><option value="custom" ${state.filters.period === "custom" ? "selected" : ""}>Período personalizado</option><option value="all" ${state.filters.period === "all" ? "selected" : ""}>Todo o período</option></select></label>
           <label class="attendance-operational-date-input ${state.filters.period === "specificDate" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-day" aria-hidden="true"></i>Data</span><input type="date" data-attendance-filter-date="specific" value="${escapeHtml(state.filters.specificDate)}" max="${escapeHtml(embeddedDateInput(new Date()))}" ${state.filters.period === "specificDate" ? "" : "disabled"} /></label>
           <label class="attendance-operational-date-input ${state.filters.period === "custom" ? "is-visible" : ""}"><span><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>Data inicial</span><input type="date" data-attendance-filter-date="start" value="${escapeHtml(state.filters.startDate)}" max="${escapeHtml(embeddedDateInput(new Date()))}" ${state.filters.period === "custom" ? "" : "disabled"} /></label>
@@ -2881,9 +3163,12 @@
     const mountedAnalysis = state.root.querySelector("[data-attendance-own-analysis]");
     if (mountedAnalysis) destroyEmbeddedAnalysis(mountedAnalysis);
     const editModalOpen = Boolean(state.editingRecordId && state.editDraft && state.view === "operations");
-    state.root.innerHTML = `<div class="attendance-shell"${editModalOpen ? ' inert aria-hidden="true"' : ""}>${renderStoreHeader()}<main class="attendance-module-main">
+    const cancelRecord = state.cancelingRecordId ? editableAttendanceRecord(state.cancelingRecordId) : null;
+    if (state.cancelingRecordId && (!cancelRecord || cancelRecord.canceled)) clearAttendanceCancelState();
+    const cancelModalOpen = Boolean(state.cancelingRecordId && cancelRecord && state.view === "operations");
+    state.root.innerHTML = `<div class="attendance-shell"${editModalOpen || cancelModalOpen ? ' inert aria-hidden="true"' : ""}>${renderStoreHeader()}<main class="attendance-module-main">
       ${!state.selectedStoreId ? renderNoStore() : state.loading ? renderLoading() : state.loadError ? renderLoadError() : state.view === "analysis" ? `<div class="attendance-own-analysis" data-attendance-own-analysis></div>` : `${renderGoodMorningSeller()}<div class="attendance-layout">${renderForm()}${renderOverview()}</div>`}
-    </main></div>${renderAttendanceEditModal()}`;
+    </main></div>${renderAttendanceEditModal()}${renderAttendanceCancelModal()}`;
     state.root.querySelectorAll("[data-attendance-form], [data-attendance-edit-form]").forEach((form) => syncPurchaseFields(form));
     if (state.view === "analysis" && state.selectedStoreId && !state.loading && !state.loadError) {
       const analysisRoot = state.root.querySelector("[data-attendance-own-analysis]");
@@ -3063,31 +3348,32 @@
   }
 
   function embeddedAttendanceMetricData(records = []) {
-    const purchases = records.filter((record) => record.tag === "purchase");
-    const budgets = records.filter((record) => record.tag === "budget");
-    const linkedLead = records.filter((record) => record.linkedLead?.linked).length;
-    const linkedProspection = records.filter((record) => record.linkedProspection?.linked).length;
-    const linked = records.filter((record) => record.linkedLead?.linked || record.linkedProspection?.linked).length;
+    const activeRecords = records.filter((record) => !record.canceled);
+    const purchases = activeRecords.filter((record) => record.tag === "purchase");
+    const budgets = activeRecords.filter((record) => record.tag === "budget");
+    const linkedLead = activeRecords.filter((record) => record.linkedLead?.linked).length;
+    const linkedProspection = activeRecords.filter((record) => record.linkedProspection?.linked).length;
+    const linked = activeRecords.filter((record) => record.linkedLead?.linked || record.linkedProspection?.linked).length;
     const revenue = purchases.reduce((sum, record) => sum + record.purchaseValue, 0);
-    const serviceValue = records.reduce((sum, record) => sum + record.serviceValue, 0);
+    const serviceValue = activeRecords.reduce((sum, record) => sum + record.serviceValue, 0);
     return {
-      total: records.length,
+      total: activeRecords.length,
       budgets: budgets.length,
       purchases: purchases.length,
-      other: records.length - budgets.length - purchases.length,
-      conversion: records.length ? Math.round((purchases.length / records.length) * 1000) / 10 : 0,
-      attendanceConversion: records.length ? Math.round((purchases.length / records.length) * 1000) / 10 : 0,
+      other: activeRecords.length - budgets.length - purchases.length,
+      conversion: activeRecords.length ? Math.round((purchases.length / activeRecords.length) * 1000) / 10 : 0,
+      attendanceConversion: activeRecords.length ? Math.round((purchases.length / activeRecords.length) * 1000) / 10 : 0,
       revenue,
       ticket: purchases.length ? revenue / purchases.length : 0,
       serviceValue,
-      averageServiceValue: records.length ? serviceValue / records.length : 0,
+      averageServiceValue: activeRecords.length ? serviceValue / activeRecords.length : 0,
       linked,
       linkedLead,
       linkedProspection,
-      both: records.filter((record) => record.linkedLead?.linked && record.linkedProspection?.linked).length,
-      unmatched: records.length - linked,
-      ambiguous: records.filter((record) => record.ambiguous).length,
-      uniqueCustomers: new Set(records.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
+      both: activeRecords.filter((record) => record.linkedLead?.linked && record.linkedProspection?.linked).length,
+      unmatched: activeRecords.length - linked,
+      ambiguous: activeRecords.filter((record) => record.ambiguous).length,
+      uniqueCustomers: new Set(activeRecords.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
       uniqueBuyers: new Set(purchases.map((record) => onlyDigits(record.phone) || onlyDigits(record.cpf)).filter(Boolean)).size,
     };
   }
@@ -3403,7 +3689,7 @@
       ...state.professionals.map((item) => [item.name, item.total, item.purchases, formatAnalysisPercent(item.attendanceConversion), item.budgets, item.other, item.uniqueCustomers, formatCurrency(item.revenue), formatCurrency(item.ticket)]),
       [],
       ["DETALHAMENTO"],
-      ["Data", "Cliente", "Telefone", "CPF", "Vendedor", "Tipo", "Valor do atendimento", "Valor da compra", "OS", "Vínculo", "Descrição"],
+      ["Data", "Cliente", "Telefone", "CPF", "Vendedor", "Tipo", "Status", "Valor do atendimento", "Valor da compra", "Ordens de serviço", "Vínculo", "Descrição"],
       ...records.map((record) => [
         embeddedReportDateTime(record.createdAt),
         record.customerName,
@@ -3411,9 +3697,10 @@
         record.cpf,
         record.professionalName,
         TAGS[record.tag]?.label || "Outro",
+        record.canceled ? "Cancelado" : "Ativo",
         formatCurrency(record.serviceValue),
         record.tag === "purchase" ? formatCurrency(record.purchaseValue) : "",
-        record.serviceOrder,
+        record.serviceOrders.map((order) => `${order.serviceOrder} (${formatCurrency(order.amount)})`).join(" | "),
         record.linkedLead?.linked && record.linkedProspection?.linked ? "Lead e Prospecção" : record.linkedLead?.linked ? "Lead" : record.linkedProspection?.linked ? "Prospecção" : record.ambiguous ? "Revisar" : "Avulso",
         record.description,
       ]),
@@ -3634,16 +3921,12 @@
     if (!form) return;
     const selected = form.querySelector('input[name="tag"]:checked')?.value || "budget";
     const purchaseArea = form.querySelector("[data-attendance-purchase-fields]");
-    const purchaseValue = form.elements.purchase_value;
-    const serviceOrder = form.elements.service_order;
     const isPurchase = selected === "purchase";
     if (purchaseArea) purchaseArea.hidden = !isPurchase;
-    [purchaseValue, serviceOrder].forEach((field) => {
-      if (!field) return;
+    purchaseArea?.querySelectorAll("input, button").forEach((field) => {
       field.disabled = !isPurchase;
-      field.required = isPurchase;
-      if (!isPurchase) field.value = "";
     });
+    if (isPurchase) syncServiceOrderTotal(form);
   }
 
   function setFormError(message = "") {
@@ -3656,7 +3939,13 @@
   function setFormBusy(busy) {
     const form = state.root?.querySelector("[data-attendance-form]");
     const button = state.root?.querySelector("[data-attendance-save]");
-    if (form) form.setAttribute("aria-busy", String(Boolean(busy)));
+    if (form) {
+      form.setAttribute("aria-busy", String(Boolean(busy)));
+      form.querySelectorAll("button, input, select, textarea").forEach((field) => {
+        field.disabled = Boolean(busy);
+      });
+      if (!busy) syncPurchaseFields(form);
+    }
     if (button) button.disabled = Boolean(busy) || registeredProfessionalOptions().length === 0;
   }
 
@@ -3725,7 +4014,6 @@
     const cpf = formatCpf(values.cpf);
     const description = String(values.description || "").trim();
     const tag = normalizeTag(values.tag);
-    const serviceOrder = String(values.service_order || "").trim();
 
     if (!professionalName) {
       throw attendanceValidationError("Selecione um profissional cadastrado para esta empresa.", "professional_name");
@@ -3752,28 +4040,92 @@
       throw attendanceValidationError("O valor do atendimento não pode ser negativo.", "service_value");
     }
 
-    const purchaseValue = tag === "purchase"
-      ? parseAttendanceMoney(values.purchase_value, {
-        required: true,
-        fieldName: "purchase_value",
-        label: "valor da compra",
-      })
-      : null;
-    if (tag === "purchase" && purchaseValue <= 0) {
-      throw attendanceValidationError("Informe o valor da compra (maior que zero).", "purchase_value");
-    }
-    if (tag === "purchase" && !serviceOrder) {
-      throw attendanceValidationError("Informe a ordem de serviço da compra.", "service_order");
+    const structuredOrders = Array.isArray(values.service_orders);
+    const rawServiceOrders = structuredOrders
+      ? values.service_orders
+      : [{ serviceOrder: values.service_order, value: values.purchase_value }];
+    if (tag === "purchase" && rawServiceOrders.length > ATTENDANCE_SERVICE_ORDER_LIMIT) {
+      throw attendanceValidationError(`Registre no máximo ${ATTENDANCE_SERVICE_ORDER_LIMIT} ordens de serviço por atendimento.`, "service_orders_0_number");
     }
 
-    return { attendedOn, professionalName, customerName, phone, cpf, description, tag, serviceValue, purchaseValue, serviceOrder };
+    const serviceOrders = [];
+    const serviceOrderKeys = new Set();
+    let purchaseValueCents = 0;
+    if (tag === "purchase") {
+      if (!rawServiceOrders.length) {
+        throw attendanceValidationError("Adicione ao menos uma ordem de serviço à compra.", "service_orders_0_number");
+      }
+      rawServiceOrders.forEach((rawOrder = {}, index) => {
+        const serviceOrder = String(firstDefined(
+          rawOrder.serviceOrder,
+          rawOrder.service_order,
+          rawOrder.orderNumber,
+          rawOrder.order_number,
+          rawOrder.number,
+          "",
+        ) || "").trim();
+        const numberField = structuredOrders ? `service_orders_${index}_number` : "service_order";
+        const valueField = structuredOrders ? `service_orders_${index}_value` : "purchase_value";
+        if (!serviceOrder) {
+          throw attendanceValidationError(`Informe o número da OS ${index + 1}.`, numberField);
+        }
+        const orderKey = normalizeText(serviceOrder).replace(/\s+/g, " ");
+        if (serviceOrderKeys.has(orderKey)) {
+          throw attendanceValidationError(`A OS ${serviceOrder} foi adicionada mais de uma vez.`, numberField);
+        }
+        serviceOrderKeys.add(orderKey);
+        const amount = parseAttendanceMoney(firstDefined(
+          rawOrder.value,
+          rawOrder.amount,
+          rawOrder.purchase_value,
+          "",
+        ), {
+          required: true,
+          fieldName: valueField,
+          label: `valor da OS ${index + 1}`,
+        });
+        if (amount <= 0) {
+          throw attendanceValidationError(
+            structuredOrders ? `Informe um valor maior que zero para a OS ${index + 1}.` : "Informe o valor da compra (maior que zero).",
+            valueField,
+          );
+        }
+        const amountCents = Math.round(amount * 100);
+        purchaseValueCents += amountCents;
+        serviceOrders.push({ service_order: serviceOrder, amount: amountCents / 100 });
+      });
+    }
+
+    const purchaseValue = tag === "purchase" ? purchaseValueCents / 100 : null;
+    const serviceOrder = tag === "purchase" ? serviceOrders[0]?.service_order || "" : "";
+    return {
+      attendedOn,
+      professionalName,
+      customerName,
+      phone,
+      cpf,
+      description,
+      tag,
+      serviceValue,
+      purchaseValue,
+      serviceOrder,
+      serviceOrders,
+    };
   }
 
   function validateForm(form, options = {}) {
-    return validateAttendanceSubmission(Object.fromEntries(new FormData(form).entries()), options);
+    return validateAttendanceSubmission({
+      ...Object.fromEntries(new FormData(form).entries()),
+      service_orders: captureServiceOrderDrafts(form),
+    }, options);
   }
 
   function attendanceUpdateArgs(record, submitted) {
+    const serviceOrders = Array.isArray(submitted.serviceOrders)
+      ? submitted.serviceOrders
+      : submitted.tag === "purchase" && submitted.serviceOrder
+        ? [{ service_order: submitted.serviceOrder, amount: submitted.purchaseValue }]
+        : [];
     return {
       p_attendance_id: String(record?.id || ""),
       p_store_id: String(record?.storeId || ""),
@@ -3786,9 +4138,48 @@
       p_description: submitted.description,
       p_tag: submitted.tag,
       p_service_value: submitted.serviceValue,
-      p_purchase_value: submitted.tag === "purchase" ? submitted.purchaseValue : null,
-      p_service_order: submitted.tag === "purchase" ? submitted.serviceOrder : null,
+      p_service_orders: submitted.tag === "purchase" ? serviceOrders : [],
     };
+  }
+
+  function attendanceCancelArgs(record, reason = "") {
+    return {
+      p_attendance_id: String(record?.id || ""),
+      p_store_id: String(record?.storeId || ""),
+      p_expected_updated_at: String(record?.expectedUpdatedAt || record?.updatedAt || "") || null,
+      p_reason: String(reason || "").trim() || null,
+    };
+  }
+
+  function authoritativeCanceledAttendance(raw, expected = {}) {
+    const payload = unwrapPayload(raw);
+    const attendanceSource = payload.attendance
+      || payload.record
+      || (payload.id || payload.attendance_id ? payload : null);
+    if (!attendanceSource || typeof attendanceSource !== "object") return null;
+    const expectedId = String(expected.id || expected.attendanceId || "");
+    const expectedStoreId = String(expected.storeId || "");
+    const authoritativeId = String(firstDefined(
+      attendanceSource.id,
+      attendanceSource.attendance_id,
+      attendanceSource.attendanceId,
+      "",
+    ));
+    const authoritativeStoreId = String(firstDefined(
+      attendanceSource.store_id,
+      attendanceSource.storeId,
+      "",
+    ));
+    if (!expectedId
+      || !expectedStoreId
+      || authoritativeId !== expectedId
+      || authoritativeStoreId !== expectedStoreId) return null;
+    const record = normalizeRecord(attendanceSource);
+    if (record.id !== expectedId
+      || record.storeId !== expectedStoreId
+      || !record.canceled
+      || !record.canceledAt) return null;
+    return record;
   }
 
   function replaceAttendanceRecord(records = [], updatedRecord = {}, options = {}) {
@@ -3820,6 +4211,9 @@
       ...attendanceSource,
       links,
       professional_name: firstDefined(attendanceSource.professional_name, submitted.professionalName),
+      service_orders: firstDefined(attendanceSource.service_orders, attendanceSource.serviceOrders, payload.service_orders, payload.serviceOrders),
+      canceled_at: firstDefined(attendanceSource.canceled_at, attendanceSource.cancelled_at, payload.canceled_at, payload.cancelled_at),
+      cancellation_reason: firstDefined(attendanceSource.cancellation_reason, payload.cancellation_reason),
     });
     attendance.linkedLead = linkedLead;
     attendance.linkedProspection = linkedProspection;
@@ -3962,6 +4356,35 @@
       }
     }
 
+    const authoritativeServiceOrders = authoritativeField(["service_orders", "serviceOrders", "orders"]);
+    const expectsStructuredServiceOrders = submitted.tag === "purchase"
+      && Array.isArray(submitted.serviceOrders);
+    if (expectsStructuredServiceOrders && !authoritativeServiceOrders.present) {
+      mismatches.push({
+        field: "service_orders",
+        label: "ordens de serviço",
+        expected: submitted.serviceOrders,
+        actual: undefined,
+      });
+    } else if (submitted.tag === "purchase" && authoritativeServiceOrders.present) {
+      const expectedOrders = (submitted.serviceOrders || []).map((order) => ({
+        serviceOrder: normalizeText(order.service_order),
+        amountCents: Math.round(normalizeMoney(order.amount) * 100),
+      }));
+      const actualOrders = normalizeServiceOrders(authoritativeServiceOrders.value).map((order) => ({
+        serviceOrder: normalizeText(order.serviceOrder),
+        amountCents: Math.round(normalizeMoney(order.amount) * 100),
+      }));
+      if (JSON.stringify(actualOrders) !== JSON.stringify(expectedOrders)) {
+        mismatches.push({
+          field: "service_orders",
+          label: "ordens de serviço",
+          expected: expectedOrders,
+          actual: actualOrders,
+        });
+      }
+    }
+
     const labels = [...new Set(mismatches.map((mismatch) => mismatch.label))];
     return {
       ok: mismatches.length === 0,
@@ -4021,6 +4444,7 @@
     if (operation === "workspace" && typeof custom?.load === "function") return custom.load(args);
     if (operation === "save" && typeof custom?.save === "function") return custom.save(args);
     if (operation === "update" && typeof custom?.update === "function") return custom.update(args);
+    if (operation === "cancel" && typeof custom?.cancel === "function") return custom.cancel(args);
     if (operation === "list" && typeof custom?.list === "function") return custom.list(args);
     if (typeof state.bridge?.rpc !== "function") throw new Error("Integração RPC de Atendimentos não configurada.");
     const names = { ...DEFAULT_RPC, ...(state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {}) };
@@ -4039,8 +4463,7 @@
       return await state.bridge.rpc(rpcName, args);
     } catch (error) {
       if (rpcName !== DEFAULT_RPC.save || !isMissingRpcError(error, rpcName)) throw error;
-      rememberLegacyAttendanceSave(legacyName);
-      return state.bridge.rpc(legacyName, legacySaveArgs(args));
+      throw new Error("A atualização do banco para registrar múltiplas OS ainda não foi aplicada. Nenhum atendimento foi salvo.");
     }
   }
 
@@ -4138,6 +4561,8 @@
       || state.morningLoading
       || state.saving
       || state.editSaving
+      || state.cancelSaving
+      || Boolean(state.cancelingRecordId)
       || state.morningSaving
       || state.morningParticipationSaving
       || state.realtimeMutationBusy
@@ -4308,6 +4733,7 @@
     if (!state.active) return;
     if (!state.selectedStoreId) {
       clearAttendanceEditState();
+      clearAttendanceCancelState();
       state.listGeneration += 1;
       state.records = [];
       state.listRecords = [];
@@ -4392,8 +4818,7 @@
       submitted.description,
       submitted.tag,
       submitted.serviceValue,
-      submitted.purchaseValue,
-      submitted.serviceOrder,
+      submitted.serviceOrders,
     ]);
     if (!state.idempotencyKey || state.idempotencyFingerprint !== submissionFingerprint) {
       state.idempotencyKey = createIdempotencyKey();
@@ -4419,8 +4844,7 @@
         p_description: submitted.description,
         p_tag: submitted.tag,
         p_service_value: submitted.serviceValue,
-        p_purchase_value: submitted.tag === "purchase" ? submitted.purchaseValue : null,
-        p_service_order: submitted.tag === "purchase" ? submitted.serviceOrder : null,
+        p_service_orders: submitted.tag === "purchase" ? submitted.serviceOrders : [],
         p_idempotency_key: saveContext.key,
       };
       raw = await rpc("save", args);
@@ -4617,6 +5041,118 @@
     const remainsCurrent = state.active
       && state.selectedStoreId === updateContext.storeId
       && state.contextGeneration === updateContext.contextGeneration;
+    if (remainsCurrent) {
+      if (state.realtimeCoordinator) await flushAttendanceRealtime("workspace");
+      else await loadWorkspace({ quiet: true });
+    }
+  }
+
+  function setAttendanceCancelError(message = "") {
+    state.cancelError = String(message || "");
+    const element = state.root?.querySelector("[data-attendance-cancel-error]");
+    if (!element) return;
+    element.hidden = !state.cancelError;
+    element.innerHTML = state.cancelError
+      ? `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(state.cancelError)}</span>`
+      : "";
+  }
+
+  function setAttendanceCancelBusy(busy) {
+    const form = state.root?.querySelector("[data-attendance-cancel-form]");
+    if (!form) return;
+    form.setAttribute("aria-busy", String(Boolean(busy)));
+    form.querySelectorAll("button, textarea").forEach((field) => { field.disabled = Boolean(busy); });
+  }
+
+  async function cancelAttendance(form) {
+    const record = editableAttendanceRecord(state.cancelingRecordId);
+    if (!record || record.canceled || state.cancelSaving || !state.selectedStoreId) return;
+    const reason = String(state.cancelReason || new FormData(form).get("reason") || "").trim();
+    const cancelContext = {
+      id: record.id,
+      storeId: state.selectedStoreId,
+      expectedUpdatedAt: record.updatedAt || null,
+      reason,
+      contextGeneration: state.contextGeneration,
+      requestGeneration: ++state.cancelGeneration,
+    };
+    const isCurrent = () => state.active
+      && state.cancelingRecordId === cancelContext.id
+      && state.selectedStoreId === cancelContext.storeId
+      && state.contextGeneration === cancelContext.contextGeneration
+      && state.cancelGeneration === cancelContext.requestGeneration;
+    setAttendanceCancelError("");
+    state.cancelSaving = true;
+    setAttendanceCancelBusy(true);
+
+    let raw;
+    try {
+      raw = await rpc("cancel", attendanceCancelArgs({
+        id: cancelContext.id,
+        storeId: cancelContext.storeId,
+        expectedUpdatedAt: cancelContext.expectedUpdatedAt,
+      }, cancelContext.reason));
+    } catch (error) {
+      const contextStillCurrent = state.active
+        && state.selectedStoreId === cancelContext.storeId
+        && state.contextGeneration === cancelContext.contextGeneration;
+      if (!contextStillCurrent) return;
+      if (handleEntitlementLoss(error, cancelContext.storeId)) return;
+      if (!isCurrent()) return;
+      state.cancelSaving = false;
+      setAttendanceCancelBusy(false);
+      const configuredNames = state.bridge?.attendanceRpcNames || state.bridge?.rpcNames?.attendances || {};
+      const cancelRpcName = configuredNames.cancel || DEFAULT_RPC.cancel;
+      const message = isMissingRpcError(error, cancelRpcName)
+        ? "A atualização do banco que libera o cancelamento ainda não foi aplicada. Nenhum dado foi alterado."
+        : isAttendanceEditConflict(error)
+          ? "Este atendimento foi alterado em outra sessão. Feche esta janela, atualize a lista e tente novamente."
+          : readableError(error);
+      setAttendanceCancelError(message);
+      notify(message, isAttendanceEditConflict(error) ? "warning" : "error");
+      void flushAttendanceRealtime();
+      return;
+    }
+
+    if (!isCurrent()) return;
+    const confirmedRecord = authoritativeCanceledAttendance(raw, cancelContext);
+    if (!confirmedRecord) {
+      state.cancelSaving = false;
+      setAttendanceCancelBusy(false);
+      const message = "O banco não confirmou o cancelamento deste atendimento. A lista será sincronizada antes de uma nova tentativa.";
+      setAttendanceCancelError(message);
+      notify(message, "error");
+      await loadWorkspace({ quiet: true });
+      return;
+    }
+
+    state.generation += 1;
+    state.listGeneration += 1;
+    state.listLoading = false;
+    const replaceOptions = { recordId: cancelContext.id, storeId: cancelContext.storeId };
+    state.records = replaceAttendanceRecord(state.records, confirmedRecord, replaceOptions);
+    state.listRecords = replaceAttendanceRecord(state.listRecords, confirmedRecord, replaceOptions);
+    state.cancelSaving = false;
+    clearAttendanceCancelState();
+    renderWorkspace();
+    notify(record.tag === "purchase"
+      ? "Atendimento cancelado e retirado das metas do mês correspondente."
+      : "Atendimento cancelado e retirado dos indicadores.", "success");
+
+    state.realtimeMutationBusy = true;
+    try {
+      if (typeof state.bridge?.onAttendanceCanceled === "function") {
+        await state.bridge.onAttendanceCanceled(raw);
+      }
+    } catch (error) {
+      notify(`Atendimento cancelado. Uma atualização secundária falhou: ${readableError(error)}`, "warning");
+    } finally {
+      state.realtimeMutationBusy = false;
+    }
+
+    const remainsCurrent = state.active
+      && state.selectedStoreId === cancelContext.storeId
+      && state.contextGeneration === cancelContext.contextGeneration;
     if (remainsCurrent) {
       if (state.realtimeCoordinator) await flushAttendanceRealtime("workspace");
       else await loadWorkspace({ quiet: true });
@@ -4920,6 +5456,14 @@
       target.value = formatCpf(target.value);
       return;
     }
+    if (target.matches("[data-attendance-service-order-value]")) {
+      syncServiceOrderTotal(target.closest("form"));
+      return;
+    }
+    if (target.matches("[data-attendance-cancel-reason]")) {
+      state.cancelReason = target.value;
+      return;
+    }
     if (target.matches('[data-attendance-filter="search"]')) {
       state.filters.search = target.value;
       renderFilteredRegions();
@@ -4940,6 +5484,7 @@
       captureDraft();
       stopAttendanceRealtimeSubscription();
       clearAttendanceEditState();
+      clearAttendanceCancelState();
       const previousId = state.selectedStoreId;
       state.selectedStoreId = nextId;
       state.contextGeneration += 1;
@@ -5061,6 +5606,10 @@
       closeAttendanceEdit();
       return;
     }
+    if (event.target.matches("[data-attendance-cancel-backdrop]")) {
+      closeAttendanceCancel();
+      return;
+    }
     if (event.target.matches("[data-morning-backdrop]")) {
       closeMorningConfig();
       return;
@@ -5080,8 +5629,38 @@
     const button = event.target.closest("[data-attendance-action]");
     if (!button) return;
     const action = button.dataset.attendanceAction;
+    if (action === "add-service-order") {
+      const form = button.closest("form");
+      const list = form?.querySelector("[data-attendance-service-order-list]");
+      const count = form?.querySelectorAll("[data-attendance-service-order-row]").length || 0;
+      if (!list || count >= ATTENDANCE_SERVICE_ORDER_LIMIT) return;
+      list.insertAdjacentHTML("beforeend", renderServiceOrderRow({}, count, count + 1));
+      syncServiceOrderTotal(form);
+      form.querySelectorAll("[data-attendance-service-order-number]")[count]?.focus();
+      return;
+    }
+    if (action === "remove-service-order") {
+      const form = button.closest("form");
+      const rows = form?.querySelectorAll("[data-attendance-service-order-row]") || [];
+      if (rows.length <= 1) return;
+      const row = button.closest("[data-attendance-service-order-row]");
+      const nextFocus = row?.nextElementSibling?.querySelector?.("[data-attendance-service-order-number]")
+        || row?.previousElementSibling?.querySelector?.("[data-attendance-service-order-number]");
+      row?.remove();
+      syncServiceOrderTotal(form);
+      nextFocus?.focus();
+      return;
+    }
     if (action === "edit-attendance") {
       openAttendanceEdit(button.dataset.attendanceId);
+      return;
+    }
+    if (action === "open-attendance-cancel") {
+      openAttendanceCancel(button.dataset.attendanceId);
+      return;
+    }
+    if (action === "close-attendance-cancel") {
+      closeAttendanceCancel();
       return;
     }
     if (action === "close-attendance-edit") {
@@ -5093,6 +5672,7 @@
       if (state.view === nextView) return;
       captureDraft();
       clearAttendanceEditState();
+      clearAttendanceCancelState();
       state.view = nextView;
       renderWorkspace();
       return;
@@ -5206,6 +5786,12 @@
 
   function onSubmit(event) {
     if (event.target.closest("[data-attendance-own-analysis]")) return;
+    const cancelForm = event.target.closest("[data-attendance-cancel-form]");
+    if (cancelForm) {
+      event.preventDefault();
+      cancelAttendance(cancelForm);
+      return;
+    }
     const editForm = event.target.closest("[data-attendance-edit-form]");
     if (editForm) {
       event.preventDefault();
@@ -5227,14 +5813,18 @@
 
   function onKeydown(event) {
     const editOpen = Boolean(state.editingRecordId && state.editDraft);
-    if (!editOpen && !state.morningConfigOpen) return;
-    const dialog = editOpen
-      ? state.root?.querySelector("[data-attendance-edit-dialog]")
-      : state.root?.querySelector("[data-morning-dialog]");
+    const cancelOpen = Boolean(state.cancelingRecordId);
+    if (!editOpen && !cancelOpen && !state.morningConfigOpen) return;
+    const dialog = cancelOpen
+      ? state.root?.querySelector("[data-attendance-cancel-dialog]")
+      : editOpen
+        ? state.root?.querySelector("[data-attendance-edit-dialog]")
+        : state.root?.querySelector("[data-morning-dialog]");
     if (!dialog) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      if (editOpen) closeAttendanceEdit();
+      if (cancelOpen) closeAttendanceCancel();
+      else if (editOpen) closeAttendanceEdit();
       else closeMorningConfig();
       return;
     }
@@ -5282,6 +5872,7 @@
     state.loading = true;
     state.contextGeneration += 1;
     clearAttendanceEditState();
+    clearAttendanceCancelState();
     clearMorningState();
     state.feedback = null;
     syncContext({ preserveSelection: false });
@@ -5306,6 +5897,7 @@
     state.listGeneration += 1;
     state.contextGeneration += 1;
     clearAttendanceEditState();
+    clearAttendanceCancelState();
     stopMorningDayRefresh();
     clearMorningState();
     if (state.listSearchTimer) global.clearTimeout(state.listSearchTimer);
@@ -5323,6 +5915,7 @@
     state.listGeneration += 1;
     state.contextGeneration += 1;
     clearAttendanceEditState();
+    clearAttendanceCancelState();
     state.selectedStoreId = "";
     state.stores = [];
     state.records = [];
@@ -5358,6 +5951,7 @@
     if (reload) {
       state.contextGeneration += 1;
       clearAttendanceEditState();
+      clearAttendanceCancelState();
       clearMorningState();
     }
     syncContext({ preserveSelection: true });
@@ -5384,11 +5978,11 @@
 
   function getIntegrationContract() {
     return {
-      version: 6,
+      version: 7,
       mount: "<section id=\"attendanceView\" class=\"attendance-view\" hidden></section>",
       bridge: {
         required: ["profile", "stores", "rpc"],
-        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "attendanceRealtime", "notify", "afterSave", "onAttendanceSaved", "onAttendanceUpdated", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.update", "attendances.list"],
+        optional: ["initialStoreId", "initialAgencyId", "attendanceAccessGranted", "attendanceRetroactiveDatesGranted", "prospectionAccessGranted", "attendanceRealtime", "notify", "afterSave", "onAttendanceSaved", "onAttendanceUpdated", "onAttendanceCanceled", "onStoreSelected", "onAccessRevoked", "attendanceRpcNames", "attendances.load", "attendances.save", "attendances.update", "attendances.cancel", "attendances.list"],
       },
       realtime: {
         bridge: "attendanceRealtime.subscribe({ storeId, onEvent, onStatus }) => cleanup | Promise<cleanup>",
@@ -5413,8 +6007,7 @@
             p_description: "text",
             p_tag: "budget | purchase | other",
             p_service_value: "numeric | null",
-            p_purchase_value: "numeric | null",
-            p_service_order: "text | null",
+            p_service_orders: "jsonb array (0 or 1..12 when purchase): [{ service_order: text, amount: numeric > 0 }]",
             p_idempotency_key: "uuid/text",
           },
           returns: {
@@ -5445,10 +6038,19 @@
             p_description: "text",
             p_tag: "budget | purchase | other",
             p_service_value: "numeric | null",
-            p_purchase_value: "numeric | null",
-            p_service_order: "text | null",
+            p_service_orders: "jsonb array (0 or 1..12 when purchase): [{ service_order: text, amount: numeric > 0 }]",
           },
           returns: "updated attendance plus recalculated links/bonus metadata; id and created_at remain immutable",
+        },
+        cancel: {
+          name: DEFAULT_RPC.cancel,
+          args: {
+            p_attendance_id: "uuid",
+            p_store_id: "uuid",
+            p_expected_updated_at: "timestamptz | null (optimistic concurrency token)",
+            p_reason: "text | null",
+          },
+          returns: "canceled attendance with canceled_at; original data remains visible for audit and is excluded from goals",
         },
         list: {
           name: DEFAULT_RPC.list,
@@ -5464,7 +6066,7 @@
             p_limit: 30,
             p_offset: "integer",
           },
-          returns: { items: "array including updated_at for optimistic editing", total: "integer", has_more: "boolean" },
+          returns: { items: "array including service_orders, canceled_at and updated_at for optimistic actions", total: "integer", has_more: "boolean" },
         },
         analysis: {
           name: DEFAULT_RPC.analysis,
@@ -5538,6 +6140,8 @@
       rules: [
         "A tela nunca consulta mais de um p_store_id por vez.",
         "A edição envia id, store_id e expected_updated_at; o backend mantém id/created_at imutáveis e rejeita alterações concorrentes.",
+        "Compras aceitam de uma a 12 ordens de serviço; o total é sempre a soma em centavos e nunca um campo editável.",
+        "O cancelamento é auditável, preserva o atendimento no histórico, bloqueia novas edições e retira seus valores das metas.",
         "Um profissional arquivado permanece selecionável somente no próprio registro histórico, sem entrar nas opções de novos atendimentos.",
         "Lead e Prospecção podem estar vinculados simultaneamente.",
         "attendanceAccessGranted autoriza Atendimentos; prospectionAccessGranted é apenas fallback para bridges antigos.",
@@ -5561,6 +6165,8 @@
   if (global.__ATTENDANCES_TEST_HOOKS__ && typeof global.__ATTENDANCES_TEST_HOOKS__ === "object") {
     Object.assign(global.__ATTENDANCES_TEST_HOOKS__, {
       attendanceRecordDate,
+      attendanceCancelArgs,
+      authoritativeCanceledAttendance,
       attendanceUpdateFeedbackMessage,
       attendanceUpdateArgs,
       calculateMorningDailyTargetsByMonthlyDeficit,
@@ -5574,6 +6180,7 @@
       createAttendanceEditDraft,
       createAttendanceRealtimeCoordinator,
       embeddedAttendanceRange,
+      embeddedAttendanceMetricData,
       focusAttendanceValidationError,
       formatDateTime,
       formatMoneyInput,
@@ -5586,11 +6193,14 @@
       morningUsesServerGoalBalance,
       goalProgress,
       normalizeRecord,
+      normalizeServiceOrders,
       normalizeSaveFeedback,
       normalizeMorningClosedDays,
       normalizeMorningWorkspace,
       parseAttendanceMoney,
       replaceAttendanceRecord,
+      serviceOrderDrafts,
+      serviceOrdersTotalCents,
       verifyAttendanceAuthoritativeResponse,
       validateAttendanceSubmission,
       validateMorningClosedDayEntry,
