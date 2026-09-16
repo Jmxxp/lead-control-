@@ -50,6 +50,9 @@
   let selectedAgencyId = "";
   let editingId = "";
   let dashboardPeriod = "today";
+  let listPeriod = "today";
+  let listStartDate = "";
+  let listEndDate = "";
   let listSearch = "";
   let listStatus = "all";
   let listProbability = "all";
@@ -353,8 +356,7 @@
     if (!bonusEndDate) bonusEndDate = formatDateInput(now);
   }
 
-  function periodWindow(period = dashboardPeriod) {
-    const now = new Date();
+  function periodWindow(period = dashboardPeriod, now = new Date()) {
     if (period === "today") return { start: startOfDay(now), end: addDays(startOfDay(now), 1), label: "Hoje" };
     if (period === "week") {
       const start = startOfWeek(now);
@@ -364,6 +366,10 @@
       const end = startOfWeek(now);
       return { start: addDays(end, -7), end, label: "Semana passada" };
     }
+    if (period === "lastMonth") {
+      const end = startOfMonth(now);
+      return { start: addMonths(end, -1), end, label: "Mês passado" };
+    }
     if (period === "year") return { start: new Date(now.getFullYear(), 0, 1), end: new Date(now.getFullYear() + 1, 0, 1), label: "Este ano" };
     if (period === "all") return { start: null, end: null, label: "Todo o período" };
     const start = startOfMonth(now);
@@ -372,9 +378,8 @@
 
   function isInWindow(value, window) {
     if (!value) return false;
-    if (!window.start || !window.end) return true;
     const date = new Date(value);
-    return date >= window.start && date < window.end;
+    return (!window.start || date >= window.start) && (!window.end || date < window.end);
   }
 
   function percentage(value, total) {
@@ -600,6 +605,7 @@
       ["week", "Esta semana"],
       ["lastWeek", "Semana passada"],
       ["month", "Mês"],
+      ["lastMonth", "Mês passado"],
       ["year", "Ano"],
       ["all", "Todo período"],
     ].map(([value, label]) => `<option value="${value}"${selected === value ? " selected" : ""}>${label}</option>`).join("");
@@ -913,6 +919,9 @@
     selectedAgencyId = bridge.profile.role === "admin" ? bridge.initialAgencyId || "" : "";
     selectedStoreId = bridge.profile.role === "store" ? bridge.profile.storeId : bridge.initialStoreId || "";
     editingId = "";
+    listPeriod = "today";
+    listStartDate = "";
+    listEndDate = "";
     listSearch = "";
     listStatus = "all";
     listProbability = "all";
@@ -1235,6 +1244,10 @@
     if (dashboardPeriod === "lastWeek") { count = 7; start = addDays(startOfWeek(now), -7); }
     if (dashboardPeriod === "today") { count = 12; start = new Date(startOfDay(now)); }
     if (dashboardPeriod === "month") { count = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); start = startOfMonth(now); }
+    if (dashboardPeriod === "lastMonth") {
+      start = addMonths(startOfMonth(now), -1);
+      count = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+    }
     if (dashboardPeriod === "year") { count = 12; start = new Date(now.getFullYear(), 0, 1); }
     if (dashboardPeriod === "all") { count = 12; start = addMonths(startOfMonth(now), -11); }
     return Array.from({ length: count }, (_, index) => {
@@ -1371,7 +1384,7 @@
   }
 
   function prospectionListFilterCount() {
-    return Number(dashboardPeriod !== "today")
+    return Number(listPeriod !== "today")
       + Number(listStatus !== "all")
       + Number(listProbability !== "all")
       + Number(listProfessional !== "all")
@@ -1400,7 +1413,8 @@
         <button type="button" data-prospection-action="clear-list-filters"${filterCount ? "" : " disabled"}><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Limpar</button>
       </header>
       <div class="prospection-filter-grid">
-        ${prospectionFilterFieldMarkup({ label: "Período", icon: "fa-calendar-days", attribute: "data-prospection-period", value: dashboardPeriod, options: [["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]] })}
+        ${prospectionFilterFieldMarkup({ label: "Período", icon: "fa-calendar-days", attribute: "data-prospection-period", value: listPeriod, options: [["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["lastMonth", "Mês passado"], ["year", "Este ano"], ["all", "Todo o histórico"], ["custom", "Escolher período"]] })}
+        ${listPeriod === "custom" ? `<label class="prospection-filter-field"><span><i class="fa-solid fa-calendar-day" aria-hidden="true"></i>Data inicial</span><input data-prospection-list-start type="date" value="${escapeHtml(listStartDate)}" /></label><label class="prospection-filter-field"><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Data final</span><input data-prospection-list-end type="date" value="${escapeHtml(listEndDate)}" /></label>` : ""}
         ${prospectionFilterFieldMarkup({ label: "Situação", icon: "fa-route", attribute: "data-prospection-status", value: listStatus, options: [["all", "Todas as situações"], ["open", "Ainda não voltaram"], ["returned", "Voltaram à loja"], ["returned_no_purchase", "Voltaram sem comprar"], ["purchased", "Compraram"], ["not_purchased", "Ainda não compraram"]] })}
         ${prospectionFilterFieldMarkup({ label: "Probabilidade", icon: "fa-gauge-high", attribute: "data-prospection-probability", value: listProbability, options: [["all", "Todas as probabilidades"], ...Object.entries(PROBABILITIES).map(([key, item]) => [key, item.label])] })}
         ${prospectionFilterFieldMarkup({ label: "Profissional", icon: "fa-user-tie", attribute: "data-prospection-professional", value: listProfessional, options: [["all", "Toda a equipe"], ["unassigned", "Sem profissional"], ...professionalNames.map((name) => [name, name])] })}
@@ -1414,7 +1428,7 @@
 
   function prospectListPanelMarkup(storeId) {
     const filterCount = prospectionListFilterCount();
-    const periodTitle = dashboardPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
+    const periodTitle = listPeriod === "today" ? ["Hoje", "Prospecções do dia"] : ["Acompanhamento", "Prospecções registradas"];
     const attendanceState = ensureAttendanceListState(storeId);
     const attendanceAccess = canUseAttendanceOpportunities(storeId);
     const isAttendanceMode = attendanceAccess && listMode === "attendances";
@@ -1502,7 +1516,9 @@
     const query = normalize(listSearch);
     const queryPhone = normalizePhoneKey(listSearch);
     const probabilityRank = { green: 0, blue: 1, yellow: 2, red: 3 };
-    const rows = prospectsFor(storeId).filter((row) => {
+    const window = listPeriod === "custom" ? dateRange(listStartDate, listEndDate) : periodWindow(listPeriod);
+    const rows = prospectsFor(storeId, "all").filter((row) => {
+      if (!isInWindow(row.createdAt, window)) return false;
       const matchesQuery = !query
         || normalize([row.name, row.phone, row.cpf, row.notes, row.professionalName, ...row.tagValues].join(" ")).includes(query)
         || Boolean(queryPhone && normalizePhoneKey(row.phone) === queryPhone);
@@ -1761,7 +1777,7 @@
     listTag = "all";
     listContact = "all";
     listSort = "recent";
-    dashboardPeriod = "all";
+    listPeriod = "all";
     listMode = "records";
     filtersOpen = false;
     attendanceListRequest += 1;
@@ -1912,6 +1928,10 @@
       const currentStart = startOfWeek(today);
       return { start: addDays(currentStart, -7), end: addDays(currentStart, -1) };
     }
+    if (shortcut === "last-month") {
+      const currentStart = startOfMonth(today);
+      return { start: addMonths(currentStart, -1), end: addDays(currentStart, -1) };
+    }
     return { start: startOfMonth(today), end: today };
   }
 
@@ -1921,7 +1941,7 @@
   }
 
   function dateShortcutsMarkup(target, startValue, endValue, context = null) {
-    const definitions = [["this-week", "Esta semana"], ["last-week", "Semana passada"], ["this-month", "Este mês"]];
+    const definitions = [["this-week", "Esta semana"], ["last-week", "Semana passada"], ["this-month", "Este mês"], ["last-month", "Mês passado"]];
     return `<div class="prospection-date-shortcuts" aria-label="Atalhos de período">${definitions.map(([value, label]) => `<button class="prospection-button is-quiet${shortcutIsActive(value, startValue, endValue) ? " is-active" : ""}" type="button" ${analysisActionAttributes(context, "apply-date-shortcut")} data-shortcut-target="${target}" data-shortcut-value="${value}">${label}</button>`).join("")}</div>`;
   }
 
@@ -2288,6 +2308,7 @@
     if (period === "all") return { start: null, end: null };
     if (period === "current") return analysisPeriodWindow(context.period, context);
     if (period === "lastWeek") return periodWindow("lastWeek");
+    if (period === "lastMonth") return periodWindow("lastMonth");
     return analysisPeriodWindow({ today: "daily", week: "weekly", month: "monthly", year: "yearly" }[period] || "monthly", context);
   }
 
@@ -2328,7 +2349,7 @@
   function analysisRecordsDialogMarkup(context, filters) {
     const result = analysisRecordListMarkup(context, filters);
     const titleId = context.embedded ? "embedded-prospection-analysis-records-title" : "prospection-analysis-records-title";
-    const periodOptions = [["current", "Período da análise"], ["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["year", "Este ano"], ["all", "Todo o histórico"]];
+    const periodOptions = [["current", "Período da análise"], ["today", "Hoje"], ["week", "Esta semana"], ["lastWeek", "Semana passada"], ["month", "Este mês"], ["lastMonth", "Mês passado"], ["year", "Este ano"], ["all", "Todo o histórico"]];
     const probabilityOptions = `<option value="all"${filters.probability === "all" ? " selected" : ""}>Todos</option>${Object.entries(PROBABILITIES).map(([value, item]) => `<option value="${value}"${filters.probability === value ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}`;
     return `<div class="prospection-dialog-backdrop prospection-analysis-records-backdrop" data-prospection-analysis-records-dialog><section class="prospection-dialog is-wide prospection-analysis-records-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><header class="prospection-dialog-header"><div><p class="eyebrow">Detalhamento</p><h2 id="${titleId}">Prospecções</h2></div><button class="prospection-dialog-close" type="button" ${analysisActionAttributes(context, "close-analysis-records")} aria-label="Fechar lista"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><div class="prospection-dialog-body">
       <form class="prospection-analysis-record-filters" data-analysis-record-filters>
@@ -3621,15 +3642,31 @@
       return;
     }
     if (event.target.matches("[data-prospection-period]")) {
-      dashboardPeriod = event.target.value;
       if (event.target.closest("#prospectionListPanel")) {
+        listPeriod = event.target.value;
+        if (listPeriod === "custom" && !listStartDate && !listEndDate) {
+          const today = new Date();
+          listStartDate = formatDateInput(startOfMonth(today));
+          listEndDate = formatDateInput(today);
+        }
         filtersOpen = true;
-        renderProspectListPanel({ focusSelector: "[data-prospection-period]", scrollTop: 0 });
+        renderProspectListPanel({ focusSelector: listPeriod === "custom" ? "[data-prospection-list-start]" : "[data-prospection-period]", scrollTop: 0 });
       } else {
+        dashboardPeriod = event.target.value;
         filtersOpen = false;
         closeDialogs();
         render();
       }
+    }
+    if (event.target.matches("[data-prospection-list-start]")) {
+      listStartDate = event.target.value;
+      if (listStartDate && listEndDate && listStartDate > listEndDate) listEndDate = listStartDate;
+      renderProspectListPanel({ focusSelector: "[data-prospection-list-start]", scrollTop: 0 });
+    }
+    if (event.target.matches("[data-prospection-list-end]")) {
+      listEndDate = event.target.value;
+      if (listStartDate && listEndDate && listEndDate < listStartDate) listStartDate = listEndDate;
+      renderProspectListPanel({ focusSelector: "[data-prospection-list-end]", scrollTop: 0 });
     }
     if (event.target.matches("[data-prospection-status]")) {
       listStatus = event.target.value;
@@ -3716,7 +3753,9 @@
     else if (action === "toggle-filters") { filtersOpen = !filtersOpen; renderProspectListPanel({ focusSelector: '[data-prospection-action="toggle-filters"]' }); }
     else if (action === "close-list-filters") { filtersOpen = false; renderProspectListPanel({ focusSelector: '[data-prospection-action="toggle-filters"]' }); }
     else if (action === "clear-list-filters") {
-      dashboardPeriod = "today";
+      listPeriod = "today";
+      listStartDate = "";
+      listEndDate = "";
       listStatus = "all";
       listProbability = "all";
       listProfessional = "all";
@@ -3749,7 +3788,9 @@
         listTag = "all";
         listContact = "all";
         listSort = "recent";
-        dashboardPeriod = "today";
+        listPeriod = "today";
+        listStartDate = "";
+        listEndDate = "";
         filtersOpen = false;
         attendanceListRequest += 1;
         attendanceListState = createAttendanceListState(storeId);
