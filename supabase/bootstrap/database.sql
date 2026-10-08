@@ -1,8 +1,8 @@
 -- Controle de Leads | Otica
 -- Banco alvo: Supabase/PostgreSQL.
--- Rode este arquivo no SQL Editor de um projeto Supabase novo/limpo.
--- IMPORTANTE: em um banco existente, NAO execute o arquivo inteiro.
--- Execute somente a secao "ATUALIZACAO INCREMENTAL: PROSPECCOES" ate o final.
+-- SNAPSHOT HISTORICO: nao execute no projeto atual nem use como runbook de
+-- instalacao. A fonte operacional e supabase/migrations/; consulte o README
+-- desta pasta antes de qualquer trabalho de recuperacao ou novo baseline.
 
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
@@ -2959,7 +2959,8 @@ grant execute on function public.lc_delete_agency_account(text, uuid) to anon, a
 
 -- ATUALIZACAO INCREMENTAL: LICENCAS DE PROSPECCOES
 -- O bloco abaixo tambem esta disponivel isoladamente em
--- prospection_access_control_update.sql. Nao altera retornos de RPCs existentes.
+-- supabase/legacy/manual-patches/prospection_access_control_update.sql.
+-- Nao altera retornos de RPCs existentes.
 
 alter table public.app_users
   add column if not exists prospection_store_limit integer not null default 0;
@@ -4372,7 +4373,8 @@ notify pgrst, 'reload schema';
 
 commit;
 -- CONSOLIDACAO DO BANCO COMPLETO | GOVERNANCA, TERMOS E RETENCAO
--- A mesma secao tambem existe em legal_terms_retention_access_update.sql para
+-- A mesma secao tambem existe em
+-- supabase/legacy/manual-patches/legal_terms_retention_access_update.sql para
 -- atualizacao segura de bancos que ja estao em producao.
 -- =============================================================================
 
@@ -5413,7 +5415,7 @@ commit;
 
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 0
--- Fonte integrada: custom_categories_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/custom_categories_update.sql
 -- Rode este arquivo no SQL Editor do Supabase para habilitar
 -- categorias adicionais personalizadas nos leads, filtros e metricas.
 
@@ -6263,7 +6265,7 @@ grant execute on function public.lc_list_leads(text) to anon, authenticated;
 grant execute on function public.lc_upsert_lead(text, uuid, text, text, text, text, text, text, text, text, numeric, text, text, jsonb, uuid) to anon, authenticated;
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 1
--- Fonte integrada: lead_contact_date_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/lead_contact_date_update.sql
 -- Rode este arquivo no SQL Editor do Supabase para adicionar
 -- a data em que o lead entrou em contato.
 -- O campo nao e obrigatorio: quando vier vazio, o banco usa o dia atual.
@@ -6713,7 +6715,7 @@ select
   ), '[]'::jsonb) as realtime_tables;
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 2
--- Fonte integrada: b2b_client_hierarchy_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/b2b_client_hierarchy_update.sql
 -- Hierarquia B2B: admin -> empresa de trafego (technician) -> lojas.
 -- Rode este arquivo no SQL Editor do Supabase depois das migracoes existentes.
 
@@ -7906,9 +7908,9 @@ commit;
 notify pgrst, 'reload schema';
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 3
--- Fonte integrada: client_scoped_configuration_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/client_scoped_configuration_update.sql
 -- Configuracoes individuais por loja e imagens de perfil.
--- Rode depois de b2b_client_hierarchy_update.sql.
+-- Rode depois de supabase/legacy/manual-patches/b2b_client_hierarchy_update.sql.
 
 begin;
 
@@ -8991,9 +8993,9 @@ commit;
 notify pgrst, 'reload schema';
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 4
--- Fonte integrada: agency_store_configuration_editor_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/agency_store_configuration_editor_update.sql
 -- Editor completo de categorias e cards por loja.
--- Execute depois de client_scoped_configuration_update.sql.
+-- Execute depois de supabase/legacy/manual-patches/client_scoped_configuration_update.sql.
 
 begin;
 
@@ -9362,10 +9364,10 @@ grant execute on function public.lc_reorder_custom_options(text, uuid, uuid[], u
 commit;
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 5
--- Fonte integrada: central_ai_configuration_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/central_ai_configuration_update.sql
 -- Configuracao central de IA: o admin salva uma unica chave e as empresas B2B
 -- carregam essa configuracao no login para chamar o provedor diretamente.
--- Rode depois de b2b_client_hierarchy_update.sql e client_scoped_configuration_update.sql.
+-- Rode depois dos patches históricos de hierarquia B2B e configuração por loja.
 
 begin;
 
@@ -9570,7 +9572,7 @@ grant execute on function public.lc_save_ai_settings(text, text, text, text, tex
 commit;
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 6
--- Fonte integrada: lead_intelligence_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/lead_intelligence_update.sql
 -- Objetivo: inteligencia comercial nativa, lifecycle e auditoria de IA.
 -- Pre-requisito: executar apos a ETAPA 5.
 -- Observacao: bloco idempotente para reaplicacao segura.
@@ -10279,7 +10281,7 @@ commit;
 
 
 -- CONSOLIDACAO DO BANCO COMPLETO | ETAPA 7
--- Fonte integrada: admin_account_update.sql
+-- Fonte integrada: supabase/legacy/manual-patches/admin_account_update.sql
 -- Rode este arquivo no SQL Editor do Supabase para permitir
 -- que o admin altere o proprio nick e senha exigindo a senha atual.
 

@@ -1,4 +1,6 @@
 -- QA transacional do importador de backup do Prospec.
+-- Requer o schema atual, o contrato de importacao provisionado e um Admin ativo.
+-- Nao reaplique modulos de supabase/bootstrap/ para preparar este teste.
 -- Todas as fixtures e importacoes sao revertidas ao final.
 
 begin;
@@ -56,6 +58,14 @@ begin
   ) values (
     v_store_id, v_admin_id, v_agency_id, 'QA Import Target',
     'qa_import_store_' || v_suffix, 'qa_import_store_' || v_suffix, true
+  );
+
+  -- Desde o acesso multiagencia, technician_user_id e apenas o responsavel
+  -- principal legado. A autorizacao efetiva depende deste vinculo explicito.
+  insert into app_private.store_agency_accesses (
+    store_id, admin_user_id, agency_user_id, is_active, created_by
+  ) values (
+    v_store_id, v_admin_id, v_agency_id, true, v_admin_id
   );
 
   insert into public.app_users (

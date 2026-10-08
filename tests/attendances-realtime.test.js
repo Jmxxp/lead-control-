@@ -5,7 +5,7 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const source = readFileSync(require.resolve("../attendances.js"), "utf8");
+const source = readFileSync(require.resolve("../assets/js/attendances.js"), "utf8");
 
 const STORE_A = "00000000-0000-4000-8000-00000000000a";
 const STORE_B = "00000000-0000-4000-8000-00000000000b";
@@ -15,7 +15,7 @@ const RETRY_BASE_MS = 100;
 function loadHooks() {
   const hooks = {};
   const window = { __ATTENDANCES_TEST_HOOKS__: hooks };
-  vm.runInNewContext(source, { window }, { filename: "attendances.js" });
+  vm.runInNewContext(source, { window }, { filename: "assets/js/attendances.js" });
   return hooks;
 }
 
@@ -119,7 +119,7 @@ function loadModuleRuntime(clock = new FakeClock()) {
     cancelAnimationFrame() {},
     queueMicrotask,
     Element,
-  }, { filename: "attendances.js" });
+  }, { filename: "assets/js/attendances.js" });
   return { clock, hooks, module: window.AttendancesModule, Element };
 }
 

@@ -32,21 +32,9 @@ jobs:
           mkdir -p _site
           cp \
             index.html \
-            app.js \
-            pwa-notifications.js \
             service-worker.js \
-            styles.css \
-            mobile.css \
-            prospections.js \
-            prospections.css \
-            prospec-original.css \
-            attendances.js \
-            attendances.css \
-            support-assistant.js \
-            support-assistant.css \
             manifest.webmanifest \
             favicon.ico \
-            logo__.png \
             _site/
           cp -R assets _site/assets
           touch _site/.nojekyll

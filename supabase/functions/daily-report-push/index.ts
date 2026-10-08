@@ -1,5 +1,5 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
-import webpush from "npm:web-push@3.6.7";
+import webpush from "web-push";
 
 type Delivery = {
   delivery_id: string;
@@ -100,8 +100,8 @@ function buildNotification(delivery: Delivery) {
     body: `${formatCurrencyFromCents(report.revenue_cents)} vendidos · ${
       pluralizeProspections(prospections)
     } · ${formatPercent(reportConversionRate(report))}% de conversão`,
-    icon: "./assets/app-icon-192.png",
-    badge: "./assets/favicon-32.png",
+    icon: "./assets/icons/app-icon-192.png",
+    badge: "./assets/icons/favicon-32.png",
     tag: `daily-report-${report.store_id}-${reportDate}`,
     renotify: false,
     data: {

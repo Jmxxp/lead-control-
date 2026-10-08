@@ -1,5 +1,6 @@
 -- Controle de Leads | Importacao segura de backups do Prospec
--- Atualizacao incremental. Pode ser executada isoladamente no SQL Editor.
+-- MODULO HISTORICO: nao execute isoladamente nem reaplique no projeto atual.
+-- Consulte supabase/bootstrap/README.md e use uma nova migration para mudancas.
 
 begin;
 

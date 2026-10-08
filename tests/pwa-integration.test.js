@@ -1,22 +1,22 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
+const { existsSync, readFileSync, readdirSync } = require("node:fs");
 const { resolve } = require("node:path");
 const test = require("node:test");
 
 const root = resolve(__dirname, "..");
 const indexSource = readFileSync(resolve(root, "index.html"), "utf8");
-const appSource = readFileSync(resolve(root, "app.js"), "utf8");
-const stylesSource = readFileSync(resolve(root, "styles.css"), "utf8");
-const mobileSource = readFileSync(resolve(root, "mobile.css"), "utf8");
-const supportSource = readFileSync(resolve(root, "support-assistant.css"), "utf8");
+const appSource = readFileSync(resolve(root, "assets/js/app.js"), "utf8");
+const stylesSource = readFileSync(resolve(root, "assets/css/styles.css"), "utf8");
+const mobileSource = readFileSync(resolve(root, "assets/css/mobile.css"), "utf8");
+const supportSource = readFileSync(resolve(root, "assets/css/support-assistant.css"), "utf8");
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.webmanifest"), "utf8"));
 const workflowSource = readFileSync(resolve(root, ".github/workflows/pages.yml"), "utf8");
 
 test("HTML carrega cliente Push antes do app e expõe controles acessíveis", () => {
-  const pushScriptIndex = indexSource.search(/<script[^>]+src="pwa-notifications\.js(?:\?[^\"]*)?"/);
-  const appScriptIndex = indexSource.search(/<script[^>]+src="app\.js(?:\?[^\"]*)?"/);
+  const pushScriptIndex = indexSource.search(/<script[^>]+src="assets\/js\/pwa-notifications\.js(?:\?[^\"]*)?"/);
+  const appScriptIndex = indexSource.search(/<script[^>]+src="assets\/js\/app\.js(?:\?[^\"]*)?"/);
 
   assert.ok(pushScriptIndex >= 0, "pwa-notifications.js deve ser carregado no HTML");
   assert.ok(appScriptIndex > pushScriptIndex, "o cliente Push deve existir antes de app.js executar");
@@ -24,6 +24,38 @@ test("HTML carrega cliente Push antes do app e expõe controles acessíveis", ()
   assert.match(indexSource, /id="pushNotificationModal"[^>]*hidden/);
   assert.match(indexSource, /role="dialog"[^>]+aria-modal="true"/);
   assert.match(indexSource, /id="dailyReportSettingsList"[^>]+aria-live="polite"/);
+});
+
+test("ordem global de estilos e scripts permanece estável", () => {
+  const orderedStyles = [
+    'href="assets/css/styles.css',
+    'href="assets/css/prospections.css',
+    'href="assets/css/attendances.css',
+    'href="assets/css/prospec-original.css',
+    'href="assets/css/mobile.css',
+    'href="assets/css/support-assistant.css',
+    'href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/',
+  ];
+  const orderedScripts = [
+    'src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0',
+    'src="assets/js/pwa-notifications.js',
+    'src="assets/js/app.js',
+    'src="assets/js/prospections.js',
+    'src="assets/js/attendances.js',
+    'src="assets/js/support-assistant.js',
+  ];
+
+  [orderedStyles, orderedScripts].forEach((references) => {
+    const positions = references.map((reference) => indexSource.indexOf(reference));
+    assert.ok(positions.every((position) => position >= 0), "todos os recursos ordenados devem existir");
+    positions.slice(1).forEach((position, index) => {
+      assert.ok(position > positions[index], "a ordem de carregamento não deve mudar");
+    });
+  });
+  assert.match(
+    indexSource,
+    /id="prospecOriginalStyles"[^>]+href="assets\/css\/prospec-original\.css[^>]+disabled/,
+  );
 });
 
 test("manifesto instala o app no mesmo escopo usado pelo Service Worker", () => {
@@ -36,10 +68,31 @@ test("manifesto instala o app no mesmo escopo usado pelo Service Worker", () => 
   assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
 });
 
-test("publicação no GitHub Pages inclui cliente Push e Service Worker na raiz", () => {
-  assert.match(workflowSource, /^\s+pwa-notifications\.js \\/m);
+test("publicação no GitHub Pages inclui assets e mantém o Service Worker na raiz", () => {
+  assert.match(workflowSource, /cp -R assets _site\/assets/);
   assert.match(workflowSource, /^\s+service-worker\.js \\/m);
   assert.match(workflowSource, /^\s+manifest\.webmanifest \\/m);
+});
+
+test("arquivos de frontend ficam organizados e todas as referências locais existem", () => {
+  const rootCodeFiles = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(?:css|js)$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(rootCodeFiles, ["service-worker.js"]);
+
+  const htmlReferences = [
+    ...indexSource.matchAll(/\b(?:href|src)="([^"]+)"/g),
+    ...indexSource.matchAll(/\bcontent="(assets\/[^"]+)"/g),
+  ]
+    .map((match) => match[1])
+    .filter((reference) => !/^(?:[a-z]+:|#)/i.test(reference));
+  const manifestReferences = manifest.icons.map((icon) => icon.src);
+
+  [...htmlReferences, ...manifestReferences].forEach((reference) => {
+    const localPath = reference.split(/[?#]/, 1)[0];
+    assert.ok(existsSync(resolve(root, localPath)), `recurso local ausente: ${localPath}`);
+  });
 });
 
 test("app integra os cinco RPCs autenticados e salva agenda por loja e agência", () => {

@@ -300,7 +300,8 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@supabase/functions-js@2.116.0"
+      "jsr:@supabase/functions-js@2.116.0",
+      "npm:web-push@3.6.7"
     ]
   }
 }

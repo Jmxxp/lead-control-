@@ -15,13 +15,13 @@ O assistente não responde sobre contas administrativas, agências, planos, lice
 
 ## Arquivos
 
-- `support-assistant.js`: widget, histórico efêmero, Markdown seguro e ações allowlisted.
-- `support-assistant.css`: apresentação desktop/mobile e estados claro/escuro.
+- `assets/js/support-assistant.js`: widget, histórico efêmero, Markdown seguro e ações allowlisted.
+- `assets/css/support-assistant.css`: apresentação desktop/mobile e estados claro/escuro.
 - `supabase/functions/ai-analysis/index.ts`: rota `action: "support"`, política determinística e chamada server-side do provedor já configurado.
 - `supabase/functions/ai-analysis/support_policy_test.ts`: testes do escopo, continuações, PII e formato do histórico.
 - `supabase/migrations/20260818182307_support_assistant_authorization.sql`: RPC privada, wrapper restrito, reserva atômica e conclusão do uso.
 - `supabase/migrations/20260818193000_redact_ai_settings_key.sql`: garantia rastreável de que a RPC acessível ao navegador não devolva a chave da IA.
-- `database.sql`, etapa 9: estado consolidado para uma instalação limpa.
+- `supabase/bootstrap/database.sql`, etapa 9: baseline manual histórico.
 
 ## Contrato HTTP
 
@@ -60,7 +60,7 @@ Resposta:
 
 O frontend ignora rótulos, ícones, seletores e URLs recebidos. Somente o `id` é considerado e remapeado para um catálogo local fixo.
 
-## Eventos de integração com `app.js`
+## Eventos de integração com `assets/js/app.js`
 
 ### Contexto de sessão e capacidades
 
@@ -138,10 +138,11 @@ window.SupportAssistant?.refreshCapabilities?.();
 
 Estado verificado em 19 de agosto de 2026: as migrations foram aplicadas e o endpoint respondeu corretamente a CORS e sessões ausente/inválida. Para novas implantações, preserve esta ordem:
 
-1. revisar e aplicar `20260818182307_support_assistant_authorization.sql`;
-2. aplicar `20260818193000_redact_ai_settings_key.sql`;
-3. implantar a Edge Function `ai-analysis`;
-4. publicar `index.html`, `support-assistant.js` e `support-assistant.css`;
-5. testar uma sessão de cliente com e sem Prospecções e uma sessão administrativa dentro e fora de um cliente.
+1. conferir o histórico com `supabase migration list --linked`;
+2. revisar pendências com `supabase db push --linked --dry-run`;
+3. depois de backup e revisão, aplicar somente as migrations pendentes com `supabase db push --linked`;
+4. implantar a Edge Function `ai-analysis`;
+5. publicar `index.html`, `assets/js/support-assistant.js` e `assets/css/support-assistant.css`;
+6. testar uma sessão de cliente com e sem Prospecções e uma sessão administrativa dentro e fora de um cliente.
 
 `supabase/config.toml` mantém `verify_jwt = false` para `ai-analysis` porque a aplicação usa sessão própria. A função continua exigindo `x-app-session` e valida essa sessão no banco antes de qualquer acesso à configuração de IA.

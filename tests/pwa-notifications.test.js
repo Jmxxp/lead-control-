@@ -9,7 +9,7 @@ const {
   decodeBase64Url,
   extractApplicationServerKey,
   inspectPushSupport,
-} = require("../pwa-notifications.js");
+} = require("../assets/js/pwa-notifications.js");
 
 function base64Url(bytes) {
   return Buffer.from(bytes)

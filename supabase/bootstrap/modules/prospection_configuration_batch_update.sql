@@ -1,5 +1,8 @@
 -- Salvamento atomico da configuracao completa de Prospeccoes.
 --
+-- MODULO HISTORICO: nao reaplique no projeto atual. Versoes posteriores das
+-- funcoes estao registradas em supabase/migrations/.
+--
 -- A interface envia um snapshot completo por loja. A funcao valida todo o
 -- documento antes da primeira escrita e, em caso de qualquer erro, o Postgres
 -- reverte configuracoes, categorias, etiquetas e profissionais em conjunto.

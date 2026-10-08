@@ -1,11 +1,12 @@
 -- Modulo de Atendimentos | Lead Control
 --
--- Dependencias: database.sql consolidado (usuarios, lojas, leads e prospeccoes).
--- A migracao e aditiva, idempotente e usa a sessao x-app-session por meio do
+-- MODULO HISTORICO: nao reaplique no projeto atual. A fonte operacional e
+-- supabase/migrations/; consulte supabase/bootstrap/README.md.
+-- Dependencias historicas: usuarios, lojas, leads e prospeccoes do baseline.
+-- O modulo usa a sessao x-app-session por meio do
 -- parametro p_session_token validado em app_private.session_user(text).
 -- O acesso usa exatamente app_private.prospection_store_allowed: nao existe
 -- licenca independente de Atendimentos.
--- Execute no SQL Editor depois de database.sql.
 
 begin;
 
@@ -22,7 +23,7 @@ begin
      or to_regclass('public.prospections') is null
      or to_regclass('public.prospection_professionals') is null
      or to_regprocedure('app_private.session_user(text)') is null then
-    raise exception 'Instale primeiro o database.sql consolidado do Lead Control.';
+    raise exception 'Dependencias historicas ausentes; consulte supabase/bootstrap/README.md.';
   end if;
 end $$;
 

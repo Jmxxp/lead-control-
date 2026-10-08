@@ -586,7 +586,7 @@ async function init() {
   initializePushNotificationClient();
 
   if (!isSupabaseReady()) {
-    showAuthMessage("Cole a URL e a chave pública/anon do Supabase no topo do app.js.");
+    showAuthMessage("Cole a URL e a chave pública/anon do Supabase no topo de assets/js/app.js.");
     return;
   }
 
@@ -9747,7 +9747,7 @@ function setTodayLabel() {
 
 async function rpc(functionName, args = {}) {
   if (!supabaseClient) {
-    throw new Error("Supabase não configurado. Informe URL e chave pública/anon no app.js.");
+    throw new Error("Supabase não configurado. Informe URL e chave pública/anon em assets/js/app.js.");
   }
 
   const { data, error } = await supabaseClient.rpc(functionName, args);

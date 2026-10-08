@@ -31,8 +31,8 @@ test("payload vazio ou inválido sempre produz notificação visível e segura",
 
   assert.equal(empty.title, "Controle de Leads");
   assert.equal(empty.options.body, "Seu relatório diário está pronto.");
-  assert.equal(empty.options.icon, "./assets/app-icon-192.png");
-  assert.equal(empty.options.badge, "./assets/favicon-32.png");
+  assert.equal(empty.options.icon, "./assets/icons/app-icon-192.png");
+  assert.equal(empty.options.badge, "./assets/icons/favicon-32.png");
   assert.equal(empty.options.tag, "daily-report");
   assert.equal(empty.options.requireInteraction, false);
   assert.deepEqual(empty.options.data, {

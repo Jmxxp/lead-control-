@@ -1,7 +1,7 @@
 -- Smoke transacional para multiplas OS e cancelamento de atendimentos.
 --
 -- Pre-requisito: migrations aplicadas ate
--- 20260915115122_attendance_multiple_orders_and_cancellation.sql.
+-- 20261008142942_fix_attendance_list_v4_volatility.sql.
 --
 -- O teste usa somente dados sinteticos. Quando ja existe um Admin, reaproveita
 -- apenas seu UUID para respeitar a regra de Admin unico. Loja, usuario, sessao,
@@ -55,6 +55,23 @@ begin
        'app_private.attendance_cancellation_audit'
      ) is null then
     raise exception 'QA multiplas OS: contrato SQL incompleto.';
+  end if;
+
+  if (
+       select procedure.provolatile
+       from pg_catalog.pg_proc procedure
+       where procedure.oid = pg_catalog.to_regprocedure(
+         'app_private.rpc_list_attendances_v4(text,uuid,text,text,uuid,text,text,date,date,integer,integer)'
+       )
+     ) is distinct from 'v'
+     or (
+       select procedure.provolatile
+       from pg_catalog.pg_proc procedure
+       where procedure.oid = pg_catalog.to_regprocedure(
+         'public.lc_list_attendances_v4(text,uuid,text,text,uuid,text,text,date,date,integer,integer)'
+       )
+     ) is distinct from 'v' then
+    raise exception 'QA multiplas OS: listagem V4 precisa ser VOLATILE para validar a sessao sem HTTP 405.';
   end if;
 end;
 $attendance_multiple_orders_contract$;

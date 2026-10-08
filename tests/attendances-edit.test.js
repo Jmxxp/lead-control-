@@ -5,11 +5,11 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const source = readFileSync(require.resolve("../attendances.js"), "utf8");
-const styles = readFileSync(require.resolve("../attendances.css"), "utf8");
+const source = readFileSync(require.resolve("../assets/js/attendances.js"), "utf8");
+const styles = readFileSync(require.resolve("../assets/css/attendances.css"), "utf8");
 const hooks = {};
 const window = { __ATTENDANCES_TEST_HOOKS__: hooks };
-vm.runInNewContext(source, { window }, { filename: "attendances.js" });
+vm.runInNewContext(source, { window }, { filename: "assets/js/attendances.js" });
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 

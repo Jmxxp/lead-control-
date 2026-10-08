@@ -5,7 +5,7 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const source = readFileSync(require.resolve("../prospections.js"), "utf8");
+const source = readFileSync(require.resolve("../assets/js/prospections.js"), "utf8");
 const marker = "  window.ProspectionsModule = {";
 assert.ok(source.includes(marker));
 

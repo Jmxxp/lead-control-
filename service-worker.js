@@ -3,8 +3,8 @@
 
   const DEFAULT_TITLE = "Controle de Leads";
   const DEFAULT_BODY = "Seu relatório diário está pronto.";
-  const DEFAULT_ICON = "./assets/app-icon-192.png";
-  const DEFAULT_BADGE = "./assets/favicon-32.png";
+  const DEFAULT_ICON = "./assets/icons/app-icon-192.png";
+  const DEFAULT_BADGE = "./assets/icons/favicon-32.png";
   const MAX_TITLE_LENGTH = 90;
   const MAX_BODY_LENGTH = 240;
 

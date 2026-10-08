@@ -5,7 +5,7 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const appSource = readFileSync(require.resolve("../app.js"), "utf8");
+const appSource = readFileSync(require.resolve("../assets/js/app.js"), "utf8");
 const adapterStart = appSource.indexOf("async function subscribeAttendanceRealtime");
 const adapterEnd = appSource.indexOf("\nfunction assertLegacyModuleSelection", adapterStart);
 assert.ok(adapterStart >= 0 && adapterEnd > adapterStart, "adapter Realtime deve permanecer isolável para teste");

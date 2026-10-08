@@ -1,8 +1,8 @@
 # Controle de Leads — documentação completa do projeto
 
-> Retrato técnico e funcional verificado em **18 de agosto de 2026**.
+> Retrato técnico e funcional atualizado em **8 de outubro de 2026**.
 >
-> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. Em 18 de agosto de 2026, a retirada de anúncios/atribuição, as três migrations desta entrega e a Edge Function `ai-analysis` versão 2 foram aplicadas e verificadas no remoto. O frontend continua tendo ciclo independente pelo GitHub Pages.
+> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. Em 8 de outubro de 2026, as 33 migrations locais estavam alinhadas ao histórico remoto; `ai-analysis` versão 8 e `daily-report-push` versão 2 estavam ativas. O frontend continua tendo ciclo independente pelo GitHub Pages.
 
 ## 1. Resumo executivo
 
@@ -55,11 +55,11 @@ flowchart LR
 | Ícones | Font Awesome 6.5.2 via CDN | Ícones visuais da interface. |
 | Cliente de dados | `@supabase/supabase-js@2` via CDN | Chamadas RPC ao Supabase. |
 | Banco | Supabase PostgreSQL | Dados, permissões, regras, auditoria e retenção. |
-| Funções | Supabase Edge Functions/Deno | Proxy autenticado da IA: streaming para análise e resposta JSON para suporte. |
+| Funções | Supabase Edge Functions/Deno | IA/suporte autenticados e entrega server-side das notificações de relatório diário. |
 | Criptografia SQL | `pgcrypto` | Senhas, tokens, hashes e evidências. |
-| Agendamento | `pg_cron` | Retenção diária de Atendimentos. |
+| Agendamento | `pg_cron` + `pg_net` | Retenções diárias e acionamento do worker de relatório diário. |
 | Hospedagem web | GitHub Pages | Publicação do site estático. |
-| PWA | Web App Manifest | Instalação em tela inicial e identidade visual. |
+| PWA | Web App Manifest, Service Worker e Push API | Instalação, identidade visual e Web Push; sem cache offline da aplicação. |
 | Persistência local | `localStorage` e IndexedDB | Sessão, tema, módulo, chats da IA analítica e autorizações de backup; o chat de suporte não é persistido. |
 | IA externa | Gemini ou DeepSeek | Análises comerciais agregadas e orientações de suporte dentro de política restrita. |
 
@@ -71,7 +71,7 @@ flowchart LR
 - O último módulo Prospecções/Atendimentos é restaurado automaticamente somente para o perfil Loja. Admin e Agência iniciam no painel geral de Leads e usam o botão **Entrar** de um cliente antes de trocar o módulo.
 - O Supabase Auth **não é usado para login do produto**. Existe autenticação própria em `app_users` e `app_sessions`.
 - A chave `anon` do Supabase está no navegador, como esperado para cliente público. A segurança depende de RLS, revogação de acesso direto e validação de sessão dentro das RPCs.
-- Não há Service Worker. O app é instalável pelo manifesto, mas **não tem cache offline completo**.
+- Há um Service Worker exclusivo para Web Push. Ele não intercepta `fetch` nem mantém cache de aplicação; portanto, o app **não oferece uso offline completo**.
 - O fuso operacional padrão é `America/Sao_Paulo`; datas visuais usam `pt-BR`.
 
 ## 3. Hierarquia de contas, dados e licenças
@@ -92,10 +92,10 @@ flowchart TD
 
 - `admin_user_id` identifica o tenant e aparece em praticamente todas as tabelas de negócio.
 - `store_id` impede a mistura de informações entre clientes.
-- `stores.technician_user_id` vincula uma loja à agência responsável.
+- `stores.technician_user_id` preserva a agência principal/legada; os vínculos ativos são normalizados em `app_private.store_agency_accesses`.
 - Uma conta `store` também aponta para a loja em `app_users.store_id`.
 - O Admin pode acessar qualquer loja do próprio tenant.
-- A Agência pode acessar somente lojas em que `technician_user_id` é o seu usuário.
+- A Agência pode acessar somente lojas para as quais possui vínculo ativo em `app_private.store_agency_accesses`; o vínculo principal legado é mantido sincronizado.
 - A Loja pode acessar somente `app_users.store_id`.
 - Análises e IA analítica trabalham com **uma loja selecionada por vez**; dados de lojas diferentes não são combinados. O Assistente de Suporte é separado e não recebe dados comerciais da loja.
 
@@ -139,67 +139,73 @@ O uso do Assistente de Suporte exige uma configuração central de IA ativa, mas
 
 ```text
 lead-control-/
+├── README.md                          # Entrada rápida, estrutura e comandos locais
 ├── index.html                         # Estrutura da SPA e todos os mounts/modais
-├── app.js                             # Núcleo: sessão, Leads, contas, análises, IA, backup
-├── styles.css                         # Design system e telas do núcleo
-├── mobile.css                         # Responsividade compartilhada
-├── prospections.js / prospections.css # Módulo de Prospecções
-├── prospec-original.css               # Camada visual original ativada só na operação
-├── attendances.js / attendances.css   # Módulo de Atendimentos
-├── support-assistant.js / .css        # Assistente de Suporte, UI segura e responsiva
-├── SUPPORT_ASSISTANT_INTEGRATION.md   # Contrato técnico da integração do suporte
-├── manifest.webmanifest               # Manifesto instalável/PWA
-├── favicon.ico e logo__.png           # Identidade na raiz
-├── assets/                            # Ícones, logo e preview social
-│   ├── logo-source.png
-│   ├── link-preview.png
-│   ├── app-icon-192.png
-│   ├── app-icon-512.png
-│   ├── maskable-icon-512.png
-│   ├── apple-touch-icon.png
-│   ├── favicon-16.png
-│   ├── favicon-32.png
-│   └── site-icon.png
-├── database.sql                       # Base consolidada + histórico incremental
-├── attendance_module.sql              # Schema e RPCs de Atendimentos
-├── lead_intelligence_update.sql       # Inteligência comercial nativa, sem atribuição externa
-├── *_update.sql                       # Migrações incrementais históricas
-├── *_qa.sql                           # QA SQL transacional
-├── remove_whatsapp_module.sql         # Retirada destrutiva do módulo descontinuado
+├── manifest.webmanifest               # Manifesto PWA; permanece na raiz pelo escopo
+├── service-worker.js                  # Web Push; permanece na raiz pelo escopo
+├── favicon.ico                        # Fallback convencional dos navegadores
+├── assets/                            # Frontend estático publicado
+│   ├── css/
+│   │   ├── styles.css                 # Design system e telas do núcleo
+│   │   ├── mobile.css                 # Responsividade compartilhada
+│   │   ├── prospections.css
+│   │   ├── prospec-original.css       # Camada visual ativada só na operação
+│   │   ├── attendances.css
+│   │   └── support-assistant.css
+│   ├── js/
+│   │   ├── app.js                     # Sessão, Leads, contas, análises, IA e backup
+│   │   ├── pwa-notifications.js       # Cliente e ciclo de vida do Web Push
+│   │   ├── prospections.js
+│   │   ├── attendances.js
+│   │   └── support-assistant.js
+│   ├── icons/                         # Favicons e ícones instaláveis
+│   └── images/                        # Logos e preview social
+├── docs/
+│   ├── DOCUMENTACAO_COMPLETA_PROJETO.md
+│   ├── SUPPORT_ASSISTANT_INTEGRATION.md
+│   ├── PWA_PUSH_BACKEND_CONTRACT.md
+│   └── bom-dia-vendedor-dias-sem-expediente.md
 ├── supabase/
+│   ├── README.md                      # Política e mapa dos arquivos de banco
 │   ├── config.toml                    # Configuração local das Edge Functions
+│   ├── bootstrap/                     # Baseline manual histórico; não é deploy automático
+│   │   ├── database.sql
+│   │   └── modules/                   # Módulos ausentes do baseline consolidado
+│   ├── legacy/
+│   │   ├── manual-patches/            # Patches antigos, somente para auditoria/legado
+│   │   └── destructive/               # Operações antigas com perda de dados
 │   ├── migrations/
-│   │   ├── 20260818171504_remove_marketing_attribution.sql
-│   │   ├── 20260818182307_support_assistant_authorization.sql
-│   │   ├── 20260818190526_attendance_list_v2_filters.sql
-│   │   └── 20260818193000_redact_ai_settings_key.sql
+│   │   └── <timestamp>_<mudança>.sql   # Histórico oficial e imutável do Supabase
 │   └── functions/
-│       └── ai-analysis/
-│           ├── index.ts                # Única Edge Function do produto
-│           └── support_policy_test.ts  # Testes determinísticos da política de suporte
+│       ├── ai-analysis/                # Análise e Assistente de Suporte
+│       └── daily-report-push/          # Entrega Web Push do resumo diário
+├── tests/
+│   ├── *.test.js                      # Testes automatizados Node
+│   └── sql/                           # Testes manuais de integração SQL
 └── .github/workflows/pages.yml         # Deploy do frontend no GitHub Pages
 ```
 
 ### 4.1 Diretório local legado `prospec/`
 
-`prospec/` é um repositório local aninhado e ignorado pelo Git principal. Ele guarda a versão original independente do sistema de prospecção e SQLs antigos, servindo apenas como referência. O produto publicado usa `prospections.js`, `prospections.css`, `prospec-original.css` e as RPCs atuais do projeto principal.
+`prospec/` é um repositório local aninhado e ignorado pelo Git principal. Ele guarda a versão original independente do sistema de prospecção e SQLs antigos, servindo apenas como referência. O produto publicado usa `assets/js/prospections.js`, `assets/css/prospections.css`, `assets/css/prospec-original.css` e as RPCs atuais do projeto principal.
 
 Arquivos `prospec-backup*.json` também são ignorados e podem conter dados pessoais. Não devem ser commitados.
 
 ### 4.2 Ordem de carregamento do navegador
 
-1. `styles.css`
-2. `prospections.css`
-3. `attendances.css`
-4. `prospec-original.css` inicialmente desabilitado
-5. `mobile.css`
-6. `support-assistant.css`
+1. `assets/css/styles.css`
+2. `assets/css/prospections.css`
+3. `assets/css/attendances.css`
+4. `assets/css/prospec-original.css` inicialmente desabilitado
+5. `assets/css/mobile.css`
+6. `assets/css/support-assistant.css`
 7. Font Awesome
 8. Supabase JS v2
-9. `app.js`
-10. `prospections.js`
-11. `attendances.js`
-12. `support-assistant.js`
+9. `assets/js/pwa-notifications.js`
+10. `assets/js/app.js`
+11. `assets/js/prospections.js`
+12. `assets/js/attendances.js`
+13. `assets/js/support-assistant.js`
 
 Os módulos expõem pontes globais:
 
@@ -207,7 +213,7 @@ Os módulos expõem pontes globais:
 - `window.AttendancesModule`
 - `window.SupportAssistant`
 
-`app.js` fornece a sessão, lojas, dados e navegação; cada módulo monta sua própria interface no contêiner correspondente. O script do suporte é carregado por último para consumir os elementos e as pontes já registrados, sem depender de bundler.
+`assets/js/app.js` fornece a sessão, lojas, dados e navegação; cada módulo monta sua própria interface no contêiner correspondente. O script do suporte é carregado por último para consumir os elementos e as pontes já registrados, sem depender de bundler.
 
 ## 5. Mapa de telas e interface
 
@@ -395,7 +401,7 @@ Ao trocar a loja, o sistema invalida a renderização anterior. Os módulos embu
 ```mermaid
 sequenceDiagram
     participant U as Usuário autenticado
-    participant W as support-assistant.js
+    participant W as assets/js/support-assistant.js
     participant E as ai-analysis
     participant R as lc_support_assistant_runtime
     participant P as Provedor de IA
@@ -411,7 +417,7 @@ sequenceDiagram
     W->>W: monta Markdown com nós DOM e revalida ações visíveis
 ```
 
-O assistente não envia Lead, Prospecção, Atendimento, métrica ou configuração da loja ao provedor. O histórico bruto também não é repassado: uma continuação curta recebe somente o tópico operacional derivado de mensagens anteriores do próprio usuário. Ao acionar um atalho, `app.js` revalida contexto, licença e alterações não salvas antes de usar a navegação normal.
+O assistente não envia Lead, Prospecção, Atendimento, métrica ou configuração da loja ao provedor. O histórico bruto também não é repassado: uma continuação curta recebe somente o tópico operacional derivado de mensagens anteriores do próprio usuário. Ao acionar um atalho, `assets/js/app.js` revalida contexto, licença e alterações não salvas antes de usar a navegação normal.
 
 ## 8. Módulo Leads
 
@@ -643,7 +649,7 @@ Leads é sempre permitido. Prospecções e Atendimentos ficam desabilitados quan
 
 | Aba | Fonte e contrato | Conteúdo principal |
 |---|---|---|
-| Leads | Estado e cálculos do `app.js`: `selectedAnalyticsStoreId`, `renderAdminAnalytics`, `getAnalyticsBaseLeads` e `getAnalyticsLeads` | Funil, períodos, categorias internas, comparações, registros, exportação e IA agregada. |
+| Leads | Estado e cálculos do `assets/js/app.js`: `selectedAnalyticsStoreId`, `renderAdminAnalytics`, `getAnalyticsBaseLeads` e `getAnalyticsLeads` | Funil, períodos, categorias internas, comparações, registros, exportação e IA agregada. |
 | Prospecções | `window.ProspectionsModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_list_prospections` e `lc_get_prospection_configuration`; compartilha `analysisExperienceMarkup(context)` com `openAnalysis` | Resumos por período, coorte de conversão, profissionais, campanhas, evolução, calendário, filtros personalizados e modal **Listar** com sete controles combináveis. |
 | Atendimentos | `window.AttendancesModule.renderEmbeddedAnalysis({ root, bridge, storeId })`; lê `lc_get_attendance_workspace` e `lc_list_attendances_v2` paginado | KPIs, funil, financeiro, top profissionais, qualidade de vínculos, busca/filtros e detalhe de até 20 sobre uma base protegida de até 2.000. |
 
@@ -710,7 +716,7 @@ Atalhos aceitos:
 | `open_attendances` | Abre Atendimentos se o contexto e a licença permitirem. |
 | `open_lead_configuration` | Abre Leads e o editor de categorias/opções. |
 
-O servidor devolve no máximo duas ações dentre as autorizadas pela RPC; o frontend ignora rótulos, ícones, seletores ou URLs recebidos, usa seu próprio catálogo e confere novamente a disponibilidade visual. Admin/Agência fora de um cliente não recebem atalhos de módulo. `app.js` ainda passa toda navegação pela proteção de alterações não salvas.
+O servidor devolve no máximo duas ações dentre as autorizadas pela RPC; o frontend ignora rótulos, ícones, seletores ou URLs recebidos, usa seu próprio catálogo e confere novamente a disponibilidade visual. Admin/Agência fora de um cliente não recebem atalhos de módulo. `assets/js/app.js` ainda passa toda navegação pela proteção de alterações não salvas.
 
 O chat de suporte é efêmero: fica somente em `state.messages`, não usa `localStorage` nem tabela de transcrição e é apagado ao recarregar, sair ou trocar a sessão. O log em `ai_usage` guarda metadados operacionais — provedor, modelo, tipo, estimativa de tokens, latência e status — sem conteúdo da conversa. O limite é de 40 solicitações de suporte por usuário em uma janela móvel de uma hora. A autorização adquire um advisory lock por usuário e cria a reserva de uso na mesma transação da contagem; requisições paralelas não conseguem ultrapassar a cota. A Edge conclui essa mesma reserva por `usage_id`; se a conclusão falhar, a reserva continua contando para proteger o custo.
 
@@ -734,7 +740,7 @@ Limpar dados do site encerra a restauração local, remove chats analíticos e e
 - `app_private`: validação de sessão, segredos e helpers internos.
 - `extensions`: extensões Postgres usadas com `search_path` explícito.
 
-No modelo consolidado pós-migrações existem **22 tabelas públicas de domínio e nenhuma tabela privada de negócio**. O schema `app_private` permanece para funções, validação e helpers. `!` significa `NOT NULL`; `?` significa anulável.
+O schema `public` concentra as tabelas de domínio expostas pelas RPCs. O schema `app_private` também contém estado interno de autorização e operação criado pelas migrations mais recentes, incluindo acesso multiagência, Realtime privado, Push e entregas de relatórios. O inventário deve ser conferido no banco migrado, sem reutilizar contagens do baseline histórico. `!` significa `NOT NULL`; `?` significa anulável.
 
 ### 15.2 Tabelas de identidade, contas e jurídico
 
@@ -903,14 +909,15 @@ O conjunto permitido em `lead_events` é `lead_created`, `contacted`, `qualified
 | Função | Responsabilidade | Autorização |
 |---|---|---|
 | `ai-analysis` | IA analítica por SSE e Assistente de Suporte por JSON não-streaming, com políticas e formatos independentes. | `x-app-session`; configuração real via RPCs executadas como `service_role`. |
+| `daily-report-push` | Consome entregas pendentes do relatório diário e envia notificações Web Push. | Segredo interno e operações de banco com credenciais de serviço. |
 
-`ai-analysis` é a única Edge Function presente em `supabase/functions/` e a única entrada em `supabase/config.toml`. `verify_jwt = false` é intencional porque o produto não usa Supabase Auth; a função exige `x-app-session`. Análise usa `lc_ai_runtime_config`; suporte usa `lc_support_assistant_runtime`. Ambas são chamadas pelo processo servidor com a chave de serviço, nunca pelo browser.
+As duas funções estão presentes em `supabase/functions/` e configuradas em `supabase/config.toml`. Em `ai-analysis`, `verify_jwt = false` é intencional porque o produto não usa Supabase Auth; a função exige `x-app-session`. Análise usa `lc_ai_runtime_config`; suporte usa `lc_support_assistant_runtime`. Ambas são chamadas pelo processo servidor com a chave de serviço, nunca pelo browser.
 
 Na ação `support`, o servidor aceita apenas `action`, `messages` e o `store_id` opcional da loja ativa, aplica a política determinística, revalida esse escopo no banco, envia ao provedor somente o manual estático, capacidades booleanas, IDs permitidos e a pergunta aprovada, e valida novamente o JSON de saída. Respostas de suporte usam `Cache-Control: no-store` e `X-Content-Type-Options: nosniff`.
 
 ### 17.2 Estado local e estado remoto
 
-Em 18 de agosto de 2026, o estado remoto foi conferido depois da limpeza: somente `ai-analysis` permanece ativa, na versão 2, com a rota `action: "support"` publicada. `marketing-api` e `marketing-worker` foram excluídas; não há implantação de `marketing-conversions`, `whatsapp-api`, `whatsapp-webhook` ou `whatsapp-worker`. O smoke test remoto confirmou `OPTIONS 200`, requisição sem sessão `401`, sessão inválida `401` e negação `401` das RPCs de suporte aos papéis web.
+Em 8 de outubro de 2026, `supabase functions list` confirmou `ai-analysis` versão 8 e `daily-report-push` versão 2 com status `ACTIVE`. `marketing-api` e `marketing-worker` foram excluídas; não há implantação de `marketing-conversions`, `whatsapp-api`, `whatsapp-webhook` ou `whatsapp-worker`.
 
 Excluir código do repositório não apaga automaticamente uma função publicada. Por isso, futuras manutenções devem sempre comparar o diretório local com `supabase functions list` e nunca reinstalar as funções descontinuadas acima.
 
@@ -963,71 +970,78 @@ Não existem segredos, chaves Vault ou variáveis de ambiente para anúncios ou 
 
 ## 19. Migrações e evolução do banco
 
-### 19.1 Instalação limpa
+### 19.1 Baseline histórico e ambientes novos
 
-Ordem recomendada para um ambiente novo:
+O projeto ainda possui um baseline manual anterior ao histórico atual de migrations.
+Ele foi isolado em `supabase/bootstrap/` e não é executado automaticamente pelo
+Supabase CLI. A ordem em que ele foi composto historicamente é:
 
-1. `database.sql`
-2. `prospection_configuration_batch_update.sql`
-3. `prospection_backup_import_update.sql`
-4. `attendance_module.sql`
-5. `supabase/migrations/20260818190526_attendance_list_v2_filters.sql`
-6. provisionar o Admin global com procedimento administrativo controlado;
-7. publicar somente `supabase/functions/ai-analysis`;
-8. configurar o provedor de IA pela conta Admin, se a ferramenta for usada.
+1. `supabase/bootstrap/database.sql`
+2. `supabase/bootstrap/modules/prospection_configuration_batch_update.sql`
+3. `supabase/bootstrap/modules/prospection_backup_import_update.sql`
+4. `supabase/bootstrap/modules/attendance_module.sql`
 
-Os passos 2 e 3 completam, respectivamente, o salvamento atômico da configuração e a importação idempotente de backups de Prospecções; esses dois contratos não estão incorporados ao `database.sql` consolidado. O runtime atômico do Assistente de Suporte e a ocultação da chave nas RPCs de configuração já estão no `database.sql` atual. Portanto, as migrations `20260818182307_support_assistant_authorization.sql` e `20260818193000_redact_ai_settings_key.sql` não devem ser reaplicadas em uma instalação limpa criada por esse arquivo.
+Essa lista é inventário, não um runbook de instalação. O baseline possui várias
+fronteiras transacionais, não representa o estado atual sozinho e as migrations
+posteriores pressupõem objetos preexistentes. Hoje não há uma instalação limpa
+suportada pela simples execução desses arquivos.
 
-As migrações de remoção não são necessárias numa instalação limpa baseada no `database.sql` atual. `remove_whatsapp_module.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` existem para atualizar ambientes antigos.
+Antes de criar um ambiente novo, deve-se gerar um baseline atual a partir de um
+banco conhecido e validá-lo em banco vazio, incluindo dados operacionais,
+grants, cron, Storage/Vault quando aplicáveis, Edge Functions e toda a suíte de
+`tests/sql/`. Scripts de `supabase/legacy/` não fazem parte desse processo.
 
 ### 19.2 Ambiente existente
 
-Não reaplicar `database.sql` inteiro sem revisão. Para um banco existente:
+Em um projeto vinculado, não execute migrations antigas manualmente pelo SQL
+Editor e não reaplique `bootstrap/` ou `legacy/`. O fluxo suportado é:
 
 1. gerar e verificar backup;
-2. aplicar somente a migração relevante;
-3. usar `20260818171504_remove_marketing_attribution.sql` para retirar anúncios/atribuição;
-4. usar `remove_whatsapp_module.sql` apenas se ainda houver vestígios do módulo WhatsApp;
-5. aplicar `20260818182307_support_assistant_authorization.sql` antes de publicar o Assistente de Suporte;
-6. aplicar `20260818190526_attendance_list_v2_filters.sql` antes de publicar o frontend que chama a RPC v2;
-7. aplicar `20260818193000_redact_ai_settings_key.sql` para garantir que a chave da IA nunca volte ao navegador;
-8. validar tabelas, funções, grants, triggers, cron e funcionamento do app.
+2. conferir `supabase migration list --linked`;
+3. revisar `supabase db push --linked --dry-run`;
+4. aplicar somente as migrations pendentes com `supabase db push --linked`;
+5. validar tabelas, funções, grants, triggers, cron, testes SQL e o app.
+
+Qualquer uso de `supabase/legacy/destructive/` exige plano separado, backup e
+revisão explícita; esses scripts não pertencem ao deploy normal.
 
 A remoção de atribuição é propositalmente destrutiva: apaga métricas, conexões, filas, logs e campos de rastreamento. O arquivo é transacional, usa limites de lock/execução e restringe o `DROP` dinâmico às funções `ma_*`, mas backup e validação continuam obrigatórios.
 
-### 19.3 Inventário das migrações incrementais
+### 19.3 Inventário SQL histórico
 
 | Arquivo/grupo | Área |
 |---|---|
-| `account_management_update.sql`, `admin_account_update.sql` | Gestão de contas e credenciais. |
-| `technician_role_step1.sql`, `technician_role_step2.sql` | Introdução/evolução do papel Agência. |
-| `b2b_client_hierarchy_update.sql` | Hierarquia Admin → Agência → Cliente. |
-| `prospection_access_control_update.sql`, `prospection_plan_downgrade_fix.sql` | Licenças e downgrade. |
-| `client_scoped_configuration_update.sql`, `store_options_update.sql`, `agency_store_configuration_editor_update.sql` | Configuração por loja. |
-| `custom_categories_update.sql`, `option_add_value_update.sql`, `reactivate_deleted_options_update.sql` | Categorias/opções de Leads. |
-| `appointment_scheduling_enum_update.sql`, `appointment_scheduling_update.sql` | Agendamento. |
-| `lead_contact_date_step1.sql`, `lead_contact_date_update.sql`, `lead_contact_date_mac.sql` | Data de contato e variantes de implantação. |
-| `lead_inspected_update.sql`, `lead_notes_update.sql`, `purchase_fields_update.sql` | Campos incrementais de Leads. |
-| `central_ai_configuration_update.sql` | IA central do tenant. |
+| `supabase/legacy/manual-patches/{account_management_update.sql,admin_account_update.sql}` | Gestão de contas e credenciais. |
+| `supabase/legacy/manual-patches/{technician_role_step1.sql,technician_role_step2.sql}` | Introdução/evolução do papel Agência. |
+| `supabase/legacy/manual-patches/b2b_client_hierarchy_update.sql` | Hierarquia Admin → Agência → Cliente. |
+| `supabase/legacy/manual-patches/{prospection_access_control_update.sql,prospection_plan_downgrade_fix.sql}` | Licenças e downgrade. |
+| `supabase/legacy/manual-patches/{client_scoped_configuration_update.sql,store_options_update.sql,agency_store_configuration_editor_update.sql}` | Configuração por loja. |
+| `supabase/legacy/manual-patches/{custom_categories_update.sql,option_add_value_update.sql,reactivate_deleted_options_update.sql}` | Categorias/opções de Leads. |
+| `supabase/legacy/manual-patches/{appointment_scheduling_enum_update.sql,appointment_scheduling_update.sql}` | Agendamento. |
+| `supabase/legacy/manual-patches/{lead_contact_date_step1.sql,lead_contact_date_update.sql,lead_contact_date_mac.sql}` | Data de contato e variantes de implantação. |
+| `supabase/legacy/manual-patches/{lead_inspected_update.sql,lead_notes_update.sql,purchase_fields_update.sql}` | Campos incrementais de Leads. |
+| `supabase/legacy/manual-patches/central_ai_configuration_update.sql` | IA central do tenant. |
 | `supabase/migrations/20260818182307_support_assistant_authorization.sql` | Runtime e autorização server-only do Assistente de Suporte, reserva atômica, conclusão de uso, capacidades e índice do rate limit. |
 | `supabase/migrations/20260818190526_attendance_list_v2_filters.sql` | Listagem v2 de Atendimentos, com profissional histórico e estados de vínculo exatos antes da paginação. |
 | `supabase/migrations/20260818193000_redact_ai_settings_key.sql` | Garante por migration rastreável que RPCs acessíveis ao navegador devolvam apenas `has_api_key`, nunca o segredo. |
-| `lead_intelligence_update.sql` | Inteligência comercial e eventos nativos de ciclo de vida, sem atribuição externa. |
-| `prospection_brand_identity_update.sql` | Identidade visual por loja. |
-| `prospection_configuration_batch_update.sql` + QA | Configuração atômica/revisões. |
-| `prospection_backup_import_update.sql` + QA | Importação idempotente. |
-| `attendance_module.sql` | Módulo Atendimentos completo. |
-| `legal_terms_retention_access_update.sql` | Termos, evidência e gate de acesso. |
-| `remove_whatsapp_module.sql` | Retirada definitiva e destrutiva do módulo descontinuado. |
+| `supabase/legacy/manual-patches/lead_intelligence_update.sql` | Inteligência comercial e eventos nativos de ciclo de vida, sem atribuição externa. |
+| `supabase/legacy/manual-patches/prospection_brand_identity_update.sql` | Identidade visual por loja. |
+| `supabase/bootstrap/modules/prospection_configuration_batch_update.sql` + `tests/sql/prospection-configuration-batch.sql` | Configuração atômica/revisões. |
+| `supabase/bootstrap/modules/prospection_backup_import_update.sql` + `tests/sql/prospection-backup-import.sql` | Importação idempotente. |
+| `supabase/bootstrap/modules/attendance_module.sql` | Módulo Atendimentos completo. |
+| `supabase/legacy/manual-patches/legal_terms_retention_access_update.sql` | Termos, evidência e gate de acesso. |
+| `supabase/legacy/destructive/remove_whatsapp_module.sql` | Retirada definitiva e destrutiva do módulo descontinuado. |
 | `supabase/migrations/20260818171504_remove_marketing_attribution.sql` | Retirada definitiva e destrutiva das duas gerações de anúncios/atribuição. |
 
 ## 20. Agendamentos remotos
 
-Estado esperado após as migrações:
+Jobs definidos pelo schema e pelas migrations do projeto; a presença efetiva depende das extensões, segredos e implantação do ambiente:
 
 | Job | Cron | Ação |
 |---|---|---|
+| `lead-control-prospections-retention` | `17 3 * * *` | `app_private.purge_expired_prospections()` |
 | `lc_attendance_retention_daily` | `17 3 * * *` | `app_private.attendance_purge_retention()` |
+| `daily-report-push-every-minute` | `* * * * *` | Chamada HTTP protegida à Edge Function `daily-report-push`. |
 
 Não existe job de anúncios ou WhatsApp. A migração cancela `marketing-worker-2-minutes` e o alias histórico `marketing-worker-30-seconds`, além de remover o histórico desses jobs.
 
@@ -1039,7 +1053,7 @@ O workflow `.github/workflows/pages.yml` executa em push para `main` ou manualme
 
 1. checkout;
 2. configuração do GitHub Pages;
-3. cópia dos arquivos estáticos para `_site`, incluindo `support-assistant.js` e `support-assistant.css` junto de `app.js`, módulos, estilos, manifesto, ícones e `assets/`;
+3. cópia dos arquivos raiz necessários e do diretório `assets/` completo para `_site`;
 4. criação de `.nojekyll`;
 5. upload do artefato;
 6. deploy do Pages.
@@ -1054,10 +1068,10 @@ Para publicar esta versão em um ambiente existente, a ordem segura é:
 
 1. revisar e aplicar, nessa ordem, as migrations de suporte, listagem v2 de Atendimentos e ocultação da chave da IA;
 2. implantar `supabase/functions/ai-analysis` com a rota de suporte;
-3. publicar o frontend com `index.html`, `support-assistant.js` e `support-assistant.css`;
+3. publicar o frontend com `index.html`, `assets/js/support-assistant.js` e `assets/css/support-assistant.css`;
 4. testar Loja com e sem Prospecções e Admin/Agência dentro e fora de um cliente.
 
-Publicar apenas o frontend antes da migração e da Edge Function deixaria o botão visível, mas o runtime de suporte indisponível. Nesta entrega, as três migrations foram aplicadas e `ai-analysis` versão 2 foi implantada e testada antes da publicação do frontend.
+Publicar apenas o frontend antes das migrations e das Edge Functions deixaria recursos visíveis sem o runtime correspondente. No estado remoto registrado em 8 de outubro de 2026, `ai-analysis` versão 8 e `daily-report-push` versão 2 estavam ativas.
 
 Comandos típicos:
 
@@ -1095,10 +1109,8 @@ Abrir `http://127.0.0.1:4173`. Usar servidor HTTP evita restrições de módulos
 ### 22.1 Frontend
 
 ```bash
-node --check app.js
-node --check prospections.js
-node --check attendances.js
-node --check support-assistant.js
+for file in assets/js/*.js service-worker.js; do node --check "$file" || exit; done
+node --test tests/*.test.js
 ```
 
 Checklist manual mínimo:
@@ -1129,7 +1141,9 @@ Checklist manual mínimo:
 supabase db lint --linked --schema public,app_private --level error --fail-on error
 ```
 
-Executar os arquivos `*_qa.sql` em transação e confirmar rollback ao final. Validar RLS, grants, funções duplicadas e jobs após qualquer migração.
+Executar manualmente os cenários relevantes de `tests/sql/` em ambiente local ou
+de staging e confirmar o `ROLLBACK` final. Validar RLS, grants, funções duplicadas
+e jobs após qualquer migration.
 
 ### 22.3 Edge Function de IA
 
@@ -1142,9 +1156,9 @@ deno check supabase/functions/ai-analysis/index.ts
 deno test --allow-env supabase/functions/ai-analysis/support_policy_test.ts
 ```
 
-O teste automatizado cobre perguntas permitidas, continuação curta com tópico anterior, bloqueio de áreas privilegiadas/externas, bloqueio de identificadores pessoais, limite/formato do histórico, capacidade por módulo, prioridade de “análise de Leads” e impossibilidade de uma mensagem `assistant` forjada criar contexto. Neste checkout, em 18 de agosto de 2026, os quatro `node --check`, o `deno check`, o `deno lint`, os **7 testes Deno**, o lint remoto do banco e o QA visual em 390px/1440px foram executados com sucesso.
+O teste automatizado cobre perguntas permitidas, continuação curta com tópico anterior, bloqueio de áreas privilegiadas/externas, bloqueio de identificadores pessoais, limite/formato do histórico, capacidade por módulo, prioridade de “análise de Leads” e impossibilidade de uma mensagem `assistant` forjada criar contexto. Na reorganização de 8 de outubro de 2026, os checks sintáticos do frontend, os **119 testes Node**, os **14 testes Deno**, a integridade do artefato do Pages e a equivalência visual em 390px/1440px passaram.
 
-Estado verificado em 18 de agosto de 2026: `ai-analysis` versão 2 ativa, `OPTIONS` respondendo `200`, `POST` sem sessão ou com sessão inválida bloqueado com `401`, e RPCs de runtime/conclusão recusadas aos papéis web com `401`.
+Estado remoto registrado em 8 de outubro de 2026: `ai-analysis` versão 8 e `daily-report-push` versão 2 ativas. CORS, sessões inválidas, grants e segredos devem ser revalidados após cada nova implantação remota.
 
 ## 23. Lacunas e riscos conhecidos no retrato atual
 
@@ -1156,7 +1170,7 @@ Estado verificado em 18 de agosto de 2026: `ai-analysis` versão 2 ativa, `OPTIO
 
 ### Prioridade média
 
-4. `database.sql` é uma base consolidada extensa; reaplicá-la sem revisão em ambiente existente continua arriscado.
+4. `supabase/bootstrap/database.sql` é uma base consolidada extensa; reaplicá-la sem revisão em ambiente existente continua arriscado.
 5. Não há suíte automatizada completa de regressão visual/E2E para uma interface grande e muito dependente de perfil, licença, tema e largura.
 6. Sessão e chats da IA analítica ficam em `localStorage`; uma política CSP forte e revisão contínua contra XSS são importantes. O Markdown do novo suporte é seguro por construção, mas não corrige renderizadores legados da IA analítica.
 7. `ai-analysis` responde CORS com origem ampla e depende da validação obrigatória de `x-app-session`; qualquer flexibilização dessa validação ou dos grants `service_role` seria uma falha crítica.
@@ -1165,7 +1179,7 @@ Estado verificado em 18 de agosto de 2026: `ai-analysis` versão 2 ativa, `OPTIO
 
 ### Limitações intencionais
 
-10. PWA sem Service Worker: instalável, mas não offline.
+10. PWA com Service Worker restrito ao Web Push: instalável, mas sem cache offline.
 11. A Central analisa uma loja por vez; não compara nem combina clientes.
 12. Prospecções e Atendimentos ficam indisponíveis sem a licença conjunta.
 13. **Listar** em Prospecções mostra até 200 registros filtrados. A análise de Atendimentos carrega até 2.000 registros por período e exibe até 20 no detalhamento; ambas informam o limite quando aplicável.
@@ -1186,7 +1200,7 @@ Arquivos removidos do repositório:
 - `supabase/functions/marketing-conversions/`;
 - `supabase/functions/_shared/marketing/`.
 
-`marketing_intelligence_update.sql` foi substituído por `lead_intelligence_update.sql`, que mantém apenas inteligência comercial nativa e auditoria de IA. `database.sql`, `index.html`, `app.js`, o workflow do Pages e `supabase/config.toml` não carregam nem publicam código de anúncios.
+`marketing_intelligence_update.sql` foi substituído por `supabase/legacy/manual-patches/lead_intelligence_update.sql`, que mantém apenas inteligência comercial nativa e auditoria de IA. `supabase/bootstrap/database.sql`, `index.html`, `assets/js/app.js`, o workflow do Pages e `supabase/config.toml` não carregam nem publicam código de anúncios.
 
 A migração de retirada também:
 
@@ -1214,7 +1228,7 @@ O estado correto do produto é:
 - sem franquia de WhatsApp no plano;
 - sem documentação operacional desse módulo.
 
-`remove_whatsapp_module.sql` também recria as operações genéricas de plano apenas com a licença Prospecções + Atendimentos. A migração não altera Leads, telefones, Prospecções ou Atendimentos.
+`supabase/legacy/destructive/remove_whatsapp_module.sql` também recria as operações genéricas de plano apenas com a licença Prospecções + Atendimentos. A migração não altera Leads, telefones, Prospecções ou Atendimentos.
 
 ## 25. Glossário
 
@@ -1229,7 +1243,7 @@ O estado correto do produto é:
 | Atendimento | Interação realizada por um profissional na loja. |
 | OS | Ordem de serviço que comprova/rastreia uma compra. |
 | RPC | Função PostgreSQL chamada remotamente. |
-| Edge Function | Função Deno no Supabase; neste projeto, somente o proxy de IA. |
+| Edge Function | Função Deno no Supabase; neste projeto, IA/suporte e entrega do relatório diário. |
 | Idempotência | Garantia de que retries não duplicam uma operação. |
 | RLS | Segurança em nível de linha do PostgreSQL. |
 | Snapshot | Cópia histórica de nome/configuração no momento do evento. |
@@ -1241,17 +1255,17 @@ O estado correto do produto é:
 | Assunto | Fonte principal |
 |---|---|
 | Estrutura visual | `index.html` e arquivos CSS |
-| Fluxos do núcleo/Leads | `app.js` |
-| Prospecções | `prospections.js`, `prospections.css` e RPCs `lc_*prospection*` |
-| Atendimentos | `attendances.js`, `attendances.css`, `attendance_module.sql` e `supabase/migrations/20260818190526_attendance_list_v2_filters.sql` |
-| Central única de análise | `index.html`, `app.js`, `styles.css`, `mobile.css` e APIs embutidas dos dois módulos |
-| IA de análise | `app.js`, `central_ai_configuration_update.sql`, `supabase/functions/ai-analysis/index.ts` |
-| Assistente de Suporte IA | `support-assistant.js`, `support-assistant.css`, `SUPPORT_ASSISTANT_INTEGRATION.md`, `supabase/functions/ai-analysis/index.ts`, `supabase/functions/ai-analysis/support_policy_test.ts`, `supabase/migrations/20260818182307_support_assistant_authorization.sql` e `supabase/migrations/20260818193000_redact_ai_settings_key.sql` |
-| Retirada de anúncios/atribuição | `lead_intelligence_update.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` |
-| Retirada do WhatsApp | `remove_whatsapp_module.sql` |
+| Fluxos do núcleo/Leads | `assets/js/app.js` |
+| Prospecções | `assets/js/prospections.js`, `assets/css/prospections.css` e RPCs `lc_*prospection*` |
+| Atendimentos | `assets/js/attendances.js`, `assets/css/attendances.css`, `supabase/bootstrap/modules/attendance_module.sql` e migrations posteriores de Atendimentos |
+| Central única de análise | `index.html`, `assets/js/app.js`, `assets/css/styles.css`, `assets/css/mobile.css` e APIs embutidas dos dois módulos |
+| IA de análise | `assets/js/app.js`, `supabase/legacy/manual-patches/central_ai_configuration_update.sql`, `supabase/functions/ai-analysis/index.ts` |
+| Assistente de Suporte IA | `assets/js/support-assistant.js`, `assets/css/support-assistant.css`, `docs/SUPPORT_ASSISTANT_INTEGRATION.md`, `supabase/functions/ai-analysis/index.ts`, `supabase/functions/ai-analysis/support_policy_test.ts`, `supabase/migrations/20260818182307_support_assistant_authorization.sql` e `supabase/migrations/20260818193000_redact_ai_settings_key.sql` |
+| Retirada de anúncios/atribuição | `supabase/legacy/manual-patches/lead_intelligence_update.sql` e `supabase/migrations/20260818171504_remove_marketing_attribution.sql` |
+| Retirada do WhatsApp | `supabase/legacy/destructive/remove_whatsapp_module.sql` |
 | Segurança/permissões reais | Schema e funções do banco remoto |
 | Deploy web | `.github/workflows/pages.yml` |
 | Funções publicadas | `supabase functions list` no projeto vinculado |
-| Histórico de evolução | `database.sql` e migrações `*_update.sql` |
+| Histórico de evolução | `supabase/bootstrap/`, `supabase/legacy/` e `supabase/migrations/` |
 
 Ao alterar o produto, atualizar este documento junto com o contrato afetado e registrar a nova data do retrato técnico.
