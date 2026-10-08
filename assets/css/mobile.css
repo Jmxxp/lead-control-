@@ -909,6 +909,29 @@ video {
     min-width: 0;
   }
 
+  .management-card .management-profile {
+    row-gap: 3px;
+  }
+
+  .management-card .management-profile-copy {
+    display: contents;
+  }
+
+  .management-card .management-profile > .management-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+  }
+
+  .management-card .management-profile-copy > :not(.management-stats) {
+    grid-column: 2;
+  }
+
+  .management-card .management-stats {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
   .management-profile-copy > strong,
   .management-profile-copy > span,
   .management-meta,
