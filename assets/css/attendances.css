@@ -933,6 +933,12 @@ body.is-dark .attendance-shell,
   display: none;
 }
 
+[data-attendance-save] > .attendance-button-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .attendance-form[aria-busy="true"] .attendance-button-idle {
   display: none;
 }
@@ -2716,6 +2722,7 @@ body.is-dark .attendance-turn-label > span,
 
 .attendance-turn-queue {
   display: flex;
+  align-items: center;
   gap: 6px;
   min-width: 0;
   overflow-x: auto;
@@ -2726,27 +2733,27 @@ body.is-dark .attendance-turn-label > span,
 .attendance-turn-queue > span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 0 0 auto;
-  min-height: 29px;
-  padding: 4px 9px 4px 5px;
+  min-height: 38px;
+  padding: 6px 12px 6px 8px;
   border: 1px solid var(--att-line);
-  border-radius: 999px;
+  border-radius: var(--radius, 8px);
   background: var(--att-panel);
   color: var(--att-muted);
-  font-size: 0.66rem;
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
 .attendance-turn-queue > span b {
   display: grid;
-  width: 19px;
-  height: 19px;
+  width: 24px;
+  height: 24px;
   place-items: center;
   border-radius: 50%;
   background: var(--att-panel-muted);
   color: var(--att-ink);
-  font-size: 0.58rem;
+  font-size: 0.66rem;
 }
 
 .attendance-turn-queue > span.is-current {

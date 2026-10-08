@@ -10278,7 +10278,10 @@ function getProfileAvatar(accountType, accountId) {
 
 function renderCurrentSessionAvatar() {
   if (!sessionAvatar) return;
-  if (!storeView.hidden && activeStoreContext) {
+  const isClientWorkspace = !storeView.hidden
+    || activeSystemModule === "prospections"
+    || activeSystemModule === "attendances";
+  if (isClientWorkspace && activeStoreContext) {
     setAvatarPreview(sessionAvatar, activeStoreContext.avatarUrl || "", "store");
     return;
   }
