@@ -1007,6 +1007,13 @@ body.is-dark .unified-analysis-tab[data-unified-analysis="attendances"].is-activ
   background: var(--surface-soft);
 }
 
+#legalTermsNavButton > i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 .company-nav-button > span {
   display: grid;
   gap: 2px;
@@ -3391,6 +3398,11 @@ body.is-dark .bar-track {
   border-radius: 10px;
   font-size: 0.75rem;
   box-shadow: none;
+}
+
+#openTechnicianCreation,
+#openStoreCreation {
+  gap: 8px;
 }
 
 .technician-list-panel {

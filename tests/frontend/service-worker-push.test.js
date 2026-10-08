@@ -7,7 +7,7 @@ const {
   focusOrOpenClient,
   parsePushPayload,
   safeUrl,
-} = require("../service-worker.js");
+} = require("../../service-worker.js");
 
 const CONTEXT = {
   origin: "https://app.example.test",

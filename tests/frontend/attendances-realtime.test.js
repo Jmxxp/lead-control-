@@ -5,7 +5,7 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const source = readFileSync(require.resolve("../assets/js/attendances.js"), "utf8");
+const source = readFileSync(require.resolve("../../assets/js/attendances.js"), "utf8");
 
 const STORE_A = "00000000-0000-4000-8000-00000000000a";
 const STORE_B = "00000000-0000-4000-8000-00000000000b";

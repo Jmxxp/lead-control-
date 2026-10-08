@@ -5,7 +5,7 @@ const { existsSync, readFileSync, readdirSync } = require("node:fs");
 const { resolve } = require("node:path");
 const test = require("node:test");
 
-const root = resolve(__dirname, "..");
+const root = resolve(__dirname, "../..");
 const indexSource = readFileSync(resolve(root, "index.html"), "utf8");
 const appSource = readFileSync(resolve(root, "assets/js/app.js"), "utf8");
 const stylesSource = readFileSync(resolve(root, "assets/css/styles.css"), "utf8");

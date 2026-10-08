@@ -22,7 +22,7 @@ O calendário de dias sem expediente faz parte da mesma configuração de meta, 
 ## Verificação local
 
 ```sh
-node --test tests/attendances-closed-days.test.js
+node --test tests/frontend/attendances-closed-days.test.js
 node --check assets/js/attendances.js
 git diff --check
 ```

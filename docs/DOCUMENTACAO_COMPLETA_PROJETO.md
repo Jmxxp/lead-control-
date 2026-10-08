@@ -159,8 +159,9 @@ lead-control-/
 │   │   ├── attendances.js
 │   │   └── support-assistant.js
 │   ├── icons/                         # Favicons e ícones instaláveis
-│   └── images/                        # Logos e preview social
+│   └── images/                        # Logo original e preview social
 ├── docs/
+│   ├── README.md                      # Índice da documentação
 │   ├── DOCUMENTACAO_COMPLETA_PROJETO.md
 │   ├── SUPPORT_ASSISTANT_INTEGRATION.md
 │   ├── PWA_PUSH_BACKEND_CONTRACT.md
@@ -180,7 +181,8 @@ lead-control-/
 │       ├── ai-analysis/                # Análise e Assistente de Suporte
 │       └── daily-report-push/          # Entrega Web Push do resumo diário
 ├── tests/
-│   ├── *.test.js                      # Testes automatizados Node
+│   ├── README.md                      # Guia de execução dos testes
+│   ├── frontend/                      # Testes automatizados Node (*.test.js)
 │   └── sql/                           # Testes manuais de integração SQL
 └── .github/workflows/pages.yml         # Deploy do frontend no GitHub Pages
 ```
@@ -1110,7 +1112,7 @@ Abrir `http://127.0.0.1:4173`. Usar servidor HTTP evita restrições de módulos
 
 ```bash
 for file in assets/js/*.js service-worker.js; do node --check "$file" || exit; done
-node --test tests/*.test.js
+node --test tests/frontend/*.test.js
 ```
 
 Checklist manual mínimo:
