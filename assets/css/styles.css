@@ -480,6 +480,16 @@ h3 {
   text-align: center;
 }
 
+#storeView :is(.field > span, .intelligence-badge, .operation-record-phone, .operation-record-owner, .ghost-button, .secondary-button, .mini-button, .excel-export-button) > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 1.1em;
+  width: 1.1em;
+  height: 1.1em;
+  line-height: 1;
+}
+
 .topbar-identity {
   display: flex;
   align-items: center;
@@ -3639,6 +3649,10 @@ body.is-keyboard-navigation .management-filter-select:focus-within {
   justify-content: flex-end;
 }
 
+#toggleOptionsEdit {
+  gap: 8px;
+}
+
 .align-start {
   align-items: flex-start;
 }
@@ -3906,6 +3920,11 @@ body.is-dark .password-field input:focus {
     background 160ms ease,
     color 160ms ease,
     box-shadow 160ms ease;
+}
+
+.choice-button > span:not(.choice-brand-mark) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .choice-brand-mark {
@@ -4647,6 +4666,10 @@ body.is-dark .secondary-button {
 
 .operation-record-card--leads {
   --record-accent: #64748b;
+}
+
+body:not(.is-dark) .operation-record-card--leads {
+  box-shadow: none;
 }
 
 body.is-dark .operation-record-card--leads {
