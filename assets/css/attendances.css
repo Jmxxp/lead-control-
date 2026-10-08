@@ -8,6 +8,7 @@
   --att-muted: #506d61;
   --att-line: #c1d8cc;
   --att-line-strong: #91b6a5;
+  --att-record-tint: 16%;
   --att-forest: #123c2c;
   --att-forest-deep: #0b5138;
   --att-emerald: #087a55;
@@ -52,6 +53,7 @@ body.is-dark .attendance-embedded-analysis,
   --att-muted: #a9c7b8;
   --att-line: #28503e;
   --att-line-strong: #3f765d;
+  --att-record-tint: 20%;
   --att-forest: #b6f4d3;
   --att-forest-deep: #0a6847;
   --att-emerald: #59dba5;
@@ -1475,6 +1477,7 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   min-height: 370px;
   max-height: none;
   padding: 11px;
+  background: var(--att-bg);
   overflow: auto;
   overscroll-behavior-x: contain;
   overscroll-behavior-y: auto;
@@ -1487,14 +1490,14 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   min-width: 0;
   overflow: hidden;
   padding: 14px 14px 13px 17px;
-  border: 1px solid color-mix(in srgb, var(--att-line) 92%, var(--att-emerald));
+  border: 1px solid var(--att-line-strong);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--att-panel-soft) 88%, var(--att-panel));
+  background: color-mix(in srgb, var(--att-emerald) var(--att-record-tint), var(--att-panel));
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .attendance-record + .attendance-record {
-  margin-top: 9px;
+  margin-top: 18px;
 }
 
 .attendance-record:hover {
@@ -1504,7 +1507,6 @@ body.is-dark .attendance-analysis-kpi.is-sage,
 
 .attendance-record.is-canceled {
   border-color: color-mix(in srgb, var(--att-danger) 68%, var(--att-line));
-  background: linear-gradient(135deg, color-mix(in srgb, var(--att-danger) 12%, var(--att-panel)), color-mix(in srgb, var(--att-panel-soft) 88%, var(--att-panel)));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--att-danger) 12%, transparent), 0 10px 26px color-mix(in srgb, var(--att-danger) 11%, transparent);
 }
 
@@ -4850,6 +4852,10 @@ body.is-dark .attendance-turn-label > span,
   .attendance-record {
     padding: 10px 9px 9px 13px;
     border-radius: 9px;
+  }
+
+  .attendance-record + .attendance-record {
+    margin-top: 14px;
   }
 
   .attendance-record > header {
