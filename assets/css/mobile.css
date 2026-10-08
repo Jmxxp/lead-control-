@@ -208,9 +208,10 @@ video {
     min-width: 0;
   }
 
-  #appView > .topbar > .topbar-actions {
+  #appView > .topbar > .topbar-actions,
+  #appView > .topbar:has(> .module-switcher[hidden]) > .topbar-actions {
     grid-area: actions;
-    width: auto;
+    width: 100%;
     min-width: 0;
   }
 
@@ -276,54 +277,15 @@ video {
     -webkit-line-clamp: 2;
   }
 
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
-    display: grid;
-    grid-template-columns: repeat(3, 44px);
-    grid-auto-flow: row;
-    grid-auto-rows: 44px;
-    gap: 4px;
-    max-width: none;
-    overflow: visible;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
-    grid-template-columns: repeat(4, 44px);
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-status {
-    order: 2;
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-button {
-    order: 1;
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) > .topbar-status,
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card {
-    height: 40px;
-    min-height: 40px;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card {
-    width: 100%;
-    justify-content: center;
-  }
-
   #appView .topbar-actions {
     display: flex;
     align-items: center;
     flex-direction: row;
-    flex-wrap: nowrap;
-    justify-content: flex-end;
-    gap: 5px;
-    max-width: min(48vw, 220px);
-    overflow-x: auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 4px;
+    max-width: none;
+    overflow: visible;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
   }
@@ -333,55 +295,47 @@ video {
   }
 
   #appView .topbar-status,
-  #appView .today-card,
-  #appView .topbar-actions .topbar-button {
-    height: 36px;
-    min-height: 36px;
+  #appView .today-card {
+    height: auto;
+    min-height: 40px;
   }
 
   #appView .topbar-status {
-    flex: 0 0 auto;
-    width: auto;
+    order: 2;
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 0;
   }
 
   #appView .today-card {
+    width: 100%;
     min-width: 0;
     max-width: 100%;
-    overflow: hidden;
-    padding-inline: 9px;
+    justify-content: center;
+    padding: 6px 9px;
     border-radius: 9px;
     font-size: 0.65rem;
-    white-space: nowrap;
+    white-space: normal;
   }
 
   #appView .today-card span {
     min-width: 0;
-    overflow: hidden;
     font-size: 0.7rem;
-    text-overflow: ellipsis;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card {
-    gap: 4px;
-    padding: 3px 6px;
-    white-space: normal;
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) .today-card span {
-    display: block;
-    font-size: 0.58rem;
-    line-height: 1.05;
-    text-align: left;
+    line-height: 1.2;
+    text-align: center;
     text-overflow: clip;
     white-space: normal;
-    overflow-wrap: normal;
+    overflow-wrap: anywhere;
     word-break: normal;
   }
 
   #appView .topbar-actions .topbar-button {
-    flex: 0 0 36px;
-    width: 36px;
-    min-width: 36px;
+    order: 1;
+    flex: 1 1 44px;
+    width: auto;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
     border-radius: 9px;
   }
@@ -461,13 +415,13 @@ video {
   .company-workspace-nav {
     display: grid;
     justify-content: initial;
-    grid-auto-columns: minmax(108px, 1fr);
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    gap: 4px;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
     margin-bottom: 9px;
     padding: 4px;
-    overflow-x: auto;
+    overflow-x: visible;
     overscroll-behavior-x: contain;
     border-radius: var(--mobile-radius);
     scrollbar-width: none;
@@ -513,7 +467,7 @@ video {
   }
 
   .summary-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
     margin-bottom: 9px;
   }
@@ -525,22 +479,31 @@ video {
   }
 
   .summary-grid .metric span {
-    overflow: hidden;
-    font-size: 0.58rem;
+    display: block;
+    min-width: 0;
+    overflow: visible;
+    font-size: 0.7rem;
     font-weight: 800;
     line-height: 1.05;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .summary-grid .metric strong,
   .summary-grid #totalStores {
     margin-top: 7px;
-    overflow: hidden;
+    min-width: 0;
+    overflow: visible;
     font-size: clamp(1.02rem, 5vw, 1.4rem);
     line-height: 1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .summary-grid > .metric:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .summary-grid .metric small {
@@ -548,7 +511,6 @@ video {
     font-size: 0.53rem;
   }
 
-  .backup-summary-grid,
   .legal-summary-grid,
   .analytics-kpis,
   .choice-grid,
@@ -563,6 +525,27 @@ video {
   .lead-intelligence-grid,
   .field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .backup-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-summary-card {
+    gap: 3px 8px;
+    padding: 11px;
+  }
+
+  .backup-summary-card > span,
+  .backup-summary-card strong {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .backup-summary-card strong {
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .form-panel,
@@ -650,7 +633,7 @@ video {
 
   .store-export-panel {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: end;
     gap: 9px;
     margin-bottom: 9px;
@@ -671,7 +654,7 @@ video {
 
   .store-export-controls {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
     width: 100%;
   }
@@ -690,6 +673,8 @@ video {
   }
 
   .store-export-button {
+    grid-column: 1 / -1;
+    width: 100%;
     min-width: 0;
     min-height: 38px;
     padding-inline: 6px;
@@ -743,13 +728,18 @@ video {
 
   .backup-hero,
   .legal-admin-hero {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .backup-status-badge,
   .legal-version-badge {
-    grid-column: auto;
-    justify-self: end;
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
     text-align: center;
   }
 
@@ -1567,7 +1557,7 @@ video {
 
   .prospection-view .status-picker {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
     min-width: 0;
     margin: 0;
@@ -1596,9 +1586,21 @@ video {
     border-radius: 8px;
     background: var(--surface-soft);
     color: var(--muted);
-    font-size: 0.55rem;
+    font-size: 0.7rem;
     font-weight: 800;
     text-align: center;
+  }
+
+  .prospection-view .status-option > span:last-child {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .prospection-view .status-option:has(input:checked)::after {
+    position: static;
+    flex: 0 0 auto;
+    line-height: 1;
   }
 
   .prospection-view .status-option input {
@@ -1926,6 +1928,17 @@ video {
 }
 
 @media (max-width: 480px) {
+  .lead-card .operation-record-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lead-card .operation-record-status {
+    align-self: flex-start;
+    max-width: 100%;
+  }
+
   .app-shell {
     padding-right: max(7px, env(safe-area-inset-right));
     padding-left: max(7px, env(safe-area-inset-left));
@@ -1963,7 +1976,7 @@ video {
   }
 
   .summary-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .summary-grid .metric {
@@ -1972,7 +1985,7 @@ video {
   }
 
   .summary-grid .metric span {
-    font-size: 0.52rem;
+    font-size: 0.7rem;
   }
 
   .summary-grid .metric strong,
@@ -2012,10 +2025,6 @@ video {
 
   #appView .topbar-brand-cluster {
     flex-basis: 38px;
-  }
-
-  #appView .topbar-actions {
-    max-width: 46vw;
   }
 
   #appView .topbar-identity .eyebrow {

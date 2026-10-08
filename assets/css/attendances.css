@@ -1446,16 +1446,25 @@ body.is-dark .attendance-analysis-kpi.is-sage,
   font-weight: 850;
 }
 
-.attendance-list-pagination > span,
-.attendance-list-pagination.is-complete {
+.attendance-list-pagination > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
 
+.attendance-list-pagination > span:not(.attendance-mini-spinner) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
 .attendance-list-pagination.is-complete {
+  align-items: center;
   justify-content: center;
+  gap: 7px;
   color: var(--att-emerald);
+  text-align: center;
 }
 
 .attendance-list-pagination.is-loading {
@@ -4383,6 +4392,67 @@ body.is-dark .attendance-turn-label > span,
 }
 
 @media (max-width: 760px) {
+  .attendance-view-switcher {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .attendance-view-switcher button {
+    min-width: 0;
+  }
+
+  .attendance-list-pagination {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attendance-list-pagination.is-complete,
+  .attendance-list-pagination.is-loading {
+    align-items: center;
+  }
+
+  .attendance-list-pagination > button {
+    width: 100%;
+  }
+
+  .attendance-record > header {
+    flex-wrap: wrap;
+  }
+
+  .attendance-record-person {
+    flex: 1 1 180px;
+    align-items: flex-start;
+  }
+
+  .attendance-record-person strong,
+  .attendance-record-person small,
+  .attendance-record-meta > span b,
+  .attendance-turn-current strong {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+  }
+
+  .attendance-turn-queue {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .attendance-turn-queue > span {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .attendance-turn-queue > span b {
+    flex: 0 0 24px;
+  }
+
   .attendance-morning-heading,
   .attendance-morning-board--setup,
   .attendance-morning-board--locked,

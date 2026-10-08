@@ -356,7 +356,8 @@
 }
 
 @media (max-width: 720px) {
-  #appView > .topbar {
+  #appView > .topbar,
+  #appView > .topbar:has(> .module-switcher:not([hidden])) {
     position: relative;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
@@ -380,7 +381,7 @@
   #appView > .topbar > .topbar-actions {
     position: static;
     grid-area: actions;
-    justify-self: end;
+    justify-self: stretch;
     z-index: 2;
   }
 
@@ -449,24 +450,6 @@
     font-size: 0.8rem;
   }
 
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
-    width: auto;
-    max-width: none;
-    justify-content: end;
-    grid-template-columns: repeat(4, 44px);
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
-    grid-template-columns: repeat(5, 44px);
-  }
-
-  #appView .topbar-actions:has(> button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden]) ~ button:not([hidden])) {
-    grid-template-columns: repeat(6, 44px);
-  }
-
-  #appView .topbar-actions:has(#supportAssistantToggle:not([hidden])) > .topbar-status {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 390px) {

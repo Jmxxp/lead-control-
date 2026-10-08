@@ -120,8 +120,10 @@ test("modal Push fica acima dos painéis, prende o foco e preserva o estado no t
 });
 
 test("topo móvel comporta todos os controles com alvos de toque de 44px", () => {
-  assert.match(mobileSource, /grid-auto-rows:\s*44px/);
-  assert.match(mobileSource, /> \.topbar-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/s);
-  assert.match(supportSource, /grid-template-columns:\s*repeat\(6,\s*44px\)/);
+  const mobileControls = mobileSource.match(/#appView\s+\.topbar-actions\s+\.topbar-button\s*\{([^}]*)\}/)?.[1];
+  assert.ok(mobileControls, "os controles do topo devem ter dimensões mínimas explícitas");
+  assert.match(mobileControls, /min-width:\s*44px/);
+  assert.match(mobileControls, /min-height:\s*44px/);
+  assert.match(supportSource, /#appView\s+#supportAssistantToggle:not\(\[hidden\]\)\s*\{[^}]*min-width:\s*48px;[^}]*min-height:\s*48px/s);
   assert.doesNotMatch(supportSource, /topbar-button:not\(#supportAssistantToggle\)[^{]*\{[^}]*width:\s*28px/s);
 });
