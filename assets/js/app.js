@@ -2247,6 +2247,7 @@ function setAttendanceVisualMode(enabled) {
 function attendanceCompatibilityBridge() {
   const retroactiveDatesGranted = moduleAccessContractVersion >= 2;
   return {
+    isClientWorkspace: Boolean(currentProfile && (currentProfile.role === "store" || activeStoreContext)),
     attendanceRetroactiveDatesGranted: retroactiveDatesGranted,
     attendanceRpcNames: {
       save: "lc_upsert_attendance_v4",

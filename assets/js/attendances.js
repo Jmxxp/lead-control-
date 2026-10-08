@@ -1174,7 +1174,7 @@
 
   function renderStoreHeader() {
     const store = selectedStore();
-    const canChoose = !isStoreRole() && state.stores.length > 0;
+    const canChoose = !isStoreRole() && !state.bridge?.isClientWorkspace && state.stores.length > 0;
     const selector = canChoose
       ? `<label class="attendance-store-picker">
           <span>Cliente em análise</span>
