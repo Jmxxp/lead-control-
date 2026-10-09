@@ -395,7 +395,6 @@
             </div>
             <div id="featureCapacitySummary" class="feature-capacity-summary" aria-label="Licenças de recursos premium">
               <span id="prospectionCapacityBadge"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>0 de 0</b> módulos adicionais</span>
-              <span id="goodMorningSellerCapacityBadge"><i class="fa-solid fa-sun" aria-hidden="true"></i><b>0 de 0</b> Bom Dia Vendedor</span>
             </div>
           </section>
 
@@ -822,12 +821,6 @@
                 <small class="field-help">Uma licença por cliente que use Prospecção, Atendimento ou ambos.</small>
               </label>
 
-              <label class="field">
-                <span>Clientes com Bom Dia Vendedor</span>
-                <input id="technicianGoodMorningSellerLimit" type="number" min="0" max="9999" step="1" value="0" required />
-                <small class="field-help">Licença adicional para metas, divisão por vendedor e fila da vez dentro de Atendimentos.</small>
-              </label>
-
               <div class="field avatar-field">
                 <span>Imagem da agência</span>
                 <div class="avatar-upload-row">
@@ -914,7 +907,6 @@
                       <option value="leads-only">Somente Lead</option>
                       <option value="prospections">Prospecção ativa</option>
                       <option value="attendances">Atendimento ativo</option>
-                      <option value="good-morning">Bom Dia ativo</option>
                       <option value="none">Sem módulos</option>
                     </select>
                   </label>
@@ -1667,12 +1659,6 @@
             <small id="managedAccountProspectionLimitHelp" class="field-help">Uma licença por cliente que use Prospecção, Atendimento ou ambos. Reduções bloqueiam novas ativações enquanto houver excesso.</small>
           </label>
 
-          <label id="managedAccountGoodMorningSellerLimitField" class="field" hidden>
-            <span>Clientes com Bom Dia Vendedor</span>
-            <input id="managedAccountGoodMorningSellerLimit" type="number" min="0" max="9999" step="1" />
-            <small id="managedAccountGoodMorningSellerLimitHelp" class="field-help">Defina quantos clientes desta agência podem usar metas e fila de vendedores.</small>
-          </label>
-
           <div id="managedAccountTeamField" class="managed-team-entry" hidden>
             <span class="managed-team-entry-icon" aria-hidden="true">
               <i class="fa-solid fa-people-group"></i>
@@ -1729,21 +1715,6 @@
               <input id="managedAccountAttendanceAccess" type="checkbox" aria-label="Ativar área de Atendimento" aria-describedby="managedAccountAttendanceHelp" />
               <span aria-hidden="true"></span>
               <em id="managedAccountAttendanceStatus">Inativo</em>
-            </label>
-          </div>
-
-          <div id="managedAccountGoodMorningSellerField" class="feature-access-card feature-access-card--sunrise" hidden>
-            <div class="feature-access-copy">
-              <span class="feature-access-icon"><i class="fa-solid fa-sun" aria-hidden="true"></i></span>
-              <div>
-                <strong>Bom Dia Vendedor</strong>
-                <span id="managedAccountGoodMorningSellerHelp">Libere metas, divisão da equipe e fila da vez neste cliente.</span>
-              </div>
-            </div>
-            <label class="feature-access-toggle">
-              <input id="managedAccountGoodMorningSellerAccess" type="checkbox" />
-              <span aria-hidden="true"></span>
-              <em id="managedAccountGoodMorningSellerStatus">Ativo</em>
             </label>
           </div>
 

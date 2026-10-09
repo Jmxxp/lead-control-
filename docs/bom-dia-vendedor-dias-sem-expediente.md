@@ -2,6 +2,8 @@
 
 O calendário de dias sem expediente faz parte da mesma configuração de meta, divisão e fila. Admin e a própria loja podem editar; Agência permanece somente leitura.
 
+O Bom Dia Vendedor integra a licença de módulos adicionais e fica disponível quando Atendimentos está ativo. Não possui cota nem licença separadas. Essa regra exige a migration de inclusão e o contrato de acesso v3; em bancos anteriores, a disponibilidade legada continua sendo respeitada até a atualização.
+
 ## Contrato do frontend
 
 - O workspace informa `closed_days_configuration_available: true` somente quando a RPC atômica v2 está instalada.

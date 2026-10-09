@@ -21,3 +21,8 @@ revertidas pelo `ROLLBACK` final.
 
 Novos testes de banco devem permanecer nesta pasta; migrations pertencem somente
 a `supabase/migrations/`.
+
+`good-morning-included-in-attendance.sql` valida a inclusão do Bom Dia Vendedor
+em Atendimentos após a migration de inclusão: ausência de cota própria, contagem
+única de módulos adicionais, compatibilidade das RPCs, trocas de módulos após
+downgrade e isolamento de cotas entre agências. O cenário encerra com `ROLLBACK`.

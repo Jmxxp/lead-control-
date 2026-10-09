@@ -1,8 +1,8 @@
 # Controle de Leads — documentação completa do projeto
 
-> Retrato técnico e funcional atualizado em **8 de outubro de 2026**.
+> Licenciamento atualizado em **9 de outubro de 2026**; os demais registros de implantação referem-se a **8 de outubro de 2026**.
 >
-> Este documento descreve o estado consolidado do código e do projeto Supabase `menlvmsgkhgqxiydphbn`. Em 8 de outubro de 2026, as 33 migrations locais estavam alinhadas ao histórico remoto; `ai-analysis` versão 8 e `daily-report-push` versão 2 estavam ativas. O frontend continua tendo ciclo independente pelo GitHub Pages.
+> Este documento descreve o código local e o último estado registrado do projeto Supabase `menlvmsgkhgqxiydphbn`. Em 8 de outubro de 2026, as 33 migrations locais estavam alinhadas ao histórico remoto; `ai-analysis` versão 8 e `daily-report-push` versão 2 estavam ativas. A inclusão do Bom Dia Vendedor nos módulos adicionais exige aplicar a nova migration antes de publicar o frontend atualizado. Essa alteração ainda não foi implantada no ambiente remoto. O frontend continua tendo ciclo independente pelo GitHub Pages.
 
 ## 1. Resumo executivo
 
@@ -18,11 +18,11 @@ Os módulos atuais são:
 2. **Prospecções:** carteira de prospecção, profissionais, metas, bonificação, resultados e análises.
 3. **Atendimentos:** registro de atendimentos feitos na loja, vínculo automático por telefone e atualização controlada de resultados.
 
-O módulo **Leads** está disponível para todas as lojas. **Prospecções e Atendimentos formam uma única licença adicional**: `stores.prospection_enabled`. Atendimentos não possui uma licença separada.
+Há dois tipos comerciais de licença: **normal**, para Leads, e **com módulos adicionais**, que inclui Prospecções, Atendimentos e Bom Dia Vendedor. Leads, Prospecções e Atendimentos possuem controles operacionais independentes (`lead_enabled`, `prospection_enabled` e `attendance_enabled`). Uma loja com Prospecções, Atendimentos ou ambos consome uma única licença adicional. O Bom Dia Vendedor está incluído quando Atendimentos está ativo e não possui preço, franquia ou ativação de licença separados.
 
 Não existe ferramenta, conector, rastreador ou estrutura de dados para WhatsApp, Meta Ads ou Google Ads. Foram retirados frontend, tabelas, campos de atribuição, credenciais, filas, workers, webhooks, Edge Functions e agendamentos dessas integrações. `channel` e `campaign` continuam sendo campos comerciais comuns, preenchidos pela loja; valores históricos que mencionem uma plataforma são apenas texto, não conexão ou rastreamento externo. O provedor Google Gemini continua disponível exclusivamente para IA e não tem relação com Google Ads.
 
-Admin e Agência acessam uma **Central de análise única**. Depois de selecionar uma loja, um switch alterna entre Leads, Prospecções e Atendimentos sem trocar a loja nem combinar bases. As duas últimas abas respeitam a licença conjunta `prospection_enabled`.
+Admin e Agência acessam uma **Central de análise única**. Depois de selecionar uma loja, um switch alterna entre Leads, Prospecções e Atendimentos sem trocar a loja nem combinar bases. Cada aba respeita a ativação de seu módulo na loja.
 
 Todos os perfis autenticados possuem um **Assistente de Suporte IA** no botão `?`. Ele ensina exclusivamente os fluxos operacionais que um cliente usa, sem receber registros comerciais ou liberar áreas administrativas. Seus atalhos são limitados por uma lista fixa e pelo contexto visual/licença atual; a conversa existe somente em memória e desaparece ao recarregar ou encerrar a sessão.
 
@@ -84,8 +84,10 @@ flowchart TD
     A1 --> L1[Loja 1]
     A1 --> L2[Loja 2]
     A2 --> L3[Loja 3]
-    L1 --> BASE[Leads<br/>sempre disponível]
-    L1 -->|se prospection_enabled = true| EXTRA[Prospecções + Atendimentos]
+    L1 -->|lead_enabled| BASE[Leads<br/>licença normal]
+    L1 --> EXTRA[Licença com módulos adicionais<br/>uma cota por loja]
+    EXTRA -->|prospection_enabled| PROS[Prospecções]
+    EXTRA -->|attendance_enabled| ATT[Atendimentos + Bom Dia Vendedor]
 ```
 
 ### 3.1 Regras de propriedade
@@ -103,9 +105,16 @@ flowchart TD
 
 | Campo | Significado |
 |---|---|
-| `app_users.store_limit` | Quantidade máxima de clientes que uma agência pode cadastrar. |
-| `app_users.prospection_store_limit` | Quantidade máxima de clientes da agência que podem ter Prospecções + Atendimentos. |
-| `stores.prospection_enabled` | Liga ou desliga o pacote Prospecções + Atendimentos para a loja. |
+| `app_users.store_limit` | Quantidade máxima de lojas ativas vinculadas à agência, incluindo as normais e as que usam módulos adicionais. |
+| `app_users.prospection_store_limit` | Quantidade máxima de lojas distintas da agência com Prospecções, Atendimentos ou ambos ativos; cada loja conta uma vez. |
+| `stores.lead_enabled` | Liga ou desliga Leads; novas lojas recebem Leads ativo por padrão. |
+| `stores.prospection_enabled` | Liga ou desliga somente Prospecções. |
+| `stores.attendance_enabled` | Liga ou desliga Atendimentos e a disponibilidade incluída do Bom Dia Vendedor. |
+| `stores.good_morning_seller_enabled` | Campo de compatibilidade derivado de `attendance_enabled` após a migration de inclusão; não representa uma licença separada. |
+
+A Agência distribui os módulos entre suas lojas dentro dos limites definidos pelo Admin. Desligar Leads não libera uma vaga de cliente. Por exemplo, 10 licenças normais e 5 com módulos adicionais correspondem a `store_limit = 15` e `prospection_store_limit = 5`. Os profissionais da equipe são cadastros operacionais, não logins individuais nem licenças de cliente.
+
+Preços, periodicidade e faixas de quantidade são definidos na contratação comercial; não há cobrança automática no produto. O contrato de acesso v3 informa `good_morning_included_in_premium = true`. Em bancos anteriores, o frontend respeita a disponibilidade legada do Bom Dia Vendedor até a implantação da migration.
 
 Ao reduzir um limite abaixo do uso atual, o sistema preserva as lojas que já estavam ativas. Novas ativações ficam bloqueadas até a agência voltar ao limite; a escolha de quais clientes desativar é administrativa e não automática.
 
@@ -118,11 +127,13 @@ Ao reduzir um limite abaixo do uso atual, o sistema preserva as lojas que já es
 | Ver clientes da própria carteira | Sim | Sim | Própria loja |
 | Criar/editar/excluir agência | Sim | Não | Não |
 | Criar/editar/excluir loja | Sim | Própria carteira | Não |
-| Definir limites e licenças | Sim | Não | Não |
-| Operar Leads | Sim | Sim | Sim |
+| Definir limites contratados | Sim | Não | Não |
+| Distribuir módulos dentro dos limites | Sim | Própria carteira | Não |
+| Operar Leads | Se ativo | Se ativo | Se ativo |
 | Editar categorias da loja | Sim | Sim | Sim, própria loja |
 | Operar Prospecções | Sim | Sim | Sim, se licenciada |
 | Operar Atendimentos | Sim | Sim | Sim, se licenciada |
+| Usar Bom Dia Vendedor | Incluído em Atendimentos | Consulta, se Atendimentos ativo | Operação, se Atendimentos ativo |
 | Ver análises | Sim | Sim, própria carteira | Própria loja |
 | Exportar dados | Sim | Sim, própria carteira | Própria loja |
 | Configurar backup em HD | Sim | Sim | Não |
@@ -350,11 +361,11 @@ O Admin pode consultar pendências, aceites válidos/desatualizados e baixar um 
 ### 7.1 Criação da estrutura B2B
 
 1. O Admin global é provisionado diretamente no banco; não existe RPC pública para criar outro Admin.
-2. O Admin cria uma Agência, informando nome, nick, senha, limite de clientes e limite de licenças Prospecções.
+2. O Admin cria uma Agência, informando nome, nick, senha, limite total de clientes e limite de clientes com módulos adicionais.
 3. Admin ou Agência cria uma loja dentro do escopo permitido.
-4. A loja recebe conta de login e sempre tem Leads.
-5. O Admin pode ativar `prospection_enabled`, respeitando a franquia da Agência.
-6. Quando a licença é ativada, Prospecções e Atendimentos tornam-se acessíveis juntos.
+4. A loja recebe uma conta de login e Leads ativo por padrão.
+5. Admin ou Agência pode distribuir Leads, Prospecções e Atendimentos, respeitando o escopo e a franquia de módulos adicionais.
+6. Prospecções e Atendimentos podem ser ligados individualmente e compartilham uma cota por loja. Atendimentos inclui o Bom Dia Vendedor automaticamente após a migration de inclusão.
 7. No cartão do cliente, **Entrar** abre o contexto isolado dessa loja; é nesse momento que o switch operacional do topo fica disponível para Admin/Agência.
 
 ### 7.2 Lead até atendimento e compra
@@ -383,7 +394,7 @@ flowchart LR
 flowchart LR
     USER[Admin ou Agência] --> STORE[Seleciona uma loja permitida]
     STORE --> SWITCH{Switch da Central}
-    STORE --> LICENSE{prospection_enabled?}
+    STORE --> LICENSE{Módulo selecionado ativo?}
     SWITCH --> LEADS[Análise de Leads]
     SWITCH --> PROS[Análise de Prospecções]
     SWITCH --> ATT[Análise de Atendimentos]
@@ -391,7 +402,7 @@ flowchart LR
     SCOPE --> LEADS
     SCOPE --> PROS
     SCOPE --> ATT
-    LICENSE -->|Não| LOCK[Bloqueia Prospecções e Atendimentos]
+    LICENSE -->|Não| LOCK[Bloqueia o módulo desativado]
     LICENSE -->|Sim| PROS
     LICENSE -->|Sim| ATT
 ```
@@ -645,7 +656,7 @@ A Central é uma seção única da área administrativa (`companyWorkspaceSectio
 4. um painel visível por vez;
 5. mensagem de seleção vazia, loading, erro recuperável e bloqueio de licença.
 
-Leads é sempre permitido. Prospecções e Atendimentos ficam desabilitados quando a loja não tem `prospection_enabled`. Trocar a aba não muda o cliente selecionado.
+Cada aba exige seu próprio módulo ativo: `lead_enabled`, `prospection_enabled` ou `attendance_enabled`. Prospecções e Atendimentos compartilham a franquia de módulos adicionais, mas seus controles são independentes. Trocar a aba não muda o cliente selecionado.
 
 ### 12.2 Contratos dos painéis
 
@@ -748,9 +759,9 @@ O schema `public` concentra as tabelas de domínio expostas pelas RPCs. O schema
 
 | Tabela | Colunas atuais |
 |---|---|
-| `app_users` | `id uuid!`, `nick text!`, `nick_key text!`, `password_hash text!`, `full_name text!`, `role app_user_role!`, `admin_user_id uuid?`, `store_id uuid?`, `is_active bool!`, `last_login_at timestamptz?`, `created_at!`, `updated_at!`, `store_limit int!`, `avatar_url text?`, `prospection_store_limit int!` |
+| `app_users` | `id uuid!`, `nick text!`, `nick_key text!`, `password_hash text!`, `full_name text!`, `role app_user_role!`, `admin_user_id uuid?`, `store_id uuid?`, `is_active bool!`, `last_login_at timestamptz?`, `created_at!`, `updated_at!`, `store_limit int!`, `avatar_url text?`, `prospection_store_limit int!`, `good_morning_seller_store_limit int!` (legado sem efeito de licença após a migration de inclusão) |
 | `app_sessions` | `id uuid!`, `user_id uuid!`, `token_hash text!`, `expires_at!`, `revoked_at?`, `last_seen_at?`, `created_at!` |
-| `stores` | `id uuid!`, `admin_user_id uuid!`, `name text!`, `nick text!`, `nick_key text!`, `is_active bool!`, `created_at!`, `updated_at!`, `technician_user_id uuid?`, `avatar_url text?`, `prospection_enabled bool!` |
+| `stores` | `id uuid!`, `admin_user_id uuid!`, `name text!`, `nick text!`, `nick_key text!`, `is_active bool!`, `created_at!`, `updated_at!`, `technician_user_id uuid?`, `avatar_url text?`, `lead_enabled bool!`, `prospection_enabled bool!`, `attendance_enabled bool!`, `good_morning_seller_enabled bool!` (espelha Atendimentos após a migration de inclusão) |
 | `system_legal_terms` | `id uuid!`, `version text!`, `title text!`, `content text!`, `content_hash text!`, `effective_at!`, `is_active bool!`, `created_at!` |
 | `legal_term_acceptances` | `id uuid!`, `terms_id uuid!`, `terms_version!`, `terms_title!`, `terms_snapshot!`, `terms_hash!`, `admin_user_id uuid!`, `accepting_user_id uuid?`, `account_role!`, `account_name_snapshot!`, `agency_name_snapshot?`, `store_name_snapshot?`, `signer_name!`, `signer_role!`, `signer_cpf_hash!`, `signer_cpf_last4!`, `signature_data_url!`, `signature_hash!`, `confirmations jsonb!`, `ip_address?`, `user_agent?`, `client_timezone?`, `client_timestamp?`, `accepted_at!`, `evidence_hash!` |
 
@@ -884,8 +895,8 @@ O `DROP` dinâmico da migração é limitado por prefixo e schema para não atin
 | RPC | Entradas principais | Efeito |
 |---|---|---|
 | `lc_login` | nick, senha | Autentica e cria token de 30 dias. |
-| `lc_update_store_with_feature_access` | sessão, loja, nome, nick, senha opcional, agência, `prospection_enabled` | Atualiza conta, vínculo e licença atomicamente. |
-| `lc_create_technician_with_feature_plan` | sessão, nome, nick, senha, limite de lojas, limite Prospecções | Cria agência com franquias. |
+| `lc_update_store_with_module_access_v2` | sessão, loja, nome, nick, senha opcional, agência, ativações de Leads/Prospecções/Atendimentos | Atualiza conta, vínculo e módulos atomicamente; Bom Dia acompanha Atendimentos no contrato de acesso v3. |
+| `lc_create_technician_with_feature_plan` | sessão, nome, nick, senha, limite total de lojas, limite de módulos adicionais | Cria agência com as duas franquias de contratação. |
 | `lc_upsert_lead_with_intelligence` | sessão, loja, campos do lead, custom values, ID opcional, data de contato, intelligence JSON | Salva o cadastro completo e eventos. |
 | `lc_save_prospection_configuration` | sessão, loja, snapshot/revisão de configuração | Salva profissionais, categorias, tags e parâmetros atomicamente. |
 | `lc_upsert_prospection` | sessão, loja, cadastro, profissional, probabilidade e tags | Cria/edita prospecção. |
@@ -952,7 +963,7 @@ Não existem segredos, chaves Vault ou variáveis de ambiente para anúncios ou 
 4. Mesmo `admin_user_id`.
 5. Loja dentro da carteira ou própria loja.
 6. Papel autorizado para a operação.
-7. Licença Prospecções ativa quando exigida.
+7. Módulo específico ativo quando exigido; Bom Dia incluído em Atendimentos.
 8. Validação e normalização de payload no servidor.
 9. Idempotência em operações sujeitas a retry.
 10. Central de análise limitada a uma loja permitida; abas premium bloqueadas sem licença.
@@ -1183,7 +1194,7 @@ Estado remoto registrado em 8 de outubro de 2026: `ai-analysis` versão 8 e `dai
 
 10. PWA com Service Worker restrito ao Web Push: instalável, mas sem cache offline.
 11. A Central analisa uma loja por vez; não compara nem combina clientes.
-12. Prospecções e Atendimentos ficam indisponíveis sem a licença conjunta.
+12. Prospecções e Atendimentos exigem ativação própria dentro da franquia compartilhada de módulos adicionais. Bom Dia Vendedor acompanha Atendimentos, sem franquia adicional.
 13. **Listar** em Prospecções mostra até 200 registros filtrados. A análise de Atendimentos carrega até 2.000 registros por período e exibe até 20 no detalhamento; ambas informam o limite quando aplicável.
 14. O chat de suporte é descartado em reload/logout por design e não oferece histórico recuperável.
 15. A retenção remove históricos antigos conforme regras de dois anos/730 dias.

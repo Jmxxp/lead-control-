@@ -2400,7 +2400,7 @@
   function renderMorningLocked() {
     return `<section class="attendance-morning-board attendance-morning-board--locked">
       <span><i class="fa-solid fa-lock" aria-hidden="true"></i></span>
-      <div><p class="attendance-eyebrow">Licença adicional</p><h2>Bom Dia Vendedor</h2><p>Metas, divisão por vendedor e fila da vez ficam disponíveis quando o Admin libera esta licença para o cliente.</p></div>
+      <div><p class="attendance-eyebrow">Atendimentos</p><h2>Bom Dia Vendedor</h2><p>Metas, divisão por vendedor e fila da vez estão indisponíveis neste cliente. Peça ao Admin para verificar o acesso.</p></div>
       <em><i class="fa-solid fa-sun" aria-hidden="true"></i>Recurso bloqueado</em>
     </section>`;
   }
@@ -6146,7 +6146,7 @@
         "Lead e Prospecção podem estar vinculados simultaneamente.",
         "attendanceAccessGranted autoriza Atendimentos; prospectionAccessGranted é apenas fallback para bridges antigos.",
         "Elegibilidade e valor de bônus nunca são calculados no navegador.",
-        "Bom Dia Vendedor exige a licença adicional da loja e nunca ignora essa autorização.",
+        "Bom Dia Vendedor está incluído em Atendimentos; a autorização continua sendo validada pelo backend.",
         "Admin e a própria loja podem ativar ou pausar participantes; a Agência permanece somente leitura.",
         "Admin e a própria loja configuram metas, divisão, ordem e avanço da rotação.",
         "Admin e a própria loja configuram dias sem expediente; Agência permanece somente leitura.",

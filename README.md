@@ -2,6 +2,8 @@
 
 SPA estática para gestão de Leads, Prospecções e Atendimentos, com backend no Supabase e publicação pelo GitHub Pages.
 
+O licenciamento possui dois tipos: normal (Leads) e com módulos adicionais (Prospecções, Atendimentos e Bom Dia Vendedor). Prospecções e Atendimentos podem ser ativados individualmente e consomem uma única cota por loja; Bom Dia Vendedor acompanha Atendimentos sem licença separada. A regra de inclusão requer a migration correspondente e o contrato de acesso v3. Preços e condições comerciais são definidos na contratação, sem faturamento automático na aplicação.
+
 ## Estrutura
 
 ```text

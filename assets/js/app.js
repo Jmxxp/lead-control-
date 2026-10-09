@@ -217,7 +217,6 @@ const technicianAvatar = $("#technicianAvatar");
 const technicianAvatarPreview = $("#technicianAvatarPreview");
 const technicianStoreLimit = $("#technicianStoreLimit");
 const technicianProspectionLimit = $("#technicianProspectionLimit");
-const technicianGoodMorningSellerLimit = $("#technicianGoodMorningSellerLimit");
 const technicianMessage = $("#technicianMessage");
 const technicianEmptyState = $("#technicianEmptyState");
 const technicianList = $("#technicianList");
@@ -289,13 +288,6 @@ const managedAccountAttendanceField = $("#managedAccountAttendanceField");
 const managedAccountAttendanceAccess = $("#managedAccountAttendanceAccess");
 const managedAccountAttendanceHelp = $("#managedAccountAttendanceHelp");
 const managedAccountAttendanceStatus = $("#managedAccountAttendanceStatus");
-const managedAccountGoodMorningSellerLimitField = $("#managedAccountGoodMorningSellerLimitField");
-const managedAccountGoodMorningSellerLimit = $("#managedAccountGoodMorningSellerLimit");
-const managedAccountGoodMorningSellerLimitHelp = $("#managedAccountGoodMorningSellerLimitHelp");
-const managedAccountGoodMorningSellerField = $("#managedAccountGoodMorningSellerField");
-const managedAccountGoodMorningSellerAccess = $("#managedAccountGoodMorningSellerAccess");
-const managedAccountGoodMorningSellerHelp = $("#managedAccountGoodMorningSellerHelp");
-const managedAccountGoodMorningSellerStatus = $("#managedAccountGoodMorningSellerStatus");
 const managedAccountMessage = $("#managedAccountMessage");
 const managedAccountTeamField = $("#managedAccountTeamField");
 const managedAccountTeamSummary = $("#managedAccountTeamSummary");
@@ -322,7 +314,6 @@ const clientCapacityProgress = $("#clientCapacityProgress");
 const clientCapacityPercent = $("#clientCapacityPercent");
 const featureCapacitySummary = $("#featureCapacitySummary");
 const prospectionCapacityBadge = $("#prospectionCapacityBadge");
-const goodMorningSellerCapacityBadge = $("#goodMorningSellerCapacityBadge");
 const totalStoresLabel = $("#totalStoresLabel");
 const totalStoresHint = $("#totalStoresHint");
 const storeListTitle = $("#storeListTitle");
@@ -661,25 +652,17 @@ function bindEvents() {
   });
   managedAccountProspectionAccess.addEventListener("change", () => {
     syncLegacyCombinedModuleAccess(managedAccountProspectionAccess, managedAccountAttendanceAccess);
-    if (!managedAccountAttendanceAccess?.checked) managedAccountGoodMorningSellerAccess.checked = false;
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountProspectionToggle();
   });
   managedAccountAttendanceAccess?.addEventListener("change", () => {
     syncLegacyCombinedModuleAccess(managedAccountAttendanceAccess, managedAccountProspectionAccess);
-    if (!managedAccountAttendanceAccess.checked) managedAccountGoodMorningSellerAccess.checked = false;
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountAttendanceToggle();
-    syncManagedAccountGoodMorningSellerToggle();
-  });
-  managedAccountGoodMorningSellerAccess.addEventListener("change", () => {
-    syncManagedStoreEntitlementQuotas();
-    syncManagedAccountGoodMorningSellerToggle();
   });
   managedAccountTechnician?.addEventListener("change", () => {
     syncManagedStoreEntitlementQuotas();
     syncManagedAccountProspectionToggle();
-    syncManagedAccountGoodMorningSellerToggle();
   });
   openStoreCreation?.addEventListener("click", () => openAccountCreationModal("store"));
   openTechnicianCreation?.addEventListener("click", () => openAccountCreationModal("technician"));
@@ -2600,7 +2583,6 @@ async function handleCreateTechnician(event) {
   const username = normalizeNick(technicianNick.value);
   const storeLimit = Number.parseInt(technicianStoreLimit.value, 10);
   const prospectionLimit = Number.parseInt(technicianProspectionLimit.value, 10);
-  const goodMorningSellerLimit = Number.parseInt(technicianGoodMorningSellerLimit.value, 10);
   if (!username) {
     showTechnicianMessage("Digite um login válido para a agência.");
     return;
@@ -2616,22 +2598,24 @@ async function handleCreateTechnician(event) {
     return;
   }
 
-  if (!Number.isInteger(goodMorningSellerLimit) || goodMorningSellerLimit < 0 || goodMorningSellerLimit > storeLimit) {
-    showTechnicianMessage("A franquia do Bom Dia Vendedor deve ficar entre zero e o limite total de clientes.");
-    return;
-  }
-
   try {
     setFormBusy(technicianForm, true);
     const avatarUrl = await avatarFileToDataUrl(technicianAvatar.files?.[0]);
-    const createdTechnician = firstRow(await authenticatedRpc("lc_create_technician_with_all_feature_plan", {
+    const planPayload = {
       p_full_name: technicianName.value.trim(),
       p_nick: username,
       p_password: technicianPassword.value,
       p_store_limit: storeLimit,
       p_prospection_limit: prospectionLimit,
-      p_good_morning_seller_limit: goodMorningSellerLimit,
-    }));
+    };
+    const createdTechnician = firstRow(await authenticatedRpc(
+      includesGoodMorningSellerInPremium()
+        ? "lc_create_technician_with_feature_plan"
+        : "lc_create_technician_with_all_feature_plan",
+      includesGoodMorningSellerInPremium()
+        ? planPayload
+        : { ...planPayload, p_good_morning_seller_limit: 0 },
+    ));
     if (avatarUrl && createdTechnician?.id) {
       await authenticatedRpc("lc_set_profile_avatar", {
         p_account_type: "technician",
@@ -2645,7 +2629,6 @@ async function handleCreateTechnician(event) {
     await refreshRemoteState();
     technicianStoreLimit.value = "5";
     technicianProspectionLimit.value = "0";
-    technicianGoodMorningSellerLimit.value = "0";
     showTechnicianMessage("Agência criada.", "success");
     renderAll();
     closeAccountCreationModal("technician");
@@ -3190,30 +3173,18 @@ function openManagedAccountModal(type, id) {
       ? `${activeAccesses} cliente${activeAccesses === 1 ? " está" : "s estão"} com acesso. Se o novo limite for menor, a agência escolherá quais clientes desativar.`
       : "Defina quantos clientes desta agência podem usar Prospecção, Atendimento ou ambos.";
   }
-  managedAccountGoodMorningSellerLimitField.hidden = type !== "technician";
-  managedAccountGoodMorningSellerLimit.required = type === "technician";
-  managedAccountGoodMorningSellerLimit.value = type === "technician" ? String(record.goodMorningSellerStoreLimit ?? 0) : "";
-  if (type === "technician") {
-    const activeAccesses = record.goodMorningSellerStoreCount ?? 0;
-    managedAccountGoodMorningSellerLimitHelp.textContent = activeAccesses > 0
-      ? `${activeAccesses} cliente${activeAccesses === 1 ? " está" : "s estão"} com Bom Dia Vendedor. Reduzir a franquia bloqueia novas ativações até o uso ser ajustado.`
-      : "Defina quantos clientes desta agência podem usar o Bom Dia Vendedor.";
-  }
   if (managedAccountLeadField) managedAccountLeadField.hidden = type !== "store";
   if (managedAccountLeadAccess) managedAccountLeadAccess.checked = type === "store" && Boolean(record.leadEnabled);
   managedAccountProspectionField.hidden = type !== "store";
   managedAccountProspectionAccess.checked = type === "store" && Boolean(record.prospectionEnabled);
   if (managedAccountAttendanceField) managedAccountAttendanceField.hidden = type !== "store";
   if (managedAccountAttendanceAccess) managedAccountAttendanceAccess.checked = type === "store" && Boolean(record.attendanceEnabled);
-  managedAccountGoodMorningSellerField.hidden = type !== "store";
-  managedAccountGoodMorningSellerAccess.checked = type === "store" && Boolean(record.goodMorningSellerEnabled);
   managedAccountTeamField.hidden = type !== "store";
   if (type === "store") refreshManagedAccountTeamSummary(id);
   syncManagedStoreEntitlementQuotas();
   syncManagedAccountLeadToggle();
   syncManagedAccountProspectionToggle();
   syncManagedAccountAttendanceToggle();
-  syncManagedAccountGoodMorningSellerToggle();
   clearManagedAccountMessage();
   managedAccountModal.hidden = false;
   syncModalLock();
@@ -3234,8 +3205,6 @@ function closeManagedAccountModal() {
   managedAccountLimit.required = false;
   managedAccountProspectionLimitField.hidden = true;
   managedAccountProspectionLimit.required = false;
-  managedAccountGoodMorningSellerLimitField.hidden = true;
-  managedAccountGoodMorningSellerLimit.required = false;
   if (managedAccountLeadField) managedAccountLeadField.hidden = true;
   if (managedAccountLeadAccess) {
     managedAccountLeadAccess.checked = false;
@@ -3253,17 +3222,11 @@ function closeManagedAccountModal() {
     delete managedAccountAttendanceAccess.dataset.quotaLocked;
     delete managedAccountAttendanceAccess.dataset.transferBlocked;
   }
-  managedAccountGoodMorningSellerField.hidden = true;
-  managedAccountGoodMorningSellerAccess.checked = false;
-  managedAccountGoodMorningSellerAccess.disabled = false;
-  delete managedAccountGoodMorningSellerAccess.dataset.quotaLocked;
-  delete managedAccountGoodMorningSellerAccess.dataset.transferBlocked;
   managedAccountTeamField.hidden = true;
   managedAccountTeamSummary.textContent = "Cadastre quem trabalha neste cliente.";
   syncManagedAccountLeadToggle();
   syncManagedAccountProspectionToggle();
   syncManagedAccountAttendanceToggle();
-  syncManagedAccountGoodMorningSellerToggle();
   clearManagedAccountMessage();
   syncModalLock();
 }
@@ -3282,7 +3245,6 @@ async function handleManagedAccountSubmit(event) {
   const password = managedAccountPassword.value;
   const storeLimit = Number.parseInt(managedAccountLimit.value, 10);
   const prospectionLimit = Number.parseInt(managedAccountProspectionLimit.value, 10);
-  const goodMorningSellerLimit = Number.parseInt(managedAccountGoodMorningSellerLimit.value, 10);
 
   if (!managedAccountName.value.trim()) {
     showManagedAccountMessage("Digite o nome.");
@@ -3309,22 +3271,11 @@ async function handleManagedAccountSubmit(event) {
     return;
   }
 
-  if (type === "technician" && (!Number.isInteger(goodMorningSellerLimit) || goodMorningSellerLimit < 0 || goodMorningSellerLimit > storeLimit)) {
-    showManagedAccountMessage("A franquia do Bom Dia Vendedor deve ficar entre zero e o limite total de clientes.");
-    return;
-  }
-
-  if (type === "store" && managedAccountGoodMorningSellerAccess.checked && !managedAccountAttendanceAccess?.checked) {
-    showManagedAccountMessage("Bom Dia Vendedor precisa de Atendimentos ativo neste cliente.");
-    return;
-  }
-
   if (type === "store") {
     const wantsPremiumAccess = managedAccountProspectionAccess.checked || Boolean(managedAccountAttendanceAccess?.checked);
     const blockedFeatures = [
       wantsPremiumAccess && (managedAccountProspectionAccess.dataset.transferBlocked === "true"
         || managedAccountAttendanceAccess?.dataset.transferBlocked === "true") ? "Prospecções ou Atendimentos" : "",
-      managedAccountGoodMorningSellerAccess.checked && managedAccountGoodMorningSellerAccess.dataset.transferBlocked === "true" ? "Bom Dia Vendedor" : "",
     ].filter(Boolean);
     if (blockedFeatures.length) {
       showManagedAccountMessage(`A agência de destino não possui licença disponível para ${blockedFeatures.join(" e ")}. Desative o recurso antes de transferir ou escolha outra agência.`);
@@ -3339,7 +3290,6 @@ async function handleManagedAccountSubmit(event) {
       const wantsLeads = Boolean(managedAccountLeadAccess?.checked);
       const wantsProspections = managedAccountProspectionAccess.checked;
       const wantsAttendances = Boolean(managedAccountAttendanceAccess?.checked);
-      const wantsGoodMorningSeller = managedAccountGoodMorningSellerAccess.checked;
       const managedStore = stores.find((store) => store.id === id);
       await updateStoreWithCompatibleModuleAccess({
         storeId: id,
@@ -3350,18 +3300,28 @@ async function handleManagedAccountSubmit(event) {
         leadEnabled: wantsLeads,
         prospectionEnabled: wantsProspections,
         attendanceEnabled: wantsAttendances,
-        goodMorningSellerEnabled: wantsGoodMorningSeller,
       });
     } else if (type === "technician") {
-      await authenticatedRpc("lc_update_technician_with_all_feature_plan", {
+      const planPayload = {
         p_technician_id: id,
         p_full_name: managedAccountName.value.trim(),
         p_nick: username,
         p_password: password || null,
         p_store_limit: storeLimit,
         p_prospection_limit: prospectionLimit,
-        p_good_morning_seller_limit: goodMorningSellerLimit,
-      });
+      };
+      const agency = technicians.find((technician) => technician.id === id);
+      await authenticatedRpc(
+        includesGoodMorningSellerInPremium()
+          ? "lc_update_technician_with_feature_plan"
+          : "lc_update_technician_with_all_feature_plan",
+        includesGoodMorningSellerInPremium()
+          ? planPayload
+          : {
+              ...planPayload,
+              p_good_morning_seller_limit: Math.min(Number(agency?.goodMorningSellerStoreLimit || 0), storeLimit),
+            },
+      );
     }
 
     if (newAvatarUrl) {
@@ -3416,7 +3376,6 @@ async function handleManagedAccountSubmit(event) {
       syncManagedAccountLeadToggle();
       syncManagedAccountProspectionToggle();
       syncManagedAccountAttendanceToggle();
-      syncManagedAccountGoodMorningSellerToggle();
     }
   }
 }
@@ -3428,6 +3387,16 @@ function syncFeatureAccessStatus(control, status) {
   status.textContent = unavailable ? "Sem licença" : enabled ? "Ativo" : "Desativado";
   status.classList.toggle("is-enabled", enabled);
   status.classList.toggle("is-unavailable", unavailable);
+}
+
+function includesGoodMorningSellerInPremium() {
+  return moduleAccessContractVersion >= 3;
+}
+
+function additionalAttendanceFeaturesHelp() {
+  return includesGoodMorningSellerInPremium()
+    ? " Bom Dia Vendedor está incluído em Atendimentos, sem licença adicional."
+    : "";
 }
 
 function syncLegacyCombinedModuleAccess(source, target) {
@@ -3445,20 +3414,6 @@ function syncManagedAccountProspectionToggle() {
 
 function syncManagedAccountAttendanceToggle() {
   syncFeatureAccessStatus(managedAccountAttendanceAccess, managedAccountAttendanceStatus);
-}
-
-function syncManagedAccountGoodMorningSellerToggle() {
-  if (!managedAccountGoodMorningSellerStatus) return;
-  const enabled = managedAccountGoodMorningSellerAccess.checked;
-  const requiresAttendance = !managedAccountAttendanceAccess?.checked;
-  const unavailable = (managedAccountGoodMorningSellerAccess.disabled || requiresAttendance) && !enabled;
-  managedAccountGoodMorningSellerAccess.disabled = requiresAttendance
-    || managedAccountGoodMorningSellerAccess.dataset.quotaLocked === "true";
-  managedAccountGoodMorningSellerStatus.textContent = requiresAttendance
-    ? "Requer Atendimentos"
-    : unavailable ? "Sem licença" : enabled ? "Ativo" : "Desativado";
-  managedAccountGoodMorningSellerStatus.classList.toggle("is-enabled", enabled);
-  managedAccountGoodMorningSellerStatus.classList.toggle("is-unavailable", unavailable || requiresAttendance);
 }
 
 function syncManagedStoreEntitlementQuotas() {
@@ -3521,34 +3476,8 @@ function syncManagedStoreEntitlementQuotas() {
     }
   });
 
-  const goodMorningUsage = getAgencyUsage("goodMorningSellerStoreCount", "goodMorningSellerStoreLimit");
-  const originallyGoodMorning = Boolean(store.goodMorningSellerEnabled);
-  const blockedGoodMorningAgencies = originallyGoodMorning
-    ? []
-    : goodMorningUsage.filter((usage) => usage.inUse >= usage.limit);
-  managedAccountGoodMorningSellerAccess.disabled = !managedAccountGoodMorningSellerAccess.checked
-    && blockedGoodMorningAgencies.length > 0;
-  managedAccountGoodMorningSellerAccess.dataset.quotaLocked = String(managedAccountGoodMorningSellerAccess.disabled);
-  managedAccountGoodMorningSellerAccess.dataset.transferBlocked = "false";
-
-  if (blockedGoodMorningAgencies.length) {
-    managedAccountGoodMorningSellerHelp.textContent = `${blockedGoodMorningAgencies.map((usage) => usage.name).join(", ")} sem licença do Bom Dia Vendedor disponível.`;
-  } else if (!goodMorningUsage.length) {
-    managedAccountGoodMorningSellerHelp.textContent = "Nenhuma agência atribuída. O recurso ficará disponível para o cliente e o Admin.";
-  } else if (goodMorningUsage.length === 1) {
-    const usage = goodMorningUsage[0];
-    const projectedUse = usage.inUse
-      + (managedAccountGoodMorningSellerAccess.checked && !originallyGoodMorning ? 1 : 0)
-      - (!managedAccountGoodMorningSellerAccess.checked && originallyGoodMorning ? 1 : 0);
-    managedAccountGoodMorningSellerHelp.textContent = `${projectedUse} de ${usage.limit} licenças do Bom Dia Vendedor ficarão em uso.`;
-  } else {
-    managedAccountGoodMorningSellerHelp.textContent = `Licença validada nas ${goodMorningUsage.length} agências deste cliente.`;
-  }
-
-  if (!managedAccountAttendanceAccess?.checked) {
-    managedAccountGoodMorningSellerAccess.checked = false;
-    managedAccountGoodMorningSellerAccess.disabled = true;
-    managedAccountGoodMorningSellerHelp.textContent = "Ative Atendimentos antes de liberar este recurso.";
+  if (managedAccountAttendanceHelp) {
+    managedAccountAttendanceHelp.textContent += additionalAttendanceFeaturesHelp();
   }
 
   if (managedAccountLeadHelp) {
@@ -3561,7 +3490,6 @@ function syncManagedStoreEntitlementQuotas() {
   syncManagedAccountLeadToggle();
   syncManagedAccountProspectionToggle();
   syncManagedAccountAttendanceToggle();
-  syncManagedAccountGoodMorningSellerToggle();
 }
 
 async function openStoreAsAdmin(storeId) {
@@ -4144,8 +4072,6 @@ async function refreshRemoteState() {
     const entitlementProfile = normalizeProspectionEntitlements(entitlementRows)?.profile || {};
     accountUsage.prospectionStoreLimit = Number(entitlementProfile.prospection_store_limit || 0);
     accountUsage.prospectionStoreCount = Number(entitlementProfile.prospection_store_count || 0);
-    accountUsage.goodMorningSellerStoreLimit = Number(entitlementProfile.good_morning_seller_store_limit || 0);
-    accountUsage.goodMorningSellerStoreCount = Number(entitlementProfile.good_morning_seller_store_count || 0);
   }
 
   if (currentProfile.role === "store") {
@@ -4784,8 +4710,6 @@ function getSelectedCapacityContext() {
       storeLimit: accountUsage?.storeLimit ?? 0,
       prospectionStoreCount: accountUsage?.prospectionStoreCount ?? 0,
       prospectionStoreLimit: accountUsage?.prospectionStoreLimit ?? 0,
-      goodMorningSellerStoreCount: accountUsage?.goodMorningSellerStoreCount ?? 0,
-      goodMorningSellerStoreLimit: accountUsage?.goodMorningSellerStoreLimit ?? 0,
     };
   }
   return technicians.find((technician) => technician.id === storeTechnician.value) || null;
@@ -4816,10 +4740,6 @@ function renderClientCapacity() {
   featureCapacitySummary.hidden = false;
   prospectionCapacityBadge.innerHTML = `<i class="fa-solid fa-layer-group" aria-hidden="true"></i><b>${prospectionCount} de ${prospectionLimit}</b> módulos adicionais`;
   prospectionCapacityBadge.classList.toggle("is-full", prospectionLimit > 0 && prospectionCount >= prospectionLimit);
-  const goodMorningCount = Number(context?.goodMorningSellerStoreCount ?? accountUsage?.goodMorningSellerStoreCount ?? 0);
-  const goodMorningLimit = Number(context?.goodMorningSellerStoreLimit ?? accountUsage?.goodMorningSellerStoreLimit ?? 0);
-  goodMorningSellerCapacityBadge.innerHTML = `<i class="fa-solid fa-sun" aria-hidden="true"></i><b>${goodMorningCount} de ${goodMorningLimit}</b> Bom Dia Vendedor`;
-  goodMorningSellerCapacityBadge.classList.toggle("is-full", goodMorningLimit > 0 && goodMorningCount >= goodMorningLimit);
 }
 
 function renderStoreCreationContext() {
@@ -4879,7 +4799,7 @@ function syncStoreCreationAvailability() {
     ? `${premiumHelp} No banco atual, Prospecção e Atendimento permanecem juntos.`
     : premiumHelp;
   if (storeProspectionHelp) storeProspectionHelp.textContent = compatiblePremiumHelp;
-  if (storeAttendanceHelp) storeAttendanceHelp.textContent = compatiblePremiumHelp;
+  if (storeAttendanceHelp) storeAttendanceHelp.textContent = compatiblePremiumHelp + additionalAttendanceFeaturesHelp();
 
   submitButton.disabled = !hasCapacity;
   if (!context) {
@@ -4945,7 +4865,6 @@ function renderStoreList() {
       || (accessFilter === "leads" && store.leadEnabled)
       || (accessFilter === "prospections" && store.prospectionEnabled)
       || (accessFilter === "attendances" && store.attendanceEnabled)
-      || (accessFilter === "good-morning" && store.goodMorningSellerEnabled)
       || (accessFilter === "leads-only" && store.leadEnabled && !store.prospectionEnabled && !store.attendanceEnabled)
       || (accessFilter === "none" && !store.leadEnabled && !store.prospectionEnabled && !store.attendanceEnabled);
     return matchesSearch && matchesAgency && matchesAccess;
@@ -4988,10 +4907,6 @@ function renderStoreList() {
                 <i class="fa-solid ${store.attendanceEnabled ? "fa-clipboard-check" : "fa-lock"}" aria-hidden="true"></i>
                 ${store.attendanceEnabled ? "ATEND. ativo" : "ATEND. bloqueado"}
               </span>
-              <span class="feature-plan-badge is-good-morning ${store.goodMorningSellerEnabled ? "is-enabled" : "is-leads-only"}">
-                <i class="fa-solid ${store.goodMorningSellerEnabled ? "fa-sun" : "fa-lock"}" aria-hidden="true"></i>
-                ${store.goodMorningSellerEnabled ? "BOM DIA ativo" : "BOM DIA bloqueado"}
-              </span>
             </div>
             </div>
           </div>
@@ -5022,13 +4937,12 @@ function renderTechnicianList() {
   const filter = agencyWalletFilter?.value || "all";
   const filteredTechnicians = technicians.filter((technician) => {
     const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
-    const goodMorningExcess = Math.max(0, technician.goodMorningSellerStoreCount - technician.goodMorningSellerStoreLimit);
     const matchesSearch = !search || [technician.fullName, technician.username]
       .some((value) => normalizeSearchText(value).includes(search));
     const matchesFilter = filter === "all"
       || (filter === "available" && technician.storeCount < technician.storeLimit)
       || (filter === "full" && technician.storeCount >= technician.storeLimit)
-      || (filter === "adjustment" && (prospectionExcess > 0 || goodMorningExcess > 0));
+      || (filter === "adjustment" && prospectionExcess > 0);
     return matchesSearch && matchesFilter;
   });
   const hasFilters = Boolean(search) || filter !== "all";
@@ -5043,8 +4957,7 @@ function renderTechnicianList() {
   technicianList.innerHTML = filteredTechnicians
     .map((technician) => {
       const prospectionExcess = Math.max(0, technician.prospectionStoreCount - technician.prospectionStoreLimit);
-      const goodMorningExcess = Math.max(0, technician.goodMorningSellerStoreCount - technician.goodMorningSellerStoreLimit);
-      const hasPlanOverage = prospectionExcess > 0 || goodMorningExcess > 0;
+      const hasPlanOverage = prospectionExcess > 0;
       return `
       <article class="lead-card technician-card${hasPlanOverage ? " has-plan-overage" : ""}">
         <div class="management-profile">
@@ -5062,11 +4975,6 @@ function renderTechnicianList() {
             <span class="${prospectionExcess > 0 ? "plan-adjustment" : ""}">${prospectionExcess > 0 ? `${prospectionExcess} acesso${prospectionExcess === 1 ? "" : "s"} para ajustar` : `${technician.prospectionStoreLimit - technician.prospectionStoreCount} licenças livres`}</span>
           </div>
           <div class="technician-usage-track is-prospection-plan" aria-hidden="true"><i style="width:${getCapacityPercent(technician.prospectionStoreCount, technician.prospectionStoreLimit)}%"></i></div>
-          <div class="technician-usage-row is-good-morning-plan">
-            <span><i class="fa-solid fa-sun" aria-hidden="true"></i>${technician.goodMorningSellerStoreCount} de ${technician.goodMorningSellerStoreLimit} com Bom Dia Vendedor</span>
-            <span class="${goodMorningExcess > 0 ? "plan-adjustment" : ""}">${goodMorningExcess > 0 ? `${goodMorningExcess} acesso${goodMorningExcess === 1 ? "" : "s"} para ajustar` : `${Math.max(technician.goodMorningSellerStoreLimit - technician.goodMorningSellerStoreCount, 0)} licenças livres`}</span>
-          </div>
-          <div class="technician-usage-track is-good-morning-plan" aria-hidden="true"><i style="width:${getCapacityPercent(technician.goodMorningSellerStoreCount, technician.goodMorningSellerStoreLimit)}%"></i></div>
           </div>
         </div>
         <div class="card-actions">
@@ -10066,11 +9974,13 @@ async function updateStoreWithCompatibleModuleAccess({
   leadEnabled,
   prospectionEnabled,
   attendanceEnabled,
-  goodMorningSellerEnabled,
 }) {
+  const legacyGoodMorningSellerEnabled = Boolean(
+    attendanceEnabled && stores.find((store) => store.id === storeId)?.goodMorningSellerEnabled,
+  );
   if (moduleAccessContractVersion >= 2) {
     try {
-      return await authenticatedRpc("lc_update_store_with_module_access_v2", {
+      const payload = {
         p_store_id: storeId,
         p_name: name,
         p_nick: nick,
@@ -10079,8 +9989,11 @@ async function updateStoreWithCompatibleModuleAccess({
         p_lead_enabled: Boolean(leadEnabled),
         p_prospection_enabled: Boolean(prospectionEnabled),
         p_attendance_enabled: Boolean(attendanceEnabled),
-        p_good_morning_seller_enabled: Boolean(goodMorningSellerEnabled),
-      });
+      };
+      if (!includesGoodMorningSellerInPremium()) {
+        payload.p_good_morning_seller_enabled = legacyGoodMorningSellerEnabled;
+      }
+      return await authenticatedRpc("lc_update_store_with_module_access_v2", payload);
     } catch (error) {
       if (!isMissingRpcError(error, "lc_update_store_with_module_access_v2")) throw error;
       moduleAccessContractVersion = 1;
@@ -10095,7 +10008,7 @@ async function updateStoreWithCompatibleModuleAccess({
     p_password: password,
     p_technician_id: technicianId,
     p_prospection_enabled: Boolean(prospectionEnabled),
-    p_good_morning_seller_enabled: Boolean(goodMorningSellerEnabled),
+    p_good_morning_seller_enabled: legacyGoodMorningSellerEnabled,
   });
 }
 
@@ -10199,7 +10112,6 @@ function mapTechnicianRow(row) {
     prospectionStoreLimit: 0,
     prospectionStoreCount: 0,
     goodMorningSellerStoreLimit: 0,
-    goodMorningSellerStoreCount: 0,
     avatarUrl: "",
   };
 }
@@ -10218,7 +10130,9 @@ function applyProspectionEntitlements(data) {
     Object.prototype.hasOwnProperty.call(row || {}, "lead_enabled")
     || Object.prototype.hasOwnProperty.call(row || {}, "attendance_enabled")
   ));
-  moduleAccessContractVersion = declaredVersion >= 2 || hasIndependentModuleFields ? 2 : 1;
+  moduleAccessContractVersion = entitlements?.profile?.good_morning_included_in_premium === true
+    ? Math.max(declaredVersion, 3)
+    : declaredVersion >= 2 || hasIndependentModuleFields ? Math.max(declaredVersion, 2) : 1;
 
   if (!entitlements) {
     stores.forEach((store) => {
@@ -10231,7 +10145,6 @@ function applyProspectionEntitlements(data) {
       technician.prospectionStoreLimit = 0;
       technician.prospectionStoreCount = 0;
       technician.goodMorningSellerStoreLimit = 0;
-      technician.goodMorningSellerStoreCount = 0;
     });
     return;
   }
@@ -10248,7 +10161,9 @@ function applyProspectionEntitlements(data) {
       store.prospectionEnabled = access.prospection_enabled === true;
       store.attendanceEnabled = store.prospectionEnabled;
     }
-    store.goodMorningSellerEnabled = access.good_morning_seller_enabled === true;
+    store.goodMorningSellerEnabled = store.attendanceEnabled && (
+      includesGoodMorningSellerInPremium() || access.good_morning_seller_enabled === true
+    );
   });
 
   const agencyAccess = new Map((entitlements.technicians || []).map((row) => [row.technician_id, row]));
@@ -10257,7 +10172,6 @@ function applyProspectionEntitlements(data) {
     technician.prospectionStoreLimit = Number(access.prospection_store_limit || 0);
     technician.prospectionStoreCount = Number(access.prospection_store_count || 0);
     technician.goodMorningSellerStoreLimit = Number(access.good_morning_seller_store_limit || 0);
-    technician.goodMorningSellerStoreCount = Number(access.good_morning_seller_store_count || 0);
   });
 }
 
@@ -10381,8 +10295,6 @@ function mapAccountUsage(row) {
     storeCount: Number(row.store_count || 0),
     prospectionStoreLimit: 0,
     prospectionStoreCount: 0,
-    goodMorningSellerStoreLimit: 0,
-    goodMorningSellerStoreCount: 0,
   };
 }
 
